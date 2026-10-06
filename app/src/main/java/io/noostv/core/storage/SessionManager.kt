@@ -13,11 +13,16 @@ class SessionManager(context: Context) {
 
     companion object {
         private const val KEY_IS_LOGGED_IN = "is_logged_in"
+        private const val KEY_IS_PREMIUM = "is_premium"
         private const val KEY_SERVER_URL = "server_url"
         private const val KEY_USERNAME = "username"
         private const val KEY_PASSWORD = "password"
         private const val KEY_PLAYLIST_NAME = "playlist_name"
     }
+
+    var isPremium: Boolean
+        get() = prefs.getBoolean(KEY_IS_PREMIUM, false)
+        set(value) = prefs.edit().putBoolean(KEY_IS_PREMIUM, value).apply()
 
     var isLoggedIn: Boolean
         get() = prefs.getBoolean(KEY_IS_LOGGED_IN, false)

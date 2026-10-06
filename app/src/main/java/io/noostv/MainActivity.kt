@@ -41,10 +41,21 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         deviceDetector = DeviceDetector(this)
-        entitlementManager = EntitlementManager()
+        sessionManager = SessionManager(this)
+        val initialSub = if (sessionManager.isPremium) {
+            io.noostv.core.entitlement.UserSubscription(
+                userId = "dev_user",
+                tier = io.noostv.core.entitlement.SubscriptionTier.PREMIUM_VIP
+            )
+        } else {
+            io.noostv.core.entitlement.UserSubscription(
+                userId = "guest_user",
+                tier = io.noostv.core.entitlement.SubscriptionTier.FREE
+            )
+        }
+        entitlementManager = EntitlementManager(initialSub)
         repository = IptvRepository()
         playerEngine = PlayerEngine(this, entitlementManager)
-        sessionManager = SessionManager(this)
 
         setContent {
             NoosTvTheme {
@@ -103,7 +114,9 @@ class MainActivity : ComponentActivity() {
                                 currentScreen = CurrentScreen.HOME
                             },
                             onDemoSelected = {
-                                Toast.makeText(this@MainActivity, "Mode Démonstration 4K HDR activé", Toast.LENGTH_SHORT).show()
+                                entitlementManager.upgradeToPremium("dev_vip_user")
+                                sessionManager.isPremium = true
+                                Toast.makeText(this@MainActivity, "✨ Mode Démo 4K HDR & VIP Activé !", Toast.LENGTH_SHORT).show()
                                 currentScreen = CurrentScreen.HOME
                             }
                         )
@@ -201,9 +214,10 @@ class MainActivity : ComponentActivity() {
                     UpgradeDialog(
                         onDismiss = { showUpgradeDialog = false },
                         onActivatePremium = {
-                            entitlementManager.upgradeToPremium()
+                            entitlementManager.upgradeToPremium("dev_vip_user")
+                            sessionManager.isPremium = true
                             showUpgradeDialog = false
-                            Toast.makeText(this@MainActivity, "Félicitations ! NoosTV VIP Premium Activé (4K HDR Débloqué)", Toast.LENGTH_LONG).show()
+                            Toast.makeText(this@MainActivity, "✨ Code Validé ! Accès VIP Premium Activé à vie", Toast.LENGTH_LONG).show()
                         }
                     )
                 }
