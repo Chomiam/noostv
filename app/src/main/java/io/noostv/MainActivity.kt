@@ -186,6 +186,7 @@ class MainActivity : ComponentActivity() {
                                 seriesCategories = seriesCategories,
                                 isVodLoading = isVodLoading,
                                 isSeriesLoading = isSeriesLoading,
+                                sessionManager = sessionManager,
                                 entitlementManager = entitlementManager,
                                 onSelectChannel = { startPlayChannel(it) },
                                 onSelectMovie = { startPlayMovie(it) },

@@ -18,7 +18,18 @@ class SessionManager(context: Context) {
         private const val KEY_USERNAME = "username"
         private const val KEY_PASSWORD = "password"
         private const val KEY_PLAYLIST_NAME = "playlist_name"
+        private const val KEY_UPDATE_CHANNEL = "update_channel"
+        private const val KEY_GITHUB_TOKEN = "github_token"
+        private const val DEFAULT_TOKEN = "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"
     }
+
+    var updateChannel: String
+        get() = prefs.getString(KEY_UPDATE_CHANNEL, "stable") ?: "stable"
+        set(value) = prefs.edit().putString(KEY_UPDATE_CHANNEL, value).apply()
+
+    var githubToken: String
+        get() = prefs.getString(KEY_GITHUB_TOKEN, DEFAULT_TOKEN) ?: DEFAULT_TOKEN
+        set(value) = prefs.edit().putString(KEY_GITHUB_TOKEN, value).apply()
 
     var isPremium: Boolean
         get() = prefs.getBoolean(KEY_IS_PREMIUM, false)

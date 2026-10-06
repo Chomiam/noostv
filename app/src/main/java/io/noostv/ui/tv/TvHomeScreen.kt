@@ -41,6 +41,7 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import io.noostv.R
 import io.noostv.core.entitlement.EntitlementManager
+import io.noostv.core.storage.SessionManager
 import io.noostv.data.model.Category
 import io.noostv.data.model.Channel
 import io.noostv.data.model.EpgProgram
@@ -50,20 +51,23 @@ import io.noostv.ui.common.HdrBadge
 import io.noostv.ui.common.LiveIndicatorBadge
 import io.noostv.ui.common.PremiumVipBadge
 import io.noostv.ui.common.ResolutionBadge
+import io.noostv.ui.settings.TvSettingsContent
 import io.noostv.ui.theme.*
 
 /**
- * 4 Catégories latérales :
+ * 5 Catégories latérales :
  * 1. TV (Direct)
  * 2. Guide TV (EPG)
  * 3. Films (VOD Films)
  * 4. Séries (VOD Séries)
+ * 5. Settings (Paramètres & Mises à jour GitHub)
  */
 enum class TvNavTab(val label: String, val icon: ImageVector) {
     TV("TV", Icons.Default.Tv),
     EPG("Guide TV", Icons.Default.DateRange),
     MOVIES("Films", Icons.Default.Movie),
-    SERIES("Séries", Icons.Default.VideoLibrary)
+    SERIES("Séries", Icons.Default.VideoLibrary),
+    SETTINGS("Settings", Icons.Default.Settings)
 }
 
 @Composable
@@ -77,6 +81,7 @@ fun TvHomeScreen(
     seriesCategories: List<Category>,
     isVodLoading: Boolean = false,
     isSeriesLoading: Boolean = false,
+    sessionManager: SessionManager,
     entitlementManager: EntitlementManager,
     onSelectChannel: (Channel) -> Unit,
     onSelectMovie: (VodMovie) -> Unit,
@@ -100,7 +105,8 @@ fun TvHomeScreen(
             TvNavTab.TV to FocusRequester(),
             TvNavTab.EPG to FocusRequester(),
             TvNavTab.MOVIES to FocusRequester(),
-            TvNavTab.SERIES to FocusRequester()
+            TvNavTab.SERIES to FocusRequester(),
+            TvNavTab.SETTINGS to FocusRequester()
         )
     }
     val contentFocusRequester = remember { FocusRequester() }
@@ -308,6 +314,16 @@ fun TvHomeScreen(
                             }
                         }
                     }
+                }
+
+                // ==================== 5. ONGLET SETTINGS (PARAMÈTRES & MISES À JOUR) ====================
+                TvNavTab.SETTINGS -> {
+                    TvSettingsContent(
+                        sessionManager = sessionManager,
+                        focusRequester = contentFocusRequester,
+                        onNavigateLeft = { sidebarFocusRequesters[TvNavTab.SETTINGS]?.requestFocus() },
+                        onOpenLogin = onOpenLogin
+                    )
                 }
             }
         }
