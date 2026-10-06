@@ -82,6 +82,40 @@ class SessionManager(context: Context) {
 
     fun isFavoriteChannel(id: String): Boolean = getFavoriteChannelIds().contains(id)
 
+    fun getFavoriteMovieIds(): Set<String> = prefs.getStringSet("favorite_movie_ids", emptySet()) ?: emptySet()
+
+    fun toggleFavoriteMovie(id: String): Boolean {
+        val current = getFavoriteMovieIds().toMutableSet()
+        val isFav = if (current.contains(id)) {
+            current.remove(id)
+            false
+        } else {
+            current.add(id)
+            true
+        }
+        prefs.edit().putStringSet("favorite_movie_ids", current).apply()
+        return isFav
+    }
+
+    fun isFavoriteMovie(id: String): Boolean = getFavoriteMovieIds().contains(id)
+
+    fun getFavoriteSeriesIds(): Set<String> = prefs.getStringSet("favorite_series_ids", emptySet()) ?: emptySet()
+
+    fun toggleFavoriteSeries(id: String): Boolean {
+        val current = getFavoriteSeriesIds().toMutableSet()
+        val isFav = if (current.contains(id)) {
+            current.remove(id)
+            false
+        } else {
+            current.add(id)
+            true
+        }
+        prefs.edit().putStringSet("favorite_series_ids", current).apply()
+        return isFav
+    }
+
+    fun isFavoriteSeries(id: String): Boolean = getFavoriteSeriesIds().contains(id)
+
     fun logout() {
         prefs.edit().clear().apply()
     }

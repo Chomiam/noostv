@@ -1,11 +1,14 @@
 package io.noostv.ui.common
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -35,6 +38,7 @@ fun SearchScreen(
     epgPrograms: List<EpgProgram>,
     onSelectChannel: (Channel) -> Unit,
     onSelectMovie: (VodMovie) -> Unit,
+    onSelectSeries: (Series) -> Unit = {},
     onBack: () -> Unit
 ) {
     var query by remember { mutableStateOf("") }
@@ -172,7 +176,7 @@ fun SearchScreen(
                         SearchResultItem(
                             title = item.title,
                             subtitle = "${item.seasons.size} Saisons • ★ ${item.rating}",
-                            onClick = { /* */ }
+                            onClick = { onSelectSeries(item) }
                         )
                     }
                 }
@@ -183,10 +187,15 @@ fun SearchScreen(
                         Text("Programmes Guide TV (${searchResult.epgPrograms.size})", color = NeonCyan, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }
                     items(searchResult.epgPrograms) { prog ->
+                        val matchingChannel = channels.find { it.id == prog.channelId || it.epgChannelId == prog.channelId }
                         SearchResultItem(
                             title = prog.title,
-                            subtitle = "${prog.timeSlotFormatted} • ${prog.category ?: ""}",
-                            onClick = { /* */ }
+                            subtitle = "${prog.timeSlotFormatted} • ${prog.category ?: ""} ${matchingChannel?.let { "(${it.name})" } ?: ""}",
+                            onClick = {
+                                if (matchingChannel != null) {
+                                    onSelectChannel(matchingChannel)
+                                }
+                            }
                         )
                     }
                 }
@@ -202,12 +211,21 @@ private fun SearchResultItem(
     badge: String? = null,
     onClick: () -> Unit
 ) {
+    var isFocused by remember { mutableStateOf(false) }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(SurfaceDark)
+            .clip(RoundedCornerShape(12.dp))
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable()
             .clickable { onClick() }
+            .background(if (isFocused) Color(0xFF1E2838) else SurfaceDark)
+            .border(
+                width = if (isFocused) 2.5.dp else 1.dp,
+                color = if (isFocused) FocusGlow else CardBorderUnfocused,
+                shape = RoundedCornerShape(12.dp)
+            )
             .padding(14.dp)
     ) {
         Row(
@@ -215,8 +233,13 @@ private fun SearchResultItem(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text(text = title, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = if (isFocused) NeonCyan else TextPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
                 Text(text = subtitle, color = TextSecondary, fontSize = 12.sp)
             }
             if (badge != null) {

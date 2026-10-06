@@ -48,6 +48,8 @@ import io.noostv.core.storage.SessionManager
 import io.noostv.data.model.Category
 import io.noostv.data.model.Channel
 import io.noostv.data.model.EpgProgram
+import io.noostv.data.model.Episode
+import io.noostv.data.model.Season
 import io.noostv.data.model.Series
 import io.noostv.data.model.VodMovie
 import io.noostv.ui.common.HdrBadge
@@ -93,6 +95,7 @@ fun TvHomeScreen(
     onLoadChannelEpg: ((Channel) -> Unit)? = null,
     onSelectMovie: (VodMovie) -> Unit,
     onSelectSeries: (Series) -> Unit,
+    onSelectEpisode: (Series, io.noostv.data.model.Episode) -> Unit = { ser, _ -> onSelectSeries(ser) },
     onSelectVodCategory: (Category) -> Unit,
     onSelectSeriesCategory: (Category) -> Unit,
     onOpenSearch: () -> Unit,
@@ -105,11 +108,22 @@ fun TvHomeScreen(
     var selectedSeriesCategory by remember { mutableStateOf("Toutes") }
     var previewChannel by remember { mutableStateOf(initialPreviewChannel) }
 
-    // Interception de la touche Retour télécommande pour quitter le mode prévisualisation 1/4
-    BackHandler(enabled = previewChannel != null) {
-        playerEngine?.stop()
-        previewChannel = null
-        onClearCurrentChannel?.invoke()
+    var selectedMovieDetail by remember { mutableStateOf<VodMovie?>(null) }
+    var selectedSeriesDetail by remember { mutableStateOf<Series?>(null) }
+    var favoriteMovieIds by remember { mutableStateOf(sessionManager.getFavoriteMovieIds()) }
+    var favoriteSeriesIds by remember { mutableStateOf(sessionManager.getFavoriteSeriesIds()) }
+
+    // Interception de la touche Retour télécommande pour fermer les modales de détail ou le mode prévisualisation
+    BackHandler(enabled = selectedMovieDetail != null || selectedSeriesDetail != null || previewChannel != null) {
+        if (selectedMovieDetail != null) {
+            selectedMovieDetail = null
+        } else if (selectedSeriesDetail != null) {
+            selectedSeriesDetail = null
+        } else if (previewChannel != null) {
+            playerEngine?.stop()
+            previewChannel = null
+            onClearCurrentChannel?.invoke()
+        }
     }
 
     val subscription by entitlementManager.subscription.collectAsState()
@@ -157,11 +171,12 @@ fun TvHomeScreen(
         }
     }
 
-    Row(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(DarkOledBackground)
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(DarkOledBackground)
+        ) {
         // ==================== BARRE LATÉRALE GAUCHE MODERNE & ARRONDIE ====================
         TvSidebar(
             selectedTab = selectedTab,
@@ -326,7 +341,7 @@ fun TvHomeScreen(
                                     onNavigateLeft = if (index % 6 == 0) {
                                         { sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus() }
                                     } else null,
-                                    onClick = { onSelectMovie(movie) }
+                                    onClick = { selectedMovieDetail = movie }
                                 )
                             }
                         }
@@ -375,7 +390,7 @@ fun TvHomeScreen(
                                     onNavigateLeft = if (index % 6 == 0) {
                                         { sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus() }
                                     } else null,
-                                    onClick = { onSelectSeries(ser) }
+                                    onClick = { selectedSeriesDetail = ser }
                                 )
                             }
                         }
@@ -392,6 +407,44 @@ fun TvHomeScreen(
                     )
                 }
             }
+        }
+    }
+
+    // ==================== MODALES CINÉMATIQUES DE DÉTAIL (FILM & SÉRIE) ====================
+        if (selectedMovieDetail != null) {
+            TvMovieDetailModal(
+                movie = selectedMovieDetail!!,
+                isFavorite = favoriteMovieIds.contains(selectedMovieDetail!!.id),
+                onPlay = {
+                    val m = selectedMovieDetail!!
+                    selectedMovieDetail = null
+                    onSelectMovie(m)
+                },
+                onToggleFavorite = {
+                    val id = selectedMovieDetail!!.id
+                    sessionManager.toggleFavoriteMovie(id)
+                    favoriteMovieIds = sessionManager.getFavoriteMovieIds()
+                },
+                onDismiss = { selectedMovieDetail = null }
+            )
+        }
+
+        if (selectedSeriesDetail != null) {
+            TvSeriesDetailModal(
+                series = selectedSeriesDetail!!,
+                isFavorite = favoriteSeriesIds.contains(selectedSeriesDetail!!.id),
+                onPlayEpisode = { ep ->
+                    val s = selectedSeriesDetail!!
+                    selectedSeriesDetail = null
+                    onSelectEpisode(s, ep)
+                },
+                onToggleFavorite = {
+                    val id = selectedSeriesDetail!!.id
+                    sessionManager.toggleFavoriteSeries(id)
+                    favoriteSeriesIds = sessionManager.getFavoriteSeriesIds()
+                },
+                onDismiss = { selectedSeriesDetail = null }
+            )
         }
     }
 }
@@ -1160,6 +1213,8 @@ fun TvEpgContent(
     onSelectChannel: (Channel) -> Unit
 ) {
     val currentTime = remember { System.currentTimeMillis() }
+    var focusedProgram by remember { mutableStateOf<EpgProgram?>(null) }
+    var focusedChannel by remember { mutableStateOf<Channel?>(null) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -1187,9 +1242,11 @@ fun TvEpgContent(
             TvEmptyState(message = "Aucune chaîne pour afficher le guide")
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(bottom = 32.dp)
+                contentPadding = PaddingValues(bottom = 16.dp)
             ) {
                 items(channels) { channel ->
                     var isRowFocused by remember { mutableStateOf(false) }
@@ -1210,7 +1267,13 @@ fun TvEpgContent(
                                 .width(180.dp)
                                 .height(78.dp)
                                 .clip(RoundedCornerShape(14.dp))
-                                .onFocusChanged { isRowFocused = it.isFocused }
+                                .onFocusChanged {
+                                    isRowFocused = it.isFocused
+                                    if (it.isFocused) {
+                                        focusedChannel = channel
+                                        focusedProgram = programs.find { p -> p.isLiveNow(currentTime) } ?: programs.firstOrNull()
+                                    }
+                                }
                                 .focusable()
                                 .clickable { onSelectChannel(channel) }
                                 .onPreviewKeyEvent { keyEvent ->
@@ -1261,7 +1324,13 @@ fun TvEpgContent(
                                         .width(260.dp)
                                         .height(78.dp)
                                         .clip(RoundedCornerShape(14.dp))
-                                        .onFocusChanged { isProgFocused = it.isFocused }
+                                        .onFocusChanged {
+                                            isProgFocused = it.isFocused
+                                            if (it.isFocused) {
+                                                focusedProgram = prog
+                                                focusedChannel = channel
+                                            }
+                                        }
                                         .focusable()
                                         .clickable { onSelectChannel(channel) }
                                         .background(if (isLive) Color(0xFF162032) else SurfaceDark)
@@ -1318,6 +1387,50 @@ fun TvEpgContent(
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Bandeau d'information détaillé du programme ciblé
+            AnimatedVisibility(visible = focusedProgram != null) {
+                focusedProgram?.let { prog ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(0xFF131A26))
+                            .border(1.dp, CardBorderUnfocused, RoundedCornerShape(16.dp))
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    focusedChannel?.let { ch ->
+                                        Text(ch.name, color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text("•", color = TextSecondary, fontSize = 11.sp)
+                                    }
+                                    Text(prog.title, color = NoosCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Text("${prog.timeSlotFormatted} • ${prog.category ?: "Programme"}", color = TextSecondary, fontSize = 11.sp)
+                            }
+                            if (!prog.description.isNullOrBlank()) {
+                                Text(
+                                    text = prog.description,
+                                    color = TextPrimary,
+                                    fontSize = 11.sp,
+                                    lineHeight = 16.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     }
@@ -1399,5 +1512,621 @@ fun TvEmptyState(message: String) {
             color = TextSecondary,
             fontSize = 14.sp
         )
+    }
+}
+
+/**
+ * Modale cinématique de détails d'un film VOD pour Android TV
+ */
+@Composable
+fun TvMovieDetailModal(
+    movie: VodMovie,
+    isFavorite: Boolean,
+    onPlay: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val playFocusRequester = remember { FocusRequester() }
+    val context = LocalContext.current
+
+    BackHandler {
+        onDismiss()
+    }
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(100)
+        runCatching { playFocusRequester.requestFocus() }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xEE080A0F))
+            .onPreviewKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.Back) {
+                    onDismiss()
+                    true
+                } else false
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.85f)
+                .fillMaxHeight(0.84f)
+                .clip(RoundedCornerShape(24.dp))
+                .background(SurfaceDark)
+                .border(
+                    width = 1.5.dp,
+                    brush = Brush.horizontalGradient(listOf(NoosBlue.copy(alpha = 0.6f), NoosCyan.copy(alpha = 0.6f))),
+                    shape = RoundedCornerShape(24.dp)
+                )
+                .padding(26.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(28.dp)
+            ) {
+                // Colonne de gauche : Affiche 2:3 + Badges techniques
+                Column(
+                    modifier = Modifier.width(230.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(2f / 3f)
+                            .clip(RoundedCornerShape(18.dp))
+                            .border(1.5.dp, NoosCyan.copy(alpha = 0.4f), RoundedCornerShape(18.dp))
+                            .background(Color(0xFF162032))
+                    ) {
+                        if (!movie.posterUrl.isNullOrBlank()) {
+                            SubcomposeAsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(movie.posterUrl)
+                                    .crossfade(true)
+                                    .allowHardware(false)
+                                    .build(),
+                                contentDescription = movie.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(imageVector = Icons.Default.Movie, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(54.dp))
+                            }
+                        }
+
+                        if (movie.isHdr) {
+                            Box(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+                                HdrBadge(text = movie.hdrFormat ?: "HDR")
+                            }
+                        }
+                    }
+
+                    // Badges techniques (4K, HEVC, AC3)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ResolutionBadge(resolution = movie.resolution)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(SurfaceDarkVariant)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(movie.videoCodec.uppercase(), color = TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(SurfaceDarkVariant)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(movie.audioCodec.uppercase(), color = TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                // Colonne de droite : Détails, Synopsis & Actions
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        // Titre & Bouton Fermer
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Text(
+                                text = movie.title,
+                                color = TextPrimary,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            IconButton(
+                                onClick = onDismiss,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(SurfaceDarkVariant)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Fermer", tint = TextPrimary, modifier = Modifier.size(18.dp))
+                            }
+                        }
+
+                        // Ligne métadonnées : Année, Durée, Note
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            movie.releaseYear?.let {
+                                Text("$it", color = NoosCyan, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            Text("•", color = TextSecondary)
+                            Text(movie.durationFormatted, color = TextPrimary, fontSize = 13.sp)
+                            if (movie.rating > 0f) {
+                                Text("•", color = TextSecondary)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("★ ", color = GoldVip, fontSize = 13.sp)
+                                    Text(
+                                        text = String.format(java.util.Locale.US, "%.1f", movie.rating) + " / 10",
+                                        color = TextPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
+                        // Tags Genres
+                        if (movie.genres.isNotEmpty()) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                movie.genres.forEach { genre ->
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(50))
+                                            .background(SurfaceDarkVariant)
+                                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(genre, color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Synopsis / Plot
+                        if (!movie.plot.isNullOrBlank()) {
+                            Text(
+                                text = "Synopsis",
+                                color = TextPrimary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = movie.plot,
+                                color = TextSecondary,
+                                fontSize = 12.sp,
+                                lineHeight = 18.sp,
+                                maxLines = 5,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        // Casting & Réalisation
+                        if (movie.director != null || movie.cast.isNotEmpty()) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                movie.director?.let {
+                                    Column {
+                                        Text("Réalisation", color = TextSecondary, fontSize = 10.sp)
+                                        Text(it, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                                if (movie.cast.isNotEmpty()) {
+                                    Column {
+                                        Text("Distribution", color = TextSecondary, fontSize = 10.sp)
+                                        Text(movie.cast.joinToString(", "), color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Boutons d'action TV
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        var isPlayFocused by remember { mutableStateOf(false) }
+                        var isFavFocused by remember { mutableStateOf(false) }
+                        var isCloseFocused by remember { mutableStateOf(false) }
+
+                        // Bouton Play (Focus initial)
+                        Button(
+                            onClick = onPlay,
+                            modifier = Modifier
+                                .focusRequester(playFocusRequester)
+                                .onFocusChanged { isPlayFocused = it.isFocused }
+                                .focusable(),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isPlayFocused) NoosCyan else NoosBlue),
+                            shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 22.dp, vertical = 12.dp)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = if (isPlayFocused) Color.Black else Color.White)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Lancer le film", color = if (isPlayFocused) Color.Black else Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+
+                        // Bouton Favoris
+                        OutlinedButton(
+                            onClick = onToggleFavorite,
+                            modifier = Modifier
+                                .onFocusChanged { isFavFocused = it.isFocused }
+                                .focusable(),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isFavFocused) Color(0xFF1E2838) else Color.Transparent
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(
+                                width = if (isFavFocused) 2.dp else 1.dp,
+                                color = if (isFavFocused) FocusGlow else CardBorderUnfocused
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+                        ) {
+                            Text(if (isFavorite) "★ Dans vos favoris" else "☆ Ajouter aux favoris", color = if (isFavorite) GoldVip else TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        // Bouton Fermer
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .onFocusChanged { isCloseFocused = it.isFocused }
+                                .focusable(),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isCloseFocused) Color(0xFF1E2838) else Color.Transparent
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(
+                                width = if (isCloseFocused) 2.dp else 1.dp,
+                                color = if (isCloseFocused) FocusGlow else CardBorderUnfocused
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+                        ) {
+                            Text("Fermer", color = TextSecondary, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Modale cinématique de détails d'une série TV pour Android TV
+ */
+@Composable
+fun TvSeriesDetailModal(
+    series: Series,
+    isFavorite: Boolean,
+    onPlayEpisode: (Episode) -> Unit,
+    onToggleFavorite: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val firstFocusRequester = remember { FocusRequester() }
+    var selectedSeasonIndex by remember { mutableStateOf(0) }
+
+    BackHandler {
+        onDismiss()
+    }
+
+    val seasons = series.seasons.ifEmpty {
+        listOf(
+            Season(
+                seasonNumber = 1,
+                name = "Saison 1",
+                episodeCount = 1,
+                episodes = listOf(
+                    Episode(
+                        id = "${series.id}_e1",
+                        seriesId = series.id,
+                        seasonNumber = 1,
+                        episodeNumber = 1,
+                        title = "Épisode 1",
+                        streamUrl = ""
+                    )
+                )
+            )
+        )
+    }
+
+    val currentSeason = seasons.getOrElse(selectedSeasonIndex) { seasons.first() }
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(100)
+        runCatching { firstFocusRequester.requestFocus() }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xEE080A0F))
+            .onPreviewKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.Back) {
+                    onDismiss()
+                    true
+                } else false
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.90f)
+                .fillMaxHeight(0.86f)
+                .clip(RoundedCornerShape(24.dp))
+                .background(SurfaceDark)
+                .border(
+                    width = 1.5.dp,
+                    brush = Brush.horizontalGradient(listOf(NoosBlue.copy(alpha = 0.6f), NoosCyan.copy(alpha = 0.6f))),
+                    shape = RoundedCornerShape(24.dp)
+                )
+                .padding(26.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(28.dp)
+            ) {
+                // Colonne de gauche : Affiche 2:3 + Bouton Favoris
+                Column(
+                    modifier = Modifier.width(220.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(2f / 3f)
+                            .clip(RoundedCornerShape(18.dp))
+                            .border(1.5.dp, NoosCyan.copy(alpha = 0.4f), RoundedCornerShape(18.dp))
+                            .background(Color(0xFF162032))
+                    ) {
+                        if (!series.posterUrl.isNullOrBlank()) {
+                            SubcomposeAsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(series.posterUrl)
+                                    .crossfade(true)
+                                    .allowHardware(false)
+                                    .build(),
+                                contentDescription = series.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(imageVector = Icons.Default.VideoLibrary, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(54.dp))
+                            }
+                        }
+                    }
+
+                    // Boutons Favoris & Fermer sous l'affiche
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        var isFavFocused by remember { mutableStateOf(false) }
+                        OutlinedButton(
+                            onClick = onToggleFavorite,
+                            modifier = Modifier
+                                .weight(1f)
+                                .onFocusChanged { isFavFocused = it.isFocused }
+                                .focusable(),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isFavFocused) Color(0xFF1E2838) else Color.Transparent
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(
+                                width = if (isFavFocused) 2.dp else 1.dp,
+                                color = if (isFavFocused) FocusGlow else CardBorderUnfocused
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp)
+                        ) {
+                            Text(if (isFavorite) "★ Favori" else "☆ Favori", color = if (isFavorite) GoldVip else TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        var isCloseBtnFocused by remember { mutableStateOf(false) }
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .weight(1f)
+                                .onFocusChanged { isCloseBtnFocused = it.isFocused }
+                                .focusable(),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isCloseBtnFocused) Color(0xFF1E2838) else Color.Transparent
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(
+                                width = if (isCloseBtnFocused) 2.dp else 1.dp,
+                                color = if (isCloseBtnFocused) FocusGlow else CardBorderUnfocused
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp)
+                        ) {
+                            Text("Fermer", color = TextSecondary, fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                // Colonne de droite : Titre, Saisons, Liste des Épisodes
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Titre & Fermer
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = series.title,
+                                color = TextPrimary,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                series.releaseYear?.let { Text("$it", color = NoosCyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+                                Text("•", color = TextSecondary)
+                                Text("${seasons.size} Saison${if (seasons.size > 1) "s" else ""}", color = TextPrimary, fontSize = 12.sp)
+                                if (series.rating > 0f) {
+                                    Text("•", color = TextSecondary)
+                                    Text("★ ${String.format(java.util.Locale.US, "%.1f", series.rating)}", color = GoldVip, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(SurfaceDarkVariant)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Fermer", tint = TextPrimary, modifier = Modifier.size(18.dp))
+                        }
+                    }
+
+                    // Synopsis
+                    if (!series.plot.isNullOrBlank()) {
+                        Text(
+                            text = series.plot,
+                            color = TextSecondary,
+                            fontSize = 11.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    // Sélecteur de Saisons
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(seasons.size) { idx ->
+                            val s = seasons[idx]
+                            val isSelected = idx == selectedSeasonIndex
+                            var isChipFocused by remember { mutableStateOf(false) }
+
+                            var chipMod = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .onFocusChanged { isChipFocused = it.isFocused }
+                                .focusable()
+                                .clickable { selectedSeasonIndex = idx }
+                                .background(if (isChipFocused) Color.White else if (isSelected) NoosBlue.copy(alpha = 0.35f) else SurfaceDarkVariant)
+                                .border(
+                                    width = if (isChipFocused) 2.5.dp else if (isSelected) 1.dp else 1.dp,
+                                    color = if (isChipFocused) FocusGlow else if (isSelected) NoosBlue else CardBorderUnfocused,
+                                    shape = RoundedCornerShape(50)
+                                )
+                                .padding(horizontal = 14.dp, vertical = 6.dp)
+
+                            if (idx == 0) {
+                                chipMod = chipMod.focusRequester(firstFocusRequester)
+                            }
+
+                            Box(modifier = chipMod) {
+                                Text(
+                                    text = s.name.ifBlank { "Saison ${s.seasonNumber}" },
+                                    color = if (isChipFocused) Color.Black else if (isSelected) Color.White else TextSecondary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    // Liste des Épisodes de la saison sélectionnée
+                    Text("Épisodes (${currentSeason.episodes.size})", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+
+                    LazyColumn(
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(bottom = 8.dp)
+                    ) {
+                        items(currentSeason.episodes) { ep ->
+                            var isEpFocused by remember { mutableStateOf(false) }
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .onFocusChanged { isEpFocused = it.isFocused }
+                                    .focusable()
+                                    .clickable { onPlayEpisode(ep) }
+                                    .background(if (isEpFocused) Color(0xFF1E2838) else SurfaceDarkVariant)
+                                    .border(
+                                        width = if (isEpFocused) 2.5.dp else 1.dp,
+                                        color = if (isEpFocused) FocusGlow else CardBorderUnfocused,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .clip(CircleShape)
+                                                .background(if (isEpFocused) NoosCyan else NoosBlue),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                Icons.Default.PlayArrow,
+                                                contentDescription = null,
+                                                tint = if (isEpFocused) Color.Black else Color.White,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+
+                                        Column {
+                                            Text(
+                                                text = "Épisode ${ep.episodeNumber} : ${ep.title}",
+                                                color = if (isEpFocused) NoosCyan else TextPrimary,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            ep.durationMinutes?.let { dur ->
+                                                Text("$dur min", color = TextSecondary, fontSize = 10.sp)
+                                            }
+                                        }
+                                    }
+
+                                    Text("▶ Lire", color = if (isEpFocused) NoosCyan else TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

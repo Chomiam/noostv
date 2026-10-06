@@ -98,6 +98,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                var customStreamTitle by remember { mutableStateOf<String?>(null) }
+                var customStreamSubtitle by remember { mutableStateOf<String?>(null) }
+
                 fun startPlayMovie(movie: VodMovie) {
                     val success = playerEngine.playStream(
                         url = movie.streamUrl,
@@ -108,6 +111,28 @@ class MainActivity : ComponentActivity() {
                     if (success) {
                         currentMovie = movie
                         currentChannel = null
+                        customStreamTitle = null
+                        customStreamSubtitle = null
+                        currentScreen = CurrentScreen.PLAYER
+                    } else {
+                        showUpgradeDialog = true
+                    }
+                }
+
+                fun startPlayEpisode(ser: Series, ep: io.noostv.data.model.Episode) {
+                    val streamUrl = if (ep.streamUrl.isNotBlank()) ep.streamUrl else "${sessionManager.serverUrl.trimEnd('/')}/series/${sessionManager.username}/${sessionManager.password}/${ep.id}.mp4"
+                    val epSubtitle = "S${ep.seasonNumber}E${ep.episodeNumber}: ${ep.title}"
+                    val success = playerEngine.playStream(
+                        url = streamUrl,
+                        title = "${ser.title} - $epSubtitle",
+                        isHdrStream = false,
+                        is4K = false
+                    )
+                    if (success) {
+                        currentMovie = null
+                        currentChannel = null
+                        customStreamTitle = ser.title
+                        customStreamSubtitle = epSubtitle
                         currentScreen = CurrentScreen.PLAYER
                     } else {
                         showUpgradeDialog = true
@@ -116,19 +141,25 @@ class MainActivity : ComponentActivity() {
 
                 fun startPlaySeries(ser: Series) {
                     val ep = ser.seasons.firstOrNull()?.episodes?.firstOrNull()
-                    val streamUrl = ep?.streamUrl ?: "${sessionManager.serverUrl.trimEnd('/')}/series/${sessionManager.username}/${sessionManager.password}/${ser.id}.mp4"
-                    val success = playerEngine.playStream(
-                        url = streamUrl,
-                        title = "${ser.title} - ${ep?.title ?: "Épisode 1"}",
-                        isHdrStream = false,
-                        is4K = false
-                    )
-                    if (success) {
-                        currentMovie = null
-                        currentChannel = null
-                        currentScreen = CurrentScreen.PLAYER
+                    if (ep != null) {
+                        startPlayEpisode(ser, ep)
                     } else {
-                        showUpgradeDialog = true
+                        val streamUrl = "${sessionManager.serverUrl.trimEnd('/')}/series/${sessionManager.username}/${sessionManager.password}/${ser.id}.mp4"
+                        val success = playerEngine.playStream(
+                            url = streamUrl,
+                            title = ser.title,
+                            isHdrStream = false,
+                            is4K = false
+                        )
+                        if (success) {
+                            currentMovie = null
+                            currentChannel = null
+                            customStreamTitle = ser.title
+                            customStreamSubtitle = "Série"
+                            currentScreen = CurrentScreen.PLAYER
+                        } else {
+                            showUpgradeDialog = true
+                        }
                     }
                 }
 
@@ -205,6 +236,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onSelectMovie = { startPlayMovie(it) },
                                 onSelectSeries = { startPlaySeries(it) },
+                                onSelectEpisode = { ser, ep -> startPlayEpisode(ser, ep) },
                                 onSelectVodCategory = { cat ->
                                     coroutineScope.launch {
                                         repository.loadVodByCategory(
@@ -289,13 +321,14 @@ class MainActivity : ComponentActivity() {
                             epgPrograms = epgPrograms,
                             onSelectChannel = { startPlayChannel(it) },
                             onSelectMovie = { startPlayMovie(it) },
+                            onSelectSeries = { startPlaySeries(it) },
                             onBack = { currentScreen = CurrentScreen.HOME }
                         )
                     }
 
                     CurrentScreen.PLAYER -> {
-                        val activeTitle = currentChannel?.name ?: currentMovie?.title ?: "NoosTV Stream"
-                        val activeSubtitle = currentChannel?.categoryName ?: currentMovie?.genres?.joinToString(", ") ?: ""
+                        val activeTitle = currentChannel?.name ?: currentMovie?.title ?: customStreamTitle ?: "NoosTV Stream"
+                        val activeSubtitle = currentChannel?.categoryName ?: currentMovie?.genres?.joinToString(", ") ?: customStreamSubtitle ?: ""
                         val isLive = currentChannel != null
                         val isHdr = currentChannel?.isHdr ?: currentMovie?.isHdr ?: false
                         val resolution = currentChannel?.resolution ?: currentMovie?.resolution ?: "1080p"
