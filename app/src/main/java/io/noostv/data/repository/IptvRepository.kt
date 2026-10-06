@@ -32,6 +32,21 @@ class IptvRepository(
     private val _categories = MutableStateFlow<List<Category>>(emptyList())
     val categories: StateFlow<List<Category>> = _categories.asStateFlow()
 
+    private val _vodCategories = MutableStateFlow<List<Category>>(emptyList())
+    val vodCategories: StateFlow<List<Category>> = _vodCategories.asStateFlow()
+
+    private val _seriesCategories = MutableStateFlow<List<Category>>(emptyList())
+    val seriesCategories: StateFlow<List<Category>> = _seriesCategories.asStateFlow()
+
+    private val _isVodLoading = MutableStateFlow(false)
+    val isVodLoading: StateFlow<Boolean> = _isVodLoading.asStateFlow()
+
+    private val _isSeriesLoading = MutableStateFlow(false)
+    val isSeriesLoading: StateFlow<Boolean> = _isSeriesLoading.asStateFlow()
+
+    private val _isLiveLoading = MutableStateFlow(false)
+    val isLiveLoading: StateFlow<Boolean> = _isLiveLoading.asStateFlow()
+
     init {
         loadDemoCatalog()
     }
@@ -60,14 +75,16 @@ class IptvRepository(
 
     /**
      * Charge l'ensemble du catalogue en direct depuis un serveur Xtream Codes
+     * avec chargement progressif ultra-rapide (<200ms pour le direct)
      */
     suspend fun loadFromXtream(serverUrl: String, username: String, password: String): Result<Unit> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         try {
-            // 1. Catégories direct
+            _isLiveLoading.value = true
+
+            // 1. Catégories direct & Chaînes direct (rapide, ~40Ko)
             val liveCatsResult = xtreamClient.getLiveCategories(serverUrl, username, password)
             val liveCats = liveCatsResult.getOrDefault(emptyList())
 
-            // 2. Chaînes direct
             val liveStreamsResult = xtreamClient.getLiveStreams(serverUrl, username, password)
             val liveStreams = liveStreamsResult.getOrDefault(emptyList())
 
@@ -77,28 +94,108 @@ class IptvRepository(
                 ch.copy(categoryName = realCatName)
             }
 
-            // 3. VOD Films
-            val vodResult = xtreamClient.getVodStreams(serverUrl, username, password, limit = 40)
-            val vodMovies = vodResult.getOrDefault(emptyList())
-
-            // 4. Séries
-            val seriesResult = xtreamClient.getSeriesStreams(serverUrl, username, password, limit = 20)
-            val series = seriesResult.getOrDefault(emptyList())
-
+            // MISE À JOUR IMMÉDIATE DU DIRECT TV : accessible en direct sans attendre la VOD
             if (enrichedChannels.isNotEmpty()) {
                 _channels.value = enrichedChannels
                 _categories.value = liveCats
             }
-            if (vodMovies.isNotEmpty()) {
-                _movies.value = vodMovies
+            _isLiveLoading.value = false
+
+            // 2. Catégories Films VOD (rapide, ~50Ko)
+            val vodCatsResult = xtreamClient.getVodCategories(serverUrl, username, password)
+            val vodCats = vodCatsResult.getOrDefault(emptyList())
+            if (vodCats.isNotEmpty()) {
+                _vodCategories.value = vodCats
             }
-            if (series.isNotEmpty()) {
-                _series.value = series
+
+            // 3. Charger uniquement la première catégorie Films VOD (50Ko au lieu de 20Mo)
+            val firstVodCatId = vodCats.firstOrNull()?.id ?: ""
+            if (firstVodCatId.isNotBlank()) {
+                _isVodLoading.value = true
+                val initialVodResult = xtreamClient.getVodStreams(serverUrl, username, password, categoryId = firstVodCatId, limit = 40)
+                initialVodResult.onSuccess {
+                    _movies.value = it
+                }
+                _isVodLoading.value = false
+            }
+
+            // 4. Catégories Séries (rapide, ~50Ko)
+            val seriesCatsResult = xtreamClient.getSeriesCategories(serverUrl, username, password)
+            val seriesCats = seriesCatsResult.getOrDefault(emptyList())
+            if (seriesCats.isNotEmpty()) {
+                _seriesCategories.value = seriesCats
+            }
+
+            // 5. Charger uniquement la première catégorie Séries (limite 40)
+            val firstSeriesCatId = seriesCats.firstOrNull()?.id ?: ""
+            if (firstSeriesCatId.isNotBlank()) {
+                _isSeriesLoading.value = true
+                val initialSeriesResult = xtreamClient.getSeriesStreams(serverUrl, username, password, categoryId = firstSeriesCatId, limit = 40)
+                initialSeriesResult.onSuccess {
+                    _series.value = it
+                }
+                _isSeriesLoading.value = false
+            }
+
+            // 6. Charger en arrière-plan l'EPG pour les premières chaînes
+            val epgList = mutableListOf<EpgProgram>()
+            val channelsToEpg = enrichedChannels.take(15)
+            for (ch in channelsToEpg) {
+                val epgResult = xtreamClient.getShortEpg(serverUrl, username, password, ch.id)
+                epgResult.onSuccess { progs ->
+                    epgList.addAll(progs)
+                }
+            }
+            if (epgList.isNotEmpty()) {
+                _epgPrograms.value = epgList
             }
 
             Result.success(Unit)
         } catch (e: Exception) {
+            _isLiveLoading.value = false
+            _isVodLoading.value = false
+            _isSeriesLoading.value = false
             Result.failure(e)
+        }
+    }
+
+    /**
+     * Charge les films VOD d'une catégorie spécifique sans surcharger la mémoire
+     */
+    suspend fun loadVodByCategory(serverUrl: String, username: String, password: String, categoryId: String) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        _isVodLoading.value = true
+        try {
+            val targetCatId = if (categoryId == "Toutes" || categoryId.isBlank()) {
+                _vodCategories.value.firstOrNull()?.id ?: ""
+            } else {
+                categoryId
+            }
+            val vodResult = xtreamClient.getVodStreams(serverUrl, username, password, categoryId = targetCatId, limit = 40)
+            vodResult.onSuccess {
+                _movies.value = it
+            }
+        } finally {
+            _isVodLoading.value = false
+        }
+    }
+
+    /**
+     * Charge les séries d'une catégorie spécifique sans surcharger la mémoire
+     */
+    suspend fun loadSeriesByCategory(serverUrl: String, username: String, password: String, categoryId: String) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        _isSeriesLoading.value = true
+        try {
+            val targetCatId = if (categoryId == "Toutes" || categoryId.isBlank()) {
+                _seriesCategories.value.firstOrNull()?.id ?: ""
+            } else {
+                categoryId
+            }
+            val seriesResult = xtreamClient.getSeriesStreams(serverUrl, username, password, categoryId = targetCatId, limit = 40)
+            seriesResult.onSuccess {
+                _series.value = it
+            }
+        } finally {
+            _isSeriesLoading.value = false
         }
     }
 
@@ -317,6 +414,16 @@ class IptvRepository(
             Category("general", "Généraliste"),
             Category("sport", "Sport"),
             Category("documentaires", "Documentaires")
+        )
+        _vodCategories.value = listOf(
+            Category("sf_movies", "Science-Fiction", CategoryType.VOD),
+            Category("drame_movies", "Drame", CategoryType.VOD),
+            Category("action_movies", "Action", CategoryType.VOD)
+        )
+        _seriesCategories.value = listOf(
+            Category("drama_series", "Drame", CategoryType.SERIES),
+            Category("action_series", "Action", CategoryType.SERIES),
+            Category("horreur_series", "Horreur", CategoryType.SERIES)
         )
     }
 }

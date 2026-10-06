@@ -17,6 +17,7 @@
         android:required="false" />
 
     <application
+        android:name=".NoosApplication"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:banner="@drawable/noostv_banner"

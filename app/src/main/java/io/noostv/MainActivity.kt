@@ -3,6 +3,7 @@ package io.noostv
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
 import kotlinx.coroutines.launch
@@ -11,6 +12,7 @@ import io.noostv.core.entitlement.EntitlementManager
 import io.noostv.core.player.PlayerEngine
 import io.noostv.core.storage.SessionManager
 import io.noostv.data.model.Channel
+import io.noostv.data.model.Series
 import io.noostv.data.model.VodMovie
 import io.noostv.data.repository.IptvRepository
 import io.noostv.ui.common.SearchScreen
@@ -70,6 +72,11 @@ class MainActivity : ComponentActivity() {
                 val movies by repository.movies.collectAsState()
                 val series by repository.series.collectAsState()
                 val epgPrograms by repository.epgPrograms.collectAsState()
+                val categories by repository.categories.collectAsState()
+                val vodCategories by repository.vodCategories.collectAsState()
+                val seriesCategories by repository.seriesCategories.collectAsState()
+                val isVodLoading by repository.isVodLoading.collectAsState()
+                val isSeriesLoading by repository.isSeriesLoading.collectAsState()
 
                 var currentChannel by remember { mutableStateOf<Channel?>(null) }
                 var currentMovie by remember { mutableStateOf<VodMovie?>(null) }
@@ -106,6 +113,24 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                fun startPlaySeries(ser: Series) {
+                    val ep = ser.seasons.firstOrNull()?.episodes?.firstOrNull()
+                    val streamUrl = ep?.streamUrl ?: "${sessionManager.serverUrl.trimEnd('/')}/series/${sessionManager.username}/${sessionManager.password}/${ser.id}.mp4"
+                    val success = playerEngine.playStream(
+                        url = streamUrl,
+                        title = "${ser.title} - ${ep?.title ?: "Épisode 1"}",
+                        isHdrStream = false,
+                        is4K = false
+                    )
+                    if (success) {
+                        currentMovie = null
+                        currentChannel = null
+                        currentScreen = CurrentScreen.PLAYER
+                    } else {
+                        showUpgradeDialog = true
+                    }
+                }
+
                 val coroutineScope = rememberCoroutineScope()
 
                 // Chargement automatique en arrière-plan si déjà connecté
@@ -117,6 +142,14 @@ class MainActivity : ComponentActivity() {
                             sessionManager.password
                         )
                     }
+                }
+
+                // Gestion du bouton Retour de la télécommande TV pour revenir au menu principal
+                BackHandler(enabled = currentScreen != CurrentScreen.HOME) {
+                    if (currentScreen == CurrentScreen.PLAYER) {
+                        playerEngine.stop()
+                    }
+                    currentScreen = CurrentScreen.HOME
                 }
 
                 when (currentScreen) {
@@ -147,10 +180,36 @@ class MainActivity : ComponentActivity() {
                                 channels = channels,
                                 movies = movies,
                                 series = series,
+                                epgPrograms = epgPrograms,
+                                categories = categories,
+                                vodCategories = vodCategories,
+                                seriesCategories = seriesCategories,
+                                isVodLoading = isVodLoading,
+                                isSeriesLoading = isSeriesLoading,
                                 entitlementManager = entitlementManager,
                                 onSelectChannel = { startPlayChannel(it) },
                                 onSelectMovie = { startPlayMovie(it) },
-                                onOpenEpg = { currentScreen = CurrentScreen.EPG },
+                                onSelectSeries = { startPlaySeries(it) },
+                                onSelectVodCategory = { cat ->
+                                    coroutineScope.launch {
+                                        repository.loadVodByCategory(
+                                            sessionManager.serverUrl,
+                                            sessionManager.username,
+                                            sessionManager.password,
+                                            cat.id
+                                        )
+                                    }
+                                },
+                                onSelectSeriesCategory = { cat ->
+                                    coroutineScope.launch {
+                                        repository.loadSeriesByCategory(
+                                            sessionManager.serverUrl,
+                                            sessionManager.username,
+                                            sessionManager.password,
+                                            cat.id
+                                        )
+                                    }
+                                },
                                 onOpenSearch = { currentScreen = CurrentScreen.SEARCH },
                                 onOpenUpgrade = { showUpgradeDialog = true },
                                 onOpenLogin = { currentScreen = CurrentScreen.LOGIN }
