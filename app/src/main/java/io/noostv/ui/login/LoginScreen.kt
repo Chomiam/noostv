@@ -1,6 +1,7 @@
 package io.noostv.ui.login
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,6 +24,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -31,6 +34,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.noostv.R
 import io.noostv.data.api.XtreamCodesClient
 import io.noostv.ui.theme.*
 import kotlinx.coroutines.launch
@@ -82,24 +86,31 @@ fun LoginScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Logo & Titre
+            // Logo Officiel NOOS & Badge TV en dégradé
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = "NOOS",
-                    color = NeonCyan,
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 2.sp
+                Image(
+                    painter = painterResource(id = R.drawable.noos_logo),
+                    contentDescription = "NOOS",
+                    modifier = Modifier.height(46.dp),
+                    contentScale = ContentScale.Fit
                 )
-                Text(
-                    text = "TV",
-                    color = Color.White,
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(NoosGradient)
+                        .padding(horizontal = 10.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = "TV",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.sp
+                    )
+                }
             }
 
             Text(
@@ -107,7 +118,7 @@ fun LoginScreen(
                 color = TextSecondary,
                 fontSize = 14.sp,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 4.dp, bottom = 24.dp)
+                modifier = Modifier.padding(top = 8.dp, bottom = 24.dp)
             )
 
             // Message d'erreur
@@ -115,12 +126,12 @@ fun LoginScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(RedLive.copy(alpha = 0.2f))
-                        .border(1.dp, RedLive, RoundedCornerShape(8.dp))
-                        .padding(12.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(RedLive.copy(alpha = 0.15f))
+                        .border(1.dp, RedLive.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+                        .padding(14.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Icon(imageVector = Icons.Default.ErrorOutline, contentDescription = null, tint = RedLive)
                         Text(text = errorMessage ?: "", color = Color.White, fontSize = 13.sp)
                     }
@@ -181,8 +192,12 @@ fun LoginScreen(
                 isPrimary = true,
                 enabled = !isLoading,
                 onClick = {
-                    if (serverUrl.isBlank() || username.isBlank() || password.isBlank()) {
-                        errorMessage = "Veuillez renseigner le serveur, l'identifiant et le mot de passe."
+                    val cleanUrl = serverUrl.trim()
+                    val cleanUser = username.trim()
+                    val cleanPass = password.trim()
+
+                    if (cleanUrl.isBlank() || cleanUser.isBlank() || cleanPass.isBlank()) {
+                        errorMessage = "Veuillez renseigner tous les champs de connexion"
                         return@TvActionButton
                     }
 
@@ -190,26 +205,42 @@ fun LoginScreen(
                     errorMessage = null
 
                     coroutineScope.launch {
-                        val result = xtreamClient.authenticate(serverUrl, username, password)
+                        val authResult = xtreamClient.authenticate(cleanUrl, cleanUser, cleanPass)
                         isLoading = false
-                        result.onSuccess { accountInfo ->
-                            onLoginSuccess(serverUrl, username, password)
-                        }.onFailure { ex ->
-                            errorMessage = "Échec de connexion : ${ex.message ?: "Serveur injoignable"}"
-                        }
+                        authResult.fold(
+                            onSuccess = { userInfo ->
+                                onLoginSuccess(cleanUrl, cleanUser, cleanPass)
+                            },
+                            onFailure = { err ->
+                                errorMessage = "Échec de connexion : ${err.localizedMessage ?: "Identifiants ou URL invalides"}"
+                            }
+                        )
                     }
                 }
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Bouton 2 : Mode Démo (sans identifiant)
+            // Bouton 2 : Mode Démo / Chaînes de Test
             TvActionButton(
-                text = "Explorer en Mode Démo (4K HDR Gratuit)",
+                text = "Accéder au Mode Démo Rapide",
                 icon = Icons.Default.PlayArrow,
                 focusRequester = demoFocus,
                 isPrimary = false,
-                onClick = onDemoSelected
+                enabled = !isLoading,
+                onClick = {
+                    onDemoSelected()
+                }
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Astuce pour l'utilisateur
+            Text(
+                text = "💡 Astuce : Sur Android TV, utilisez les flèches Haut/Bas pour naviguer entre les champs et OK pour valider.",
+                color = TextSecondary.copy(alpha = 0.7f),
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center
             )
         }
     }
@@ -234,9 +265,9 @@ fun TvInputField(
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             text = label,
-            color = if (isFocused) NeonCyan else TextSecondary,
+            color = if (isFocused) NoosCyan else TextSecondary,
             fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(bottom = 6.dp)
         )
 
@@ -249,16 +280,16 @@ fun TvInputField(
                 .onFocusChanged { isFocused = it.isFocused }
                 .focusable()
                 .border(
-                    width = if (isFocused) 3.dp else 1.dp,
-                    color = if (isFocused) FocusGlow else SurfaceDarkVariant,
-                    shape = RoundedCornerShape(12.dp)
+                    width = if (isFocused) 2.5.dp else 1.dp,
+                    color = if (isFocused) FocusGlow else CardBorderUnfocused,
+                    shape = RoundedCornerShape(16.dp)
                 ),
-            placeholder = { Text(placeholder, color = TextSecondary.copy(alpha = 0.6f)) },
+            placeholder = { Text(placeholder, color = TextSecondary.copy(alpha = 0.5f)) },
             leadingIcon = {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = if (isFocused) NeonCyan else TextSecondary
+                    tint = if (isFocused) NoosCyan else TextSecondary
                 )
             },
             trailingIcon = if (isPassword && onTogglePassword != null) {
@@ -267,7 +298,7 @@ fun TvInputField(
                         Icon(
                             imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                             contentDescription = "Afficher mot de passe",
-                            tint = if (isFocused) NeonCyan else TextSecondary
+                            tint = if (isFocused) NoosCyan else TextSecondary
                         )
                     }
                 }
@@ -282,7 +313,7 @@ fun TvInputField(
                 focusedBorderColor = Color.Transparent,
                 unfocusedBorderColor = Color.Transparent
             ),
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(16.dp),
             keyboardOptions = keyboardOptions,
             keyboardActions = keyboardActions
         )
@@ -306,20 +337,20 @@ fun TvActionButton(
             .fillMaxWidth()
             .height(52.dp)
             .scale(scale)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(50))
             .background(
                 when {
                     !enabled -> SurfaceDarkVariant.copy(alpha = 0.5f)
-                    isPrimary && isFocused -> NeonCyan
-                    isPrimary -> DeepCyan
+                    isPrimary && isFocused -> Color.White
+                    isPrimary -> NoosBlue
                     isFocused -> SurfaceDarkVariant
                     else -> SurfaceDark
                 }
             )
             .border(
-                width = if (isFocused) 3.dp else 1.dp,
-                color = if (isFocused) Color.White else if (isPrimary) Color.Transparent else SurfaceDarkVariant,
-                shape = RoundedCornerShape(12.dp)
+                width = if (isFocused) 2.5.dp else 1.dp,
+                color = if (isFocused) FocusGlow else CardBorderUnfocused,
+                shape = RoundedCornerShape(50)
             )
             .focusRequester(focusRequester)
             .onFocusChanged { isFocused = it.isFocused }
@@ -335,12 +366,12 @@ fun TvActionButton(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (isPrimary && isFocused) Color.Black else if (isPrimary) Color.Black else NeonCyan,
+                tint = if (isPrimary && isFocused) Color.Black else if (isPrimary) Color.White else NoosCyan,
                 modifier = Modifier.size(20.dp)
             )
             Text(
                 text = text,
-                color = if (isPrimary && isFocused) Color.Black else if (isPrimary) Color.Black else Color.White,
+                color = if (isPrimary && isFocused) Color.Black else if (isPrimary) Color.White else TextPrimary,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold
             )

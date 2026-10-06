@@ -44,9 +44,9 @@ fun UpgradeDialog(
             modifier = Modifier
                 .widthIn(max = 520.dp)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(24.dp))
                 .background(SurfaceDark)
-                .border(1.5.dp, GoldVip.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+                .border(1.5.dp, GoldVip.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
                 .padding(24.dp)
         ) {
             Column(
@@ -86,9 +86,9 @@ fun UpgradeDialog(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(SurfaceDarkVariant, RoundedCornerShape(12.dp))
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .background(SurfaceDarkVariant, RoundedCornerShape(16.dp))
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     FeatureRow(title = "Flux 4K UHD, HDR10, HLG & Dolby Vision")
                     FeatureRow(title = "Décodage matériel AV1 & HEVC optimisé")
@@ -186,6 +186,7 @@ fun UpgradeDialog(
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(50),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary)
                     ) {
                         Text("Fermer")
@@ -195,6 +196,7 @@ fun UpgradeDialog(
                     Button(
                         onClick = onActivatePremium,
                         modifier = Modifier.weight(1.5f),
+                        shape = RoundedCornerShape(50),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = GoldVip,
                             contentColor = Color.Black

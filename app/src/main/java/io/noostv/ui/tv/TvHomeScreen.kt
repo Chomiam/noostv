@@ -2,6 +2,7 @@ package io.noostv.ui.tv
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -24,17 +26,20 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
+import io.noostv.R
 import io.noostv.core.entitlement.EntitlementManager
 import io.noostv.data.model.Category
 import io.noostv.data.model.Channel
@@ -48,7 +53,7 @@ import io.noostv.ui.common.ResolutionBadge
 import io.noostv.ui.theme.*
 
 /**
- * 4 Catégories latérales demandées :
+ * 4 Catégories latérales :
  * 1. TV (Direct)
  * 2. Guide TV (EPG)
  * 3. Films (VOD Films)
@@ -126,7 +131,7 @@ fun TvHomeScreen(
             .fillMaxSize()
             .background(DarkOledBackground)
     ) {
-        // ==================== BARRE LATÉRALE GAUCHE : TV, GUIDE TV, FILMS, SÉRIES ====================
+        // ==================== BARRE LATÉRALE GAUCHE MODERNE & ARRONDIE ====================
         TvSidebar(
             selectedTab = selectedTab,
             sidebarFocusRequesters = sidebarFocusRequesters,
@@ -145,9 +150,8 @@ fun TvHomeScreen(
                 .fillMaxHeight()
                 .padding(top = 18.dp, end = 24.dp)
         ) {
-            // Header supérieur (Logo, statut VIP, Recherche, Identifiants)
+            // Header supérieur (Logo officiel NOOS, statut VIP, Recherche, Identifiants)
             TvHeader(
-                selectedTab = selectedTab,
                 isPremium = subscription.isPremium,
                 onOpenSearch = onOpenSearch,
                 onOpenUpgrade = onOpenUpgrade,
@@ -179,8 +183,8 @@ fun TvHomeScreen(
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(4),
                             modifier = Modifier.fillMaxSize(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
                             contentPadding = PaddingValues(bottom = 32.dp)
                         ) {
                             items(filteredChannels.size) { index ->
@@ -208,7 +212,7 @@ fun TvHomeScreen(
                     )
                 }
 
-                // ==================== 3. ONGLET FILMS (VOD) ====================
+                // ==================== 3. ONGLET FILMS (VOD) — RATIO CINÉMA 2:3 ====================
                 TvNavTab.MOVIES -> {
                     val vodCatNames = remember(vodCategories) {
                         listOf("Toutes") + vodCategories.map { it.name }
@@ -235,18 +239,19 @@ fun TvHomeScreen(
                     } else if (movies.isEmpty()) {
                         TvEmptyState(message = "Aucun film disponible dans cette catégorie")
                     } else {
+                        // 6 colonnes avec ratio standard d'affiche 2:3 (non rognée)
                         LazyVerticalGrid(
-                            columns = GridCells.Fixed(5),
+                            columns = GridCells.Fixed(6),
                             modifier = Modifier.fillMaxSize(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
                             contentPadding = PaddingValues(bottom = 32.dp)
                         ) {
                             items(movies.size) { index ->
                                 val movie = movies[index]
                                 TvMovieGridCard(
                                     movie = movie,
-                                    onNavigateLeft = if (index % 5 == 0) {
+                                    onNavigateLeft = if (index % 6 == 0) {
                                         { sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus() }
                                     } else null,
                                     onClick = { onSelectMovie(movie) }
@@ -256,7 +261,7 @@ fun TvHomeScreen(
                     }
                 }
 
-                // ==================== 4. ONGLET SÉRIES (VOD) ====================
+                // ==================== 4. ONGLET SÉRIES (VOD) — RATIO CINÉMA 2:3 ====================
                 TvNavTab.SERIES -> {
                     val seriesCatNames = remember(seriesCategories) {
                         listOf("Toutes") + seriesCategories.map { it.name }
@@ -283,18 +288,19 @@ fun TvHomeScreen(
                     } else if (series.isEmpty()) {
                         TvEmptyState(message = "Aucune série disponible dans cette catégorie")
                     } else {
+                        // 6 colonnes avec ratio standard d'affiche 2:3 (non rognée)
                         LazyVerticalGrid(
-                            columns = GridCells.Fixed(5),
+                            columns = GridCells.Fixed(6),
                             modifier = Modifier.fillMaxSize(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
                             contentPadding = PaddingValues(bottom = 32.dp)
                         ) {
                             items(series.size) { index ->
                                 val ser = series[index]
                                 TvSeriesGridCard(
                                     series = ser,
-                                    onNavigateLeft = if (index % 5 == 0) {
+                                    onNavigateLeft = if (index % 6 == 0) {
                                         { sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus() }
                                     } else null,
                                     onClick = { onSelectSeries(ser) }
@@ -309,7 +315,7 @@ fun TvHomeScreen(
 }
 
 /**
- * Barre latérale avec 4 onglets : TV, Guide TV, Films, Séries
+ * Barre latérale avec 4 onglets sobres et arrondis (TV, Guide TV, Films, Séries)
  */
 @Composable
 fun TvSidebar(
@@ -322,7 +328,7 @@ fun TvSidebar(
 
     Column(
         modifier = Modifier
-            .width(96.dp)
+            .width(88.dp)
             .fillMaxHeight()
             .background(SurfaceDark)
             .padding(vertical = 24.dp),
@@ -334,7 +340,7 @@ fun TvSidebar(
             var isFocused by remember { mutableStateOf(false) }
 
             val scale by animateFloatAsState(
-                targetValue = if (isFocused) 1.15f else 1.0f,
+                targetValue = if (isFocused) 1.10f else 1.0f,
                 label = "sidebar_scale"
             )
 
@@ -344,9 +350,9 @@ fun TvSidebar(
 
             Box(
                 modifier = Modifier
-                    .size(64.dp)
+                    .size(60.dp)
                     .scale(scale)
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(20.dp))
                     .focusRequester(myRequester)
                     .onFocusChanged {
                         isFocused = it.isFocused
@@ -384,15 +390,15 @@ fun TvSidebar(
                     }
                     .background(
                         when {
-                            isFocused -> Color(0xFF1D3554)
-                            isSelected -> NeonCyan.copy(alpha = 0.25f)
+                            isFocused -> Color(0xFF1E2838)
+                            isSelected -> NoosBlue.copy(alpha = 0.22f)
                             else -> Color.Transparent
                         }
                     )
                     .border(
-                        width = if (isFocused) 3.5.dp else if (isSelected) 1.5.dp else 0.dp,
-                        color = if (isFocused) FocusGlow else if (isSelected) NeonCyan else Color.Transparent,
-                        shape = RoundedCornerShape(14.dp)
+                        width = if (isFocused) 3.dp else if (isSelected) 1.dp else 0.dp,
+                        color = if (isFocused) FocusGlow else if (isSelected) NoosBlue.copy(alpha = 0.6f) else Color.Transparent,
+                        shape = RoundedCornerShape(20.dp)
                     ),
                 contentAlignment = Alignment.Center
             ) {
@@ -403,14 +409,14 @@ fun TvSidebar(
                     Icon(
                         imageVector = tab.icon,
                         contentDescription = tab.label,
-                        tint = if (isFocused) Color.White else if (isSelected) NeonCyan else TextSecondary,
-                        modifier = Modifier.size(26.dp)
+                        tint = if (isFocused) Color.White else if (isSelected) NoosCyan else TextSecondary,
+                        modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = tab.label,
-                        color = if (isFocused) Color.White else if (isSelected) NeonCyan else TextSecondary,
-                        fontSize = 11.sp,
+                        color = if (isFocused) Color.White else if (isSelected) NoosCyan else TextSecondary,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -420,11 +426,10 @@ fun TvSidebar(
 }
 
 /**
- * En-tête supérieur : Logo NOOS TV, statut VIP, bouton Recherche et bouton Identifiants IPTV
+ * En-tête supérieur moderne : Logo officiel NOOS, pill TV en dégradé, boutons arrondis
  */
 @Composable
 fun TvHeader(
-    selectedTab: TvNavTab,
     isPremium: Boolean,
     onOpenSearch: () -> Unit,
     onOpenUpgrade: () -> Unit,
@@ -435,53 +440,84 @@ fun TvHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("NOOS", color = NeonCyan, fontSize = 24.sp, fontWeight = FontWeight.Black)
-            Text("TV", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(10.dp))
+        // Logo Officiel NOOS + Badge Gradient TV
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.noos_logo),
+                contentDescription = "NOOS",
+                modifier = Modifier.height(34.dp),
+                contentScale = ContentScale.Fit
+            )
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(NoosGradient)
+                    .padding(horizontal = 9.dp, vertical = 2.5.dp)
+            ) {
+                Text(
+                    text = "TV",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.sp
+                )
+            }
             if (isPremium) {
                 PremiumVipBadge()
             } else {
                 OutlinedButton(
                     onClick = onOpenUpgrade,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldVip),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, GoldVip),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                    border = androidx.compose.foundation.BorderStroke(1.dp, GoldVip.copy(alpha = 0.6f)),
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)
                 ) {
-                    Text("Débloquer 4K HDR VIP", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("Débloquer VIP", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            // Bouton Recherche
+        // Actions rapides sobres avec forme pilule moderne (50%)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Bouton Recherche Pilule
             Button(
                 onClick = onOpenSearch,
                 colors = ButtonDefaults.buttonColors(containerColor = SurfaceDarkVariant),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                shape = RoundedCornerShape(50),
+                border = androidx.compose.foundation.BorderStroke(1.dp, CardBorderUnfocused),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
             ) {
-                Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+                Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(15.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Recherche", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("Recherche", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
 
-            // Bouton Identifiants IPTV
+            // Bouton Identifiants IPTV Pilule
             Button(
                 onClick = onOpenLogin,
                 colors = ButtonDefaults.buttonColors(containerColor = SurfaceDarkVariant),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                shape = RoundedCornerShape(50),
+                border = androidx.compose.foundation.BorderStroke(1.dp, CardBorderUnfocused),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
             ) {
-                Icon(imageVector = Icons.Default.Dns, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+                Icon(imageVector = Icons.Default.Dns, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(15.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Identifiants IPTV", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("Identifiants IPTV", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
-            ResolutionBadge(resolution = "4K HDR READY")
+
+            ResolutionBadge(resolution = "4K HDR")
         }
     }
 }
 
 /**
- * Barre de défilement horizontal des catégories
+ * Barre de défilement horizontal des catégories en pilules modernes (RoundedCornerShape(50))
  */
 @Composable
 fun TvCategoryChipsRow(
@@ -492,7 +528,7 @@ fun TvCategoryChipsRow(
     onSelectCategory: (String) -> Unit
 ) {
     LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(horizontal = 2.dp)
     ) {
         items(categories) { category ->
@@ -500,7 +536,7 @@ fun TvCategoryChipsRow(
             var isFocused by remember { mutableStateOf(false) }
 
             var chipMod = Modifier
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(50))
 
             if (focusRequester != null && category == categories.firstOrNull()) {
                 chipMod = chipMod.focusRequester(focusRequester)
@@ -519,23 +555,23 @@ fun TvCategoryChipsRow(
                     }
                     .background(
                         when {
-                            isFocused -> NeonCyan
-                            isSelected -> DeepCyan.copy(alpha = 0.4f)
-                            else -> SurfaceDark
+                            isFocused -> Color.White
+                            isSelected -> NoosBlue.copy(alpha = 0.35f)
+                            else -> SurfaceDarkVariant
                         }
                     )
                     .border(
-                        width = if (isFocused) 2.5.dp else if (isSelected) 1.dp else 0.dp,
-                        color = if (isFocused) Color.White else if (isSelected) NeonCyan else Color.Transparent,
-                        shape = RoundedCornerShape(8.dp)
+                        width = if (isFocused) 2.5.dp else if (isSelected) 1.dp else 1.dp,
+                        color = if (isFocused) FocusGlow else if (isSelected) NoosBlue else CardBorderUnfocused,
+                        shape = RoundedCornerShape(50)
                     )
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .padding(horizontal = 16.dp, vertical = 7.dp)
             ) {
                 Text(
                     text = category,
-                    color = if (isFocused) Color.Black else if (isSelected) NeonCyan else TextPrimary,
+                    color = if (isFocused) Color.Black else if (isSelected) Color.White else TextSecondary,
                     fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = if (isSelected || isFocused) FontWeight.Bold else FontWeight.Medium
                 )
             }
         }
@@ -543,7 +579,7 @@ fun TvCategoryChipsRow(
 }
 
 /**
- * Carte de chaîne TV avec chargement d'image Coil et barre de progression miniature
+ * Carte de chaîne TV en direct — Sobriété et angles arrondis 18dp
  */
 @Composable
 fun TvChannelGridCard(
@@ -553,14 +589,14 @@ fun TvChannelGridCard(
 ) {
     val context = LocalContext.current
     var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(targetValue = if (isFocused) 1.08f else 1.0f, label = "card_scale")
+    val scale by animateFloatAsState(targetValue = if (isFocused) 1.05f else 1.0f, label = "channel_scale")
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(130.dp)
+            .height(124.dp)
             .scale(scale)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(18.dp))
             .onFocusChanged { isFocused = it.isFocused }
             .focusable()
             .clickable { onClick() }
@@ -570,13 +606,13 @@ fun TvChannelGridCard(
                     true
                 } else false
             }
-            .background(if (isFocused) Color(0xFF1B2B42) else CardBackground)
+            .background(if (isFocused) Color(0xFF1E2838) else CardBackground)
             .border(
-                width = if (isFocused) 3.5.dp else 1.dp,
-                color = if (isFocused) FocusGlow else Color.White.copy(alpha = 0.08f),
-                shape = RoundedCornerShape(12.dp)
+                width = if (isFocused) 3.dp else 1.dp,
+                color = if (isFocused) FocusGlow else CardBorderUnfocused,
+                shape = RoundedCornerShape(18.dp)
             )
-            .padding(10.dp)
+            .padding(12.dp)
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -588,21 +624,21 @@ fun TvChannelGridCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 LiveIndicatorBadge()
-                if (channel.isHdr) HdrBadge()
+                if (channel.isHdr) HdrBadge() else ResolutionBadge(resolution = channel.resolution)
             }
 
             // Zone logo avec Coil & barre de chargement de miniature
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (!channel.logoUrl.isNullOrBlank()) {
                     Box(
                         modifier = Modifier
                             .size(46.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceDarkVariant),
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(SurfaceDark),
                         contentAlignment = Alignment.Center
                     ) {
                         SubcomposeAsyncImage(
@@ -619,10 +655,11 @@ fun TvChannelGridCard(
                                 ) {
                                     LinearProgressIndicator(
                                         modifier = Modifier
-                                            .fillMaxWidth(0.8f)
-                                            .height(3.dp),
-                                        color = NeonCyan,
-                                        trackColor = SurfaceDark
+                                            .fillMaxWidth(0.7f)
+                                            .height(3.dp)
+                                            .clip(RoundedCornerShape(2.dp)),
+                                        color = NoosBlue,
+                                        trackColor = SurfaceDarkVariant
                                     )
                                 }
                             },
@@ -638,17 +675,18 @@ fun TvChannelGridCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = channel.name,
-                        color = if (isFocused) NeonCyan else TextPrimary,
-                        fontSize = 14.sp,
+                        color = if (isFocused) NoosCyan else TextPrimary,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "${channel.categoryName} • ${channel.resolution}",
-                        color = if (isFocused) Color.White.copy(alpha = 0.8f) else TextSecondary,
+                        text = channel.categoryName,
+                        color = TextSecondary,
                         fontSize = 11.sp,
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -657,7 +695,7 @@ fun TvChannelGridCard(
 }
 
 /**
- * Carte de film VOD avec chargement d'affiche Coil et barre de progression miniature
+ * Carte de film VOD — Ratio Cinéma Standard 2:3 (non rogné) & Dégradé d'information sobre
  */
 @Composable
 fun TvMovieGridCard(
@@ -667,14 +705,14 @@ fun TvMovieGridCard(
 ) {
     val context = LocalContext.current
     var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(targetValue = if (isFocused) 1.08f else 1.0f, label = "vod_scale")
+    val scale by animateFloatAsState(targetValue = if (isFocused) 1.06f else 1.0f, label = "vod_scale")
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(240.dp)
+            .aspectRatio(2f / 3f) // Ratio standard d'affiche de film (ex: 200x300, 500x750)
             .scale(scale)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(18.dp))
             .onFocusChanged { isFocused = it.isFocused }
             .focusable()
             .clickable { onClick() }
@@ -684,92 +722,120 @@ fun TvMovieGridCard(
                     true
                 } else false
             }
-            .background(if (isFocused) Color(0xFF1B2B42) else CardBackground)
+            .background(if (isFocused) Color(0xFF1E2838) else CardBackground)
             .border(
-                width = if (isFocused) 3.5.dp else 1.dp,
-                color = if (isFocused) FocusGlow else Color.White.copy(alpha = 0.08f),
-                shape = RoundedCornerShape(12.dp)
+                width = if (isFocused) 3.dp else 1.dp,
+                color = if (isFocused) FocusGlow else CardBorderUnfocused,
+                shape = RoundedCornerShape(18.dp)
             )
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Zone affiche avec barre de chargement miniature
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(175.dp)
-                    .background(SurfaceDarkVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                if (!movie.posterUrl.isNullOrBlank()) {
-                    SubcomposeAsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(movie.posterUrl)
-                            .crossfade(true)
-                            .allowHardware(false)
-                            .build(),
-                        contentDescription = movie.title,
-                        loading = {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    LinearProgressIndicator(
-                                        modifier = Modifier
-                                            .width(70.dp)
-                                            .height(3.dp),
-                                        color = NeonCyan,
-                                        trackColor = SurfaceDark
-                                    )
-                                    Text("Chargement...", color = TextSecondary, fontSize = 9.sp)
-                                }
-                            }
-                        },
-                        error = {
-                            Icon(imageVector = Icons.Default.Movie, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(36.dp))
-                        },
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Icon(imageVector = Icons.Default.Movie, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(36.dp))
-                }
-
-                if (movie.isHdr) {
-                    Box(modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)) {
-                        HdrBadge(text = movie.hdrFormat ?: "HDR")
+        // 1. Affiche plein format respectant le ratio 2:3
+        if (!movie.posterUrl.isNullOrBlank()) {
+            SubcomposeAsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(movie.posterUrl)
+                    .crossfade(true)
+                    .allowHardware(false)
+                    .build(),
+                contentDescription = movie.title,
+                loading = {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .width(60.dp)
+                                    .height(3.dp)
+                                    .clip(RoundedCornerShape(2.dp)),
+                                color = NoosBlue,
+                                trackColor = SurfaceDarkVariant
+                            )
+                            Text("Chargement...", color = TextSecondary, fontSize = 9.sp)
+                        }
                     }
-                }
+                },
+                error = {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(imageVector = Icons.Default.Movie, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(36.dp))
+                    }
+                },
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(imageVector = Icons.Default.Movie, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(36.dp))
             }
+        }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp)
-            ) {
+        // 2. Badge HDR en haut à droite
+        if (movie.isHdr) {
+            Box(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+                HdrBadge(text = movie.hdrFormat ?: "HDR")
+            }
+        }
+
+        // 3. Dégradé sombre cinématique en bas avec Titre, Année et Note
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.Transparent,
+                            Color(0x80080A0F),
+                            Color(0xF5080A0F)
+                        )
+                    )
+                )
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+        ) {
+            Column {
                 Text(
                     text = movie.title,
-                    color = if (isFocused) NeonCyan else TextPrimary,
-                    fontSize = 13.sp,
+                    color = if (isFocused) NoosCyan else TextPrimary,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = "${movie.releaseYear ?: ""} ★ ${movie.rating}",
-                    color = if (isFocused) Color.White.copy(alpha = 0.8f) else TextSecondary,
-                    fontSize = 11.sp
-                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = movie.releaseYear?.toString() ?: "",
+                        color = TextSecondary,
+                        fontSize = 10.sp
+                    )
+                    if (movie.rating > 0.0) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("★", color = GoldVip, fontSize = 10.sp)
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(
+                                text = String.format(java.util.Locale.US, "%.1f", movie.rating),
+                                color = TextPrimary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 /**
- * Carte de série VOD avec chargement d'affiche Coil et barre de progression miniature
+ * Carte de série VOD — Ratio Cinéma Standard 2:3 (non rogné) & Dégradé d'information sobre
  */
 @Composable
 fun TvSeriesGridCard(
@@ -779,14 +845,14 @@ fun TvSeriesGridCard(
 ) {
     val context = LocalContext.current
     var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(targetValue = if (isFocused) 1.08f else 1.0f, label = "series_scale")
+    val scale by animateFloatAsState(targetValue = if (isFocused) 1.06f else 1.0f, label = "series_scale")
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(240.dp)
+            .aspectRatio(2f / 3f) // Ratio standard d'affiche de série (ex: 200x300, 500x750)
             .scale(scale)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(18.dp))
             .onFocusChanged { isFocused = it.isFocused }
             .focusable()
             .clickable { onClick() }
@@ -796,85 +862,114 @@ fun TvSeriesGridCard(
                     true
                 } else false
             }
-            .background(if (isFocused) Color(0xFF261D38) else CardBackground)
+            .background(if (isFocused) Color(0xFF1E2838) else CardBackground)
             .border(
-                width = if (isFocused) 3.5.dp else 1.dp,
-                color = if (isFocused) FocusGlow else Color.White.copy(alpha = 0.08f),
-                shape = RoundedCornerShape(12.dp)
+                width = if (isFocused) 3.dp else 1.dp,
+                color = if (isFocused) FocusGlow else CardBorderUnfocused,
+                shape = RoundedCornerShape(18.dp)
             )
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(175.dp)
-                    .background(SurfaceDarkVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                if (!series.posterUrl.isNullOrBlank()) {
-                    SubcomposeAsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(series.posterUrl)
-                            .crossfade(true)
-                            .allowHardware(false)
-                            .build(),
-                        contentDescription = series.title,
-                        loading = {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    LinearProgressIndicator(
-                                        modifier = Modifier
-                                            .width(70.dp)
-                                            .height(3.dp),
-                                        color = NeonCyan,
-                                        trackColor = SurfaceDark
-                                    )
-                                    Text("Chargement...", color = TextSecondary, fontSize = 9.sp)
-                                }
-                            }
-                        },
-                        error = {
-                            Icon(imageVector = Icons.Default.VideoLibrary, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(36.dp))
-                        },
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Icon(imageVector = Icons.Default.VideoLibrary, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(36.dp))
-                }
+        // 1. Affiche plein format respectant le ratio 2:3
+        if (!series.posterUrl.isNullOrBlank()) {
+            SubcomposeAsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(series.posterUrl)
+                    .crossfade(true)
+                    .allowHardware(false)
+                    .build(),
+                contentDescription = series.title,
+                loading = {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .width(60.dp)
+                                    .height(3.dp)
+                                    .clip(RoundedCornerShape(2.dp)),
+                                color = NoosBlue,
+                                trackColor = SurfaceDarkVariant
+                            )
+                            Text("Chargement...", color = TextSecondary, fontSize = 9.sp)
+                        }
+                    }
+                },
+                error = {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(imageVector = Icons.Default.VideoLibrary, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(36.dp))
+                    }
+                },
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(imageVector = Icons.Default.VideoLibrary, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(36.dp))
             }
+        }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp)
-            ) {
+        // 2. Dégradé sombre cinématique en bas avec Titre, Saisons et Note
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.Transparent,
+                            Color(0x80080A0F),
+                            Color(0xF5080A0F)
+                        )
+                    )
+                )
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+        ) {
+            Column {
                 Text(
                     text = series.title,
-                    color = if (isFocused) NeonCyan else TextPrimary,
-                    fontSize = 13.sp,
+                    color = if (isFocused) NoosCyan else TextPrimary,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = "${series.seasons.size.takeIf { it > 0 }?.let { "$it Saisons • " } ?: ""}★ ${series.rating}",
-                    color = if (isFocused) Color.White.copy(alpha = 0.8f) else TextSecondary,
-                    fontSize = 11.sp
-                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val seasonsText = if (series.seasons.isNotEmpty()) "${series.seasons.size} S." else "Série"
+                    Text(
+                        text = seasonsText,
+                        color = TextSecondary,
+                        fontSize = 10.sp
+                    )
+                    if (series.rating > 0.0) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("★", color = GoldVip, fontSize = 10.sp)
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(
+                                text = String.format(java.util.Locale.US, "%.1f", series.rating),
+                                color = TextPrimary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 /**
- * Contenu interactif Guide TV (EPG)
+ * Contenu interactif Guide TV (EPG) sobre et élégant
  */
 @Composable
 fun TvEpgContent(
@@ -895,12 +990,12 @@ fun TvEpgContent(
             Text(
                 text = "Guide TV Interactif (Direct & Replay)",
                 color = TextPrimary,
-                fontSize = 18.sp,
+                fontSize = 17.sp,
                 fontWeight = FontWeight.Bold
             )
             Text(
                 text = "Heure actuelle : ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(currentTime)}",
-                color = NeonCyan,
+                color = NoosCyan,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -913,60 +1008,28 @@ fun TvEpgContent(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(bottom = 32.dp)
             ) {
                 items(channels) { channel ->
                     var isRowFocused by remember { mutableStateOf(false) }
 
-                    // Récupérer les programmes réels ou générer une grille temporelle cohérente
-                    val realProgs = epgPrograms.filter { it.channelId == channel.epgChannelId || it.channelId == channel.id }
-                    val programs = if (realProgs.isNotEmpty()) {
-                        realProgs
-                    } else {
-                        // Programme par défaut calé sur l'heure
-                        val hourMs = 3600_000L
-                        val startHour = (currentTime / hourMs) * hourMs
-                        listOf(
-                            EpgProgram(
-                                id = "${channel.id}_current",
-                                channelId = channel.id,
-                                title = "Direct : ${channel.name}",
-                                description = "Émission en cours de diffusion",
-                                startEpochMs = startHour,
-                                stopEpochMs = startHour + hourMs,
-                                category = channel.categoryName,
-                                hasCatchup = channel.hasCatchup
-                            ),
-                            EpgProgram(
-                                id = "${channel.id}_next",
-                                channelId = channel.id,
-                                title = "Programme Suivant",
-                                description = "Suite des programmes sur ${channel.name}",
-                                startEpochMs = startHour + hourMs,
-                                stopEpochMs = startHour + (hourMs * 2),
-                                category = channel.categoryName,
-                                hasCatchup = channel.hasCatchup
-                            )
-                        )
+                    val programs = remember(channel.id, epgPrograms) {
+                        val real = epgPrograms.filter { it.channelId == channel.id }
+                        if (real.isNotEmpty()) real else generateFallbackPrograms(channel, currentTime)
                     }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        var boxMod = Modifier
-                            .width(170.dp)
-                            .height(82.dp)
-                            .clip(RoundedCornerShape(10.dp))
-
-                        if (channel == channels.firstOrNull()) {
-                            boxMod = boxMod.focusRequester(focusRequester)
-                        }
-
+                        // En-tête de la chaîne à gauche
                         Box(
-                            modifier = boxMod
+                            modifier = Modifier
+                                .width(180.dp)
+                                .height(78.dp)
+                                .clip(RoundedCornerShape(14.dp))
                                 .onFocusChanged { isRowFocused = it.isFocused }
                                 .focusable()
                                 .clickable { onSelectChannel(channel) }
@@ -976,19 +1039,19 @@ fun TvEpgContent(
                                         true
                                     } else false
                                 }
-                                .background(if (isRowFocused) SurfaceDarkVariant else SurfaceDark)
+                                .background(if (isRowFocused) Color(0xFF1E2838) else SurfaceDark)
                                 .border(
                                     width = if (isRowFocused) 3.dp else 1.dp,
-                                    color = if (isRowFocused) FocusGlow else Color.White.copy(alpha = 0.05f),
-                                    shape = RoundedCornerShape(10.dp)
+                                    color = if (isRowFocused) FocusGlow else CardBorderUnfocused,
+                                    shape = RoundedCornerShape(14.dp)
                                 )
-                                .padding(10.dp),
+                                .padding(12.dp),
                             contentAlignment = Alignment.CenterStart
                         ) {
                             Column {
                                 Text(
                                     text = channel.name,
-                                    color = if (isRowFocused) NeonCyan else TextPrimary,
+                                    color = if (isRowFocused) NoosCyan else TextPrimary,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
@@ -1016,16 +1079,16 @@ fun TvEpgContent(
                                 Box(
                                     modifier = Modifier
                                         .width(260.dp)
-                                        .height(82.dp)
-                                        .clip(RoundedCornerShape(10.dp))
+                                        .height(78.dp)
+                                        .clip(RoundedCornerShape(14.dp))
                                         .onFocusChanged { isProgFocused = it.isFocused }
                                         .focusable()
                                         .clickable { onSelectChannel(channel) }
-                                        .background(if (isLive) Color(0xFF132238) else SurfaceDark)
+                                        .background(if (isLive) Color(0xFF162032) else SurfaceDark)
                                         .border(
                                             width = if (isProgFocused) 3.dp else if (isLive) 1.dp else 0.dp,
-                                            color = if (isProgFocused) FocusGlow else if (isLive) NeonCyan.copy(alpha = 0.4f) else Color.Transparent,
-                                            shape = RoundedCornerShape(10.dp)
+                                            color = if (isProgFocused) FocusGlow else if (isLive) NoosBlue.copy(alpha = 0.4f) else Color.Transparent,
+                                            shape = RoundedCornerShape(14.dp)
                                         )
                                         .padding(10.dp)
                                 ) {
@@ -1040,7 +1103,7 @@ fun TvEpgContent(
                                         ) {
                                             Text(
                                                 text = prog.timeSlotFormatted,
-                                                color = if (isLive) NeonCyan else TextSecondary,
+                                                color = if (isLive) NoosCyan else TextSecondary,
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.SemiBold
                                             )
@@ -1053,7 +1116,7 @@ fun TvEpgContent(
 
                                         Text(
                                             text = prog.title,
-                                            color = if (isProgFocused) NeonCyan else TextPrimary,
+                                            color = if (isProgFocused) NoosCyan else TextPrimary,
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold,
                                             maxLines = 1,
@@ -1067,7 +1130,7 @@ fun TvEpgContent(
                                                     .fillMaxWidth()
                                                     .height(3.dp)
                                                     .clip(RoundedCornerShape(2.dp)),
-                                                color = NeonCyan,
+                                                color = NoosBlue,
                                                 trackColor = SurfaceDarkVariant
                                             )
                                         } else {
@@ -1085,7 +1148,37 @@ fun TvEpgContent(
 }
 
 /**
- * Indicateur de chargement pour le basculement de catégories
+ * Créneaux par défaut si l'EPG n'est pas encore synchronisé
+ */
+private fun generateFallbackPrograms(channel: Channel, currentTime: Long): List<EpgProgram> {
+    val halfHour = 30 * 60 * 1000L
+    val start1 = currentTime - (currentTime % halfHour)
+    val end1 = start1 + halfHour
+    val start2 = end1
+    val end2 = start2 + halfHour
+
+    return listOf(
+        EpgProgram(
+            id = "cur_${channel.id}",
+            channelId = channel.id,
+            title = "En direct sur ${channel.name}",
+            description = "Programme en cours de diffusion",
+            startEpochMs = start1,
+            stopEpochMs = end1
+        ),
+        EpgProgram(
+            id = "next_${channel.id}",
+            channelId = channel.id,
+            title = "Suite des programmes",
+            description = "Émission à suivre sur ${channel.name}",
+            startEpochMs = start2,
+            stopEpochMs = end2
+        )
+    )
+}
+
+/**
+ * Indicateur de chargement sobre et moderne
  */
 @Composable
 fun TvLoadingProgress(message: String) {
@@ -1098,9 +1191,9 @@ fun TvLoadingProgress(message: String) {
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             CircularProgressIndicator(
-                modifier = Modifier.size(42.dp),
-                color = NeonCyan,
-                strokeWidth = 3.5.dp
+                modifier = Modifier.size(38.dp),
+                color = NoosBlue,
+                strokeWidth = 3.dp
             )
             Text(
                 text = message,
@@ -1113,7 +1206,7 @@ fun TvLoadingProgress(message: String) {
 }
 
 /**
- * État vide quand une catégorie ne contient aucun contenu
+ * État vide sobre
  */
 @Composable
 fun TvEmptyState(message: String) {
