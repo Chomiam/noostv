@@ -1,9 +1,11 @@
 package io.noostv.ui.tv
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -41,6 +43,7 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import io.noostv.R
 import io.noostv.core.entitlement.EntitlementManager
+import io.noostv.core.player.PlayerEngine
 import io.noostv.core.storage.SessionManager
 import io.noostv.data.model.Category
 import io.noostv.data.model.Channel
@@ -83,7 +86,11 @@ fun TvHomeScreen(
     isSeriesLoading: Boolean = false,
     sessionManager: SessionManager,
     entitlementManager: EntitlementManager,
+    playerEngine: PlayerEngine? = null,
+    initialPreviewChannel: Channel? = null,
+    onClearCurrentChannel: (() -> Unit)? = null,
     onSelectChannel: (Channel) -> Unit,
+    onLoadChannelEpg: ((Channel) -> Unit)? = null,
     onSelectMovie: (VodMovie) -> Unit,
     onSelectSeries: (Series) -> Unit,
     onSelectVodCategory: (Category) -> Unit,
@@ -96,6 +103,14 @@ fun TvHomeScreen(
     var selectedLiveCategory by remember { mutableStateOf("Toutes") }
     var selectedVodCategory by remember { mutableStateOf("Toutes") }
     var selectedSeriesCategory by remember { mutableStateOf("Toutes") }
+    var previewChannel by remember { mutableStateOf(initialPreviewChannel) }
+
+    // Interception de la touche Retour télécommande pour quitter le mode prévisualisation 1/4
+    BackHandler(enabled = previewChannel != null) {
+        playerEngine?.stop()
+        previewChannel = null
+        onClearCurrentChannel?.invoke()
+    }
 
     val subscription by entitlementManager.subscription.collectAsState()
 
@@ -116,6 +131,11 @@ fun TvHomeScreen(
     }
 
     LaunchedEffect(selectedTab) {
+        if (selectedTab != TvNavTab.TV && previewChannel != null) {
+            playerEngine?.stop()
+            previewChannel = null
+            onClearCurrentChannel?.invoke()
+        }
         if (selectedTab == TvNavTab.MOVIES && movies.isEmpty() && vodCategories.isNotEmpty()) {
             onSelectVodCategory(vodCategories.first())
         } else if (selectedTab == TvNavTab.SERIES && series.isEmpty() && seriesCategories.isNotEmpty()) {
@@ -145,7 +165,7 @@ fun TvHomeScreen(
                 selectedTab = tab
             },
             onNavigateRight = {
-                contentFocusRequester.requestFocus()
+                runCatching { contentFocusRequester.requestFocus() }
             }
         )
 
@@ -169,39 +189,70 @@ fun TvHomeScreen(
             when (selectedTab) {
                 // ==================== 1. ONGLET TV (DIRECT) ====================
                 TvNavTab.TV -> {
-                    val liveCatNames = remember(categories, channels) {
-                        listOf("Toutes") + (if (categories.isNotEmpty()) categories.map { it.name } else channels.map { it.categoryName }.distinct())
-                    }
-
-                    TvCategoryChipsRow(
-                        categories = liveCatNames,
-                        selectedCategory = selectedLiveCategory,
-                        focusRequester = contentFocusRequester,
-                        onNavigateLeft = { sidebarFocusRequesters[TvNavTab.TV]?.requestFocus() },
-                        onSelectCategory = { selectedLiveCategory = it }
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    if (filteredChannels.isEmpty()) {
-                        TvEmptyState(message = "Aucune chaîne disponible dans cette catégorie")
+                    if (previewChannel != null && playerEngine != null) {
+                        TvChannelPreviewContent(
+                            channels = filteredChannels,
+                            selectedChannel = previewChannel!!,
+                            epgPrograms = epgPrograms,
+                            playerEngine = playerEngine,
+                            contentFocusRequester = contentFocusRequester,
+                            onChannelChanged = { newChan ->
+                                previewChannel = newChan
+                                onLoadChannelEpg?.invoke(newChan)
+                            },
+                            onOpenFullscreen = { chan ->
+                                onSelectChannel(chan)
+                            },
+                            onClosePreview = {
+                                playerEngine.stop()
+                                previewChannel = null
+                                onClearCurrentChannel?.invoke()
+                            },
+                            onNavigateLeftToSidebar = {
+                                runCatching { sidebarFocusRequesters[TvNavTab.TV]?.requestFocus() }
+                            }
+                        )
                     } else {
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(4),
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(14.dp),
-                            contentPadding = PaddingValues(bottom = 32.dp)
-                        ) {
-                            items(filteredChannels.size) { index ->
-                                val channel = filteredChannels[index]
-                                TvChannelGridCard(
-                                    channel = channel,
-                                    onNavigateLeft = if (index % 4 == 0) {
-                                        { sidebarFocusRequesters[TvNavTab.TV]?.requestFocus() }
-                                    } else null,
-                                    onClick = { onSelectChannel(channel) }
-                                )
+                        val liveCatNames = remember(categories, channels) {
+                            listOf("Toutes") + (if (categories.isNotEmpty()) categories.map { it.name } else channels.map { it.categoryName }.distinct())
+                        }
+
+                        TvCategoryChipsRow(
+                            categories = liveCatNames,
+                            selectedCategory = selectedLiveCategory,
+                            focusRequester = contentFocusRequester,
+                            onNavigateLeft = { sidebarFocusRequesters[TvNavTab.TV]?.requestFocus() },
+                            onSelectCategory = { selectedLiveCategory = it }
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        if (filteredChannels.isEmpty()) {
+                            TvEmptyState(message = "Aucune chaîne disponible dans cette catégorie")
+                        } else {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(4),
+                                modifier = Modifier.fillMaxSize(),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(14.dp),
+                                contentPadding = PaddingValues(bottom = 32.dp)
+                            ) {
+                                items(filteredChannels.size) { index ->
+                                    val channel = filteredChannels[index]
+                                    val currentProg = EpgProvider.getCurrentProgram(channel, epgPrograms)
+
+                                    TvChannelGridCard(
+                                        channel = channel,
+                                        currentProgram = currentProg,
+                                        onNavigateLeft = if (index % 4 == 0) {
+                                            { sidebarFocusRequesters[TvNavTab.TV]?.requestFocus() }
+                                        } else null,
+                                        onClick = {
+                                            previewChannel = channel
+                                            onLoadChannelEpg?.invoke(channel)
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -595,11 +646,14 @@ fun TvCategoryChipsRow(
 }
 
 /**
- * Carte de chaîne TV en direct — Sobriété et angles arrondis 18dp
+ * Carte de chaîne TV en direct — Image du programme en cours, texte défilant (Marquee) et jauge de direct
  */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun TvChannelGridCard(
     channel: Channel,
+    currentProgram: EpgProgram,
     onNavigateLeft: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
@@ -607,10 +661,14 @@ fun TvChannelGridCard(
     var isFocused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(targetValue = if (isFocused) 1.05f else 1.0f, label = "channel_scale")
 
+    val backdropUrl = remember(channel.id, currentProgram.id) {
+        EpgProvider.getProgramBackdrop(channel, currentProgram)
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(124.dp)
+            .height(144.dp)
             .scale(scale)
             .clip(RoundedCornerShape(18.dp))
             .onFocusChanged { isFocused = it.isFocused }
@@ -622,89 +680,176 @@ fun TvChannelGridCard(
                     true
                 } else false
             }
-            .background(if (isFocused) Color(0xFF1E2838) else CardBackground)
+            .background(Color(0xFF131A26))
             .border(
                 width = if (isFocused) 3.dp else 1.dp,
                 color = if (isFocused) FocusGlow else CardBorderUnfocused,
                 shape = RoundedCornerShape(18.dp)
             )
-            .padding(12.dp)
     ) {
+        // 1. Image du programme en cours en arrière-plan plein format
+        SubcomposeAsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(backdropUrl)
+                .crossfade(true)
+                .allowHardware(false)
+                .build(),
+            contentDescription = currentProgram.title,
+            loading = {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth(0.5f)
+                            .height(3.dp)
+                            .clip(RoundedCornerShape(2.dp)),
+                        color = NoosBlue,
+                        trackColor = SurfaceDarkVariant
+                    )
+                }
+            },
+            error = {
+                Box(modifier = Modifier.fillMaxSize().background(Color(0xFF131A26)))
+            },
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // 2. Dégradé sombre cinématique pour garantir un contraste et une lisibilité parfaits
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color(0xCC080A0F),
+                            Color(0x88080A0F),
+                            Color(0xF6080A0F)
+                        )
+                    )
+                )
+        )
+
+        // 3. Contenu de la miniature : En-tête chaîne & Pied de carte programme défilant
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(11.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
+            // Ligne supérieure : Logo + Nom chaîne & Badges Direct / 4K
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                LiveIndicatorBadge()
-                if (channel.isHdr) HdrBadge() else ResolutionBadge(resolution = channel.resolution)
-            }
-
-            // Zone logo avec Coil & barre de chargement de miniature
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (!channel.logoUrl.isNullOrBlank()) {
-                    Box(
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(SurfaceDark),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        SubcomposeAsyncImage(
-                            model = ImageRequest.Builder(context)
-                                .data(channel.logoUrl)
-                                .crossfade(true)
-                                .allowHardware(false)
-                                .build(),
-                            contentDescription = channel.name,
-                            loading = {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    LinearProgressIndicator(
-                                        modifier = Modifier
-                                            .fillMaxWidth(0.7f)
-                                            .height(3.dp)
-                                            .clip(RoundedCornerShape(2.dp)),
-                                        color = NoosBlue,
-                                        trackColor = SurfaceDarkVariant
-                                    )
-                                }
-                            },
-                            error = {
-                                Icon(imageVector = Icons.Default.Tv, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(24.dp))
-                            },
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize().padding(4.dp)
-                        )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
+                    if (!channel.logoUrl.isNullOrBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0x99000000))
+                                .padding(2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            SubcomposeAsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(channel.logoUrl)
+                                    .crossfade(true)
+                                    .allowHardware(false)
+                                    .build(),
+                                contentDescription = channel.name,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
-                }
 
-                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = channel.name,
-                        color = if (isFocused) NoosCyan else TextPrimary,
-                        fontSize = 13.sp,
+                        color = Color.White,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    LiveIndicatorBadge()
+                    if (channel.isHdr) HdrBadge() else ResolutionBadge(resolution = channel.resolution)
+                }
+            }
+
+            // Ligne inférieure : Programme en cours (Texte défilant marquee) + Plage horaire + Barre de progression
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                // Horaires et catégorie
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
-                        text = channel.categoryName,
-                        color = TextSecondary,
-                        fontSize = 11.sp,
+                        text = currentProgram.timeSlotFormatted,
+                        color = NoosCyan,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    currentProgram.category?.let {
+                        Text(
+                            text = it,
+                            color = TextSecondary,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+
+                // Petit texte qui défile avec le nom du programme en cours
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayCircleOutline,
+                        contentDescription = null,
+                        tint = if (isFocused) NoosCyan else Color.White,
+                        modifier = Modifier.size(14.dp)
+                    )
+
+                    Text(
+                        text = currentProgram.title,
+                        color = if (isFocused) NoosCyan else Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        modifier = Modifier
+                            .weight(1f)
+                            .basicMarquee(iterations = Int.MAX_VALUE)
                     )
                 }
+
+                // Barre de progression du direct
+                val progFraction = currentProgram.progressFraction()
+                LinearProgressIndicator(
+                    progress = { progFraction },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .clip(RoundedCornerShape(50)),
+                    color = NoosBlue,
+                    trackColor = Color(0x333888FF)
+                )
             }
         }
     }

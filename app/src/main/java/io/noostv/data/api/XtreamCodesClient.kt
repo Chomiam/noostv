@@ -327,6 +327,7 @@ class XtreamCodesClient(
                 val startTs = (item["start_timestamp"]?.toString()?.toLongOrNull()) ?: 0L
                 val stopTs = (item["stop_timestamp"]?.toString()?.toLongOrNull()) ?: 0L
                 val hasArchive = (item["has_archive"] as? Number)?.toInt() ?: 0
+                val icon = item["icon"]?.toString() ?: item["image"]?.toString() ?: item["cover"]?.toString()
 
                 val title = maybeDecodeBase64(rawTitle)
                 val desc = rawDesc?.let { maybeDecodeBase64(it) }
@@ -338,6 +339,7 @@ class XtreamCodesClient(
                     description = desc,
                     startEpochMs = startTs * 1000,
                     stopEpochMs = stopTs * 1000,
+                    iconUrl = icon,
                     hasCatchup = hasArchive > 0
                 )
             }

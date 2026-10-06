@@ -46,4 +46,10 @@ data class EpgProgram(
             val stop = sdf.format(Date(stopEpochMs))
             return "$start - $stop"
         }
+
+    val durationMinutes: Int
+        get() = ((stopEpochMs - startEpochMs) / 60000L).toInt().coerceAtLeast(1)
+
+    val remainingMinutes: Int
+        get() = ((stopEpochMs - System.currentTimeMillis()) / 60000L).toInt().coerceAtLeast(0)
 }

@@ -200,6 +200,24 @@ class IptvRepository(
     }
 
     /**
+     * Charge l'EPG détaillé pour une chaîne spécifique à la demande (ex: prévisualisation)
+     */
+    suspend fun loadChannelEpg(serverUrl: String, username: String, password: String, streamId: String) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        if (serverUrl.isBlank()) return@withContext
+        try {
+            val result = xtreamClient.getShortEpg(serverUrl, username, password, streamId)
+            result.onSuccess { progs ->
+                if (progs.isNotEmpty()) {
+                    val current = _epgPrograms.value.toMutableList()
+                    current.removeAll { it.channelId == streamId }
+                    current.addAll(progs)
+                    _epgPrograms.value = current
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    /**
      * Bascule le statut favori d'une chaîne
      */
     fun toggleFavorite(channelId: String) {
@@ -374,34 +392,134 @@ class IptvRepository(
         )
 
         val demoEpg = listOf(
+            // TF1
             EpgProgram(
-                id = "epg_1",
+                id = "epg_tf1_now",
                 channelId = "tf1",
                 title = "Journal de 20 Heures",
-                description = "Le grand journal télévisé présenté par Gilles Bouleau en direct 4K.",
+                description = "Le grand journal télévisé présenté par Gilles Bouleau. Enquêtes, météo et direct 4K HDR.",
                 startEpochMs = now - (20 * 60 * 1000),
-                stopEpochMs = now + (40 * 60 * 1000),
+                stopEpochMs = now + (35 * 60 * 1000),
                 category = "Information",
+                iconUrl = "https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=600",
                 hasCatchup = true
             ),
             EpgProgram(
-                id = "epg_2",
+                id = "epg_tf1_next1",
+                channelId = "tf1",
+                title = "Koh-Lanta : Les Chasseurs d'Immunité",
+                description = "Épisode inédit présenté par Denis Brogniart aux Philippines avec des épreuves mythiques.",
+                startEpochMs = now + (35 * 60 * 1000),
+                stopEpochMs = now + (155 * 60 * 1000),
+                category = "Divertissement",
+                iconUrl = "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=600",
+                hasCatchup = true
+            ),
+            EpgProgram(
+                id = "epg_tf1_next2",
+                channelId = "tf1",
+                title = "Vendredi tout est permis",
+                description = "Arthur et ses invités s'amusent avec le décor penché, Speed Quiz et Articule.",
+                startEpochMs = now + (155 * 60 * 1000),
+                stopEpochMs = now + (235 * 60 * 1000),
+                category = "Humour",
+                iconUrl = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=600",
+                hasCatchup = true
+            ),
+
+            // France 2
+            EpgProgram(
+                id = "epg_f2_now",
                 channelId = "france2",
                 title = "Envoyé Spécial",
-                description = "Reportages exclusifs et enquêtes au coeur de l'actualité.",
-                startEpochMs = now - (10 * 60 * 1000),
-                stopEpochMs = now + (70 * 60 * 1000),
+                description = "Reportages exclusifs et grandes enquêtes de la rédaction d'Élise Lucet.",
+                startEpochMs = now - (15 * 60 * 1000),
+                stopEpochMs = now + (75 * 60 * 1000),
                 category = "Magazine",
+                iconUrl = "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600",
                 hasCatchup = true
             ),
             EpgProgram(
-                id = "epg_3",
+                id = "epg_f2_next1",
+                channelId = "france2",
+                title = "Complément d'Enquête",
+                description = "Tristan Waleckx explore les coulisses du pouvoir et de l'économie moderne.",
+                startEpochMs = now + (75 * 60 * 1000),
+                stopEpochMs = now + (140 * 60 * 1000),
+                category = "Investigation",
+                iconUrl = "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=600",
+                hasCatchup = true
+            ),
+
+            // Canal+ Sport
+            EpgProgram(
+                id = "epg_csport_now",
                 channelId = "canal_sport",
                 title = "UEFA Champions League en Direct (4K HDR)",
-                description = "Grand match de coupe d'Europe avec son multicanal 5.1 Dolby Atmos.",
+                description = "Grand choc européen en direct 4K UHD avec son multicanal 5.1 Dolby Atmos.",
                 startEpochMs = now - (35 * 60 * 1000),
                 stopEpochMs = now + (65 * 60 * 1000),
                 category = "Sport",
+                iconUrl = "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=600",
+                hasCatchup = true
+            ),
+            EpgProgram(
+                id = "epg_csport_next1",
+                channelId = "canal_sport",
+                title = "Canal Champions Club : Le Débrief",
+                description = "Analyses des buts, réactions à chaud dans les vestiaires et palettes tactiques.",
+                startEpochMs = now + (65 * 60 * 1000),
+                stopEpochMs = now + (125 * 60 * 1000),
+                category = "Sport",
+                iconUrl = "https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=600",
+                hasCatchup = true
+            ),
+
+            // beIN Sports 1
+            EpgProgram(
+                id = "epg_bein1_now",
+                channelId = "bein1",
+                title = "Club beIN Europe : Multiplex Football",
+                description = "Toutes les rencontres des championnats espagnol, italien et allemand en direct.",
+                startEpochMs = now - (25 * 60 * 1000),
+                stopEpochMs = now + (50 * 60 * 1000),
+                category = "Sport",
+                iconUrl = "https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=600",
+                hasCatchup = true
+            ),
+            EpgProgram(
+                id = "epg_bein1_next1",
+                channelId = "bein1",
+                title = "NBA Extra",
+                description = "Le mag quotidien de la NBA avec Xavier Vaution et Jacques Monclar.",
+                startEpochMs = now + (50 * 60 * 1000),
+                stopEpochMs = now + (110 * 60 * 1000),
+                category = "Sport",
+                iconUrl = "https://images.unsplash.com/photo-1546519638-68e109498ffc?w=600",
+                hasCatchup = true
+            ),
+
+            // ARTE
+            EpgProgram(
+                id = "epg_arte_now",
+                channelId = "arte",
+                title = "Les Mystères du Cosmos 4K",
+                description = "Voyage immersif au cœur des trous noirs et des galaxies lointaines.",
+                startEpochMs = now - (10 * 60 * 1000),
+                stopEpochMs = now + (80 * 60 * 1000),
+                category = "Documentaire",
+                iconUrl = "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600",
+                hasCatchup = true
+            ),
+            EpgProgram(
+                id = "epg_arte_next1",
+                channelId = "arte",
+                title = "28 Minutes : Le Magazine d'Actualité",
+                description = "Débats de fond et éclairages culturels sur les grands enjeux du monde.",
+                startEpochMs = now + (80 * 60 * 1000),
+                stopEpochMs = now + (130 * 60 * 1000),
+                category = "Société",
+                iconUrl = "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=600",
                 hasCatchup = true
             )
         )

@@ -146,7 +146,7 @@ class MainActivity : ComponentActivity() {
 
                 // Gestion du bouton Retour de la télécommande TV pour revenir au menu principal
                 BackHandler(enabled = currentScreen != CurrentScreen.HOME) {
-                    if (currentScreen == CurrentScreen.PLAYER) {
+                    if (currentScreen == CurrentScreen.PLAYER && currentChannel == null) {
                         playerEngine.stop()
                     }
                     currentScreen = CurrentScreen.HOME
@@ -188,7 +188,20 @@ class MainActivity : ComponentActivity() {
                                 isSeriesLoading = isSeriesLoading,
                                 sessionManager = sessionManager,
                                 entitlementManager = entitlementManager,
+                                playerEngine = playerEngine,
+                                initialPreviewChannel = currentChannel,
+                                onClearCurrentChannel = { currentChannel = null },
                                 onSelectChannel = { startPlayChannel(it) },
+                                onLoadChannelEpg = { chan ->
+                                    coroutineScope.launch {
+                                        repository.loadChannelEpg(
+                                            sessionManager.serverUrl,
+                                            sessionManager.username,
+                                            sessionManager.password,
+                                            chan.id
+                                        )
+                                    }
+                                },
                                 onSelectMovie = { startPlayMovie(it) },
                                 onSelectSeries = { startPlaySeries(it) },
                                 onSelectVodCategory = { cat ->
@@ -268,7 +281,9 @@ class MainActivity : ComponentActivity() {
                             resolution = resolution,
                             codec = codec,
                             onBack = {
-                                playerEngine.stop()
+                                if (currentChannel == null) {
+                                    playerEngine.stop()
+                                }
                                 currentScreen = CurrentScreen.HOME
                             },
                             onNextChannel = if (isLive && channels.isNotEmpty()) {
