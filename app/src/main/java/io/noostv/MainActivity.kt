@@ -11,6 +11,7 @@ import io.noostv.core.device.DeviceDetector
 import io.noostv.core.entitlement.EntitlementManager
 import io.noostv.core.player.PlayerEngine
 import io.noostv.core.storage.SessionManager
+import io.noostv.data.model.Category
 import io.noostv.data.model.Channel
 import io.noostv.data.model.Series
 import io.noostv.data.model.VodMovie
@@ -233,12 +234,40 @@ class MainActivity : ComponentActivity() {
                                 channels = channels,
                                 movies = movies,
                                 series = series,
+                                epgPrograms = epgPrograms,
+                                categories = categories,
+                                vodCategories = vodCategories,
+                                seriesCategories = seriesCategories,
+                                isVodLoading = isVodLoading,
+                                isSeriesLoading = isSeriesLoading,
+                                sessionManager = sessionManager,
                                 entitlementManager = entitlementManager,
                                 onSelectChannel = { startPlayChannel(it) },
                                 onSelectMovie = { startPlayMovie(it) },
+                                onSelectSeries = { startPlaySeries(it) },
+                                onSelectVodCategory = { cat: Category ->
+                                    coroutineScope.launch {
+                                        repository.loadVodByCategory(
+                                            sessionManager.serverUrl,
+                                            sessionManager.username,
+                                            sessionManager.password,
+                                            cat.id
+                                        )
+                                    }
+                                },
+                                onSelectSeriesCategory = { cat: Category ->
+                                    coroutineScope.launch {
+                                        repository.loadSeriesByCategory(
+                                            sessionManager.serverUrl,
+                                            sessionManager.username,
+                                            sessionManager.password,
+                                            cat.id
+                                        )
+                                    }
+                                },
                                 onOpenSearch = { currentScreen = CurrentScreen.SEARCH },
-                                onOpenEpg = { currentScreen = CurrentScreen.EPG },
-                                onOpenUpgrade = { showUpgradeDialog = true }
+                                onOpenUpgrade = { showUpgradeDialog = true },
+                                onOpenLogin = { currentScreen = CurrentScreen.LOGIN }
                             )
                         }
                     }
