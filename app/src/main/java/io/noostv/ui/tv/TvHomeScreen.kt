@@ -18,6 +18,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -42,6 +44,7 @@ enum class TvNavTab(val label: String, val icon: ImageVector) {
     SERIES("Séries", Icons.Default.VideoLibrary),
     EPG("Guide EPG", Icons.Default.EventNote),
     SEARCH("Recherche", Icons.Default.Search),
+    ACCOUNT("Compte IPTV", Icons.Default.AccountCircle),
     SETTINGS("SaaS & VIP", Icons.Default.Star)
 }
 
@@ -55,10 +58,18 @@ fun TvHomeScreen(
     onSelectMovie: (VodMovie) -> Unit,
     onOpenEpg: () -> Unit,
     onOpenSearch: () -> Unit,
-    onOpenUpgrade: () -> Unit
+    onOpenUpgrade: () -> Unit,
+    onOpenLogin: () -> Unit
 ) {
     var selectedTab by remember { mutableStateOf(TvNavTab.LIVE) }
     val subscription by entitlementManager.subscription.collectAsState()
+
+    // Focus initial sur la première chaîne pour faire apparaître immédiatement le curseur D-Pad
+    val firstCardFocus = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        firstCardFocus.requestFocus()
+    }
 
     Row(
         modifier = Modifier
@@ -70,9 +81,13 @@ fun TvHomeScreen(
             selectedTab = selectedTab,
             onTabSelected = { tab ->
                 selectedTab = tab
-                if (tab == TvNavTab.EPG) onOpenEpg()
-                if (tab == TvNavTab.SEARCH) onOpenSearch()
-                if (tab == TvNavTab.SETTINGS) onOpenUpgrade()
+                when (tab) {
+                    TvNavTab.EPG -> onOpenEpg()
+                    TvNavTab.SEARCH -> onOpenSearch()
+                    TvNavTab.ACCOUNT -> onOpenLogin()
+                    TvNavTab.SETTINGS -> onOpenUpgrade()
+                    else -> {}
+                }
             },
             isPremium = subscription.isPremium
         )
@@ -120,20 +135,18 @@ fun TvHomeScreen(
                     }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ResolutionBadge(resolution = "4K HDR READY")
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(SurfaceDarkVariant)
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = onOpenLogin,
+                        colors = ButtonDefaults.buttonColors(containerColor = SurfaceDarkVariant),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                     ) {
-                        Text(
-                            text = "Mode Salon 10-Foot (D-Pad)",
-                            color = TextSecondary,
-                            fontSize = 11.sp
-                        )
+                        Icon(imageVector = Icons.Default.Dns, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Identifiants IPTV", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
+
+                    ResolutionBadge(resolution = "4K HDR READY")
                 }
             }
 
@@ -151,9 +164,11 @@ fun TvHomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         contentPadding = PaddingValues(horizontal = 4.dp)
                     ) {
-                        items(channels) { channel ->
+                        items(channels.size) { index ->
+                            val channel = channels[index]
                             TvChannelCard(
                                 channel = channel,
+                                focusRequester = if (index == 0) firstCardFocus else null,
                                 onClick = { onSelectChannel(channel) }
                             )
                         }
@@ -188,7 +203,7 @@ fun TvHomeScreen(
                         items(series) { item ->
                             TvSeriesCard(
                                 series = item,
-                                onClick = { /* Ouvrir détails série */ }
+                                onClick = { /* */ }
                             )
                         }
                     }
@@ -218,7 +233,7 @@ fun TvSidebar(
             var isFocused by remember { mutableStateOf(false) }
 
             val scale by animateFloatAsState(
-                targetValue = if (isFocused) 1.15f else 1.0f,
+                targetValue = if (isFocused) 1.18f else 1.0f,
                 label = "nav_scale"
             )
 
@@ -227,27 +242,27 @@ fun TvSidebar(
                     .size(54.dp)
                     .scale(scale)
                     .clip(RoundedCornerShape(12.dp))
+                    .onFocusChanged { isFocused = it.isFocused }
+                    .focusable()
+                    .clickable { onTabSelected(tab) }
                     .background(
                         when {
+                            isFocused -> Color(0xFF1D324D)
                             isSelected -> NeonCyan.copy(alpha = 0.25f)
-                            isFocused -> SurfaceDarkVariant
                             else -> Color.Transparent
                         }
                     )
                     .border(
-                        width = if (isFocused) 2.dp else if (isSelected) 1.dp else 0.dp,
+                        width = if (isFocused) 3.dp else if (isSelected) 1.5.dp else 0.dp,
                         color = if (isFocused) FocusGlow else if (isSelected) NeonCyan else Color.Transparent,
                         shape = RoundedCornerShape(12.dp)
-                    )
-                    .focusable()
-                    .onFocusChanged { isFocused = it.isFocused }
-                    .clickable { onTabSelected(tab) },
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = tab.icon,
                     contentDescription = tab.label,
-                    tint = if (tab == TvNavTab.SETTINGS && !isPremium) GoldVip else if (isSelected || isFocused) NeonCyan else TextSecondary,
+                    tint = if (tab == TvNavTab.SETTINGS && !isPremium) GoldVip else if (isFocused) Color.White else if (isSelected) NeonCyan else TextSecondary,
                     modifier = Modifier.size(26.dp)
                 )
             }
@@ -272,25 +287,35 @@ fun TvSectionHeader(title: String, icon: ImageVector) {
 }
 
 @Composable
-fun TvChannelCard(channel: Channel, onClick: () -> Unit) {
+fun TvChannelCard(
+    channel: Channel,
+    focusRequester: FocusRequester? = null,
+    onClick: () -> Unit
+) {
     var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(targetValue = if (isFocused) 1.08f else 1.0f, label = "card_scale")
+    val scale by animateFloatAsState(targetValue = if (isFocused) 1.10f else 1.0f, label = "card_scale")
+
+    var mod = Modifier
+        .width(224.dp)
+        .height(128.dp)
+        .scale(scale)
+        .clip(RoundedCornerShape(12.dp))
+
+    if (focusRequester != null) {
+        mod = mod.focusRequester(focusRequester)
+    }
 
     Box(
-        modifier = Modifier
-            .width(220.dp)
-            .height(124.dp)
-            .scale(scale)
-            .clip(RoundedCornerShape(12.dp))
-            .background(CardBackground)
+        modifier = mod
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable()
+            .clickable { onClick() }
+            .background(if (isFocused) Color(0xFF1B2B42) else CardBackground)
             .border(
-                width = if (isFocused) 2.5.dp else 1.dp,
+                width = if (isFocused) 3.5.dp else 1.dp,
                 color = if (isFocused) FocusGlow else Color.White.copy(alpha = 0.08f),
                 shape = RoundedCornerShape(12.dp)
             )
-            .focusable()
-            .onFocusChanged { isFocused = it.isFocused }
-            .clickable { onClick() }
             .padding(12.dp)
     ) {
         Column(
@@ -319,7 +344,7 @@ fun TvChannelCard(channel: Channel, onClick: () -> Unit) {
                 )
                 Text(
                     text = "${channel.categoryName} • ${channel.resolution} • ${channel.videoCodec.uppercase()}",
-                    color = TextSecondary,
+                    color = if (isFocused) Color.White.copy(alpha = 0.8f) else TextSecondary,
                     fontSize = 11.sp,
                     maxLines = 1
                 )
@@ -331,23 +356,23 @@ fun TvChannelCard(channel: Channel, onClick: () -> Unit) {
 @Composable
 fun TvMovieCard(movie: VodMovie, onClick: () -> Unit) {
     var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(targetValue = if (isFocused) 1.08f else 1.0f, label = "vod_scale")
+    val scale by animateFloatAsState(targetValue = if (isFocused) 1.10f else 1.0f, label = "vod_scale")
 
     Box(
         modifier = Modifier
             .width(170.dp)
-            .height(230.dp)
+            .height(234.dp)
             .scale(scale)
             .clip(RoundedCornerShape(12.dp))
-            .background(CardBackground)
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable()
+            .clickable { onClick() }
+            .background(if (isFocused) Color(0xFF1B2B42) else CardBackground)
             .border(
-                width = if (isFocused) 2.5.dp else 1.dp,
+                width = if (isFocused) 3.5.dp else 1.dp,
                 color = if (isFocused) FocusGlow else Color.White.copy(alpha = 0.08f),
                 shape = RoundedCornerShape(12.dp)
             )
-            .focusable()
-            .onFocusChanged { isFocused = it.isFocused }
-            .clickable { onClick() }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             Box(
@@ -384,7 +409,7 @@ fun TvMovieCard(movie: VodMovie, onClick: () -> Unit) {
                 )
                 Text(
                     text = "${movie.releaseYear ?: 2024} • ★ ${movie.rating} • ${movie.durationFormatted}",
-                    color = TextSecondary,
+                    color = if (isFocused) Color.White.copy(alpha = 0.8f) else TextSecondary,
                     fontSize = 10.sp
                 )
             }
@@ -395,23 +420,23 @@ fun TvMovieCard(movie: VodMovie, onClick: () -> Unit) {
 @Composable
 fun TvSeriesCard(series: Series, onClick: () -> Unit) {
     var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(targetValue = if (isFocused) 1.08f else 1.0f, label = "series_scale")
+    val scale by animateFloatAsState(targetValue = if (isFocused) 1.10f else 1.0f, label = "series_scale")
 
     Box(
         modifier = Modifier
             .width(170.dp)
-            .height(230.dp)
+            .height(234.dp)
             .scale(scale)
             .clip(RoundedCornerShape(12.dp))
-            .background(CardBackground)
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable()
+            .clickable { onClick() }
+            .background(if (isFocused) Color(0xFF261D38) else CardBackground)
             .border(
-                width = if (isFocused) 2.5.dp else 1.dp,
+                width = if (isFocused) 3.5.dp else 1.dp,
                 color = if (isFocused) FocusGlow else Color.White.copy(alpha = 0.08f),
                 shape = RoundedCornerShape(12.dp)
             )
-            .focusable()
-            .onFocusChanged { isFocused = it.isFocused }
-            .clickable { onClick() }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             Box(
@@ -440,7 +465,7 @@ fun TvSeriesCard(series: Series, onClick: () -> Unit) {
                 )
                 Text(
                     text = "${series.seasons.size} Saisons • ★ ${series.rating}",
-                    color = TextSecondary,
+                    color = if (isFocused) Color.White.copy(alpha = 0.8f) else TextSecondary,
                     fontSize = 10.sp
                 )
             }
