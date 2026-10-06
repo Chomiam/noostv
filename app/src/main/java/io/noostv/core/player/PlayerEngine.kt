@@ -122,6 +122,26 @@ class PlayerEngine(
         return true
     }
 
+    val currentPosition: Long
+        get() = runCatching { exoPlayer.currentPosition }.getOrDefault(0L)
+
+    val duration: Long
+        get() = runCatching {
+            val dur = exoPlayer.duration
+            if (dur == androidx.media3.common.C.TIME_UNSET) 0L else dur
+        }.getOrDefault(0L)
+
+    fun seekBy(deltaMs: Long) {
+        val dur = duration
+        val cur = currentPosition
+        val target = if (dur > 0L) {
+            (cur + deltaMs).coerceIn(0L, dur)
+        } else {
+            (cur + deltaMs).coerceAtLeast(0L)
+        }
+        seekTo(target)
+    }
+
     fun pause() {
         exoPlayer.pause()
     }

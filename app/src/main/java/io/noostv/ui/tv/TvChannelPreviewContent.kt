@@ -43,6 +43,7 @@ import coil.request.ImageRequest
 import io.noostv.core.player.PlayerEngine
 import io.noostv.data.model.Channel
 import io.noostv.data.model.EpgProgram
+import io.noostv.core.storage.SessionManager
 import io.noostv.ui.common.HdrBadge
 import io.noostv.ui.common.LiveIndicatorBadge
 import io.noostv.ui.common.ResolutionBadge
@@ -60,11 +61,13 @@ fun TvChannelPreviewContent(
     selectedChannel: Channel,
     epgPrograms: List<EpgProgram>,
     playerEngine: PlayerEngine,
+    sessionManager: SessionManager? = null,
     contentFocusRequester: FocusRequester? = null,
     onChannelChanged: (Channel) -> Unit,
     onOpenFullscreen: (Channel) -> Unit,
     onClosePreview: () -> Unit,
-    onNavigateLeftToSidebar: () -> Unit
+    onNavigateLeftToSidebar: () -> Unit,
+    onFavoriteToggled: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -265,29 +268,67 @@ fun TvChannelPreviewContent(
                         if (selectedChannel.isHdr) HdrBadge() else ResolutionBadge(resolution = selectedChannel.resolution)
                     }
 
-                    // Bas : Bouton Plein Écran interactif
+                    // Bas : Boutons Favoris et Plein Écran interactif
+                    var isFavorite by remember(selectedChannel.id) {
+                        mutableStateOf(sessionManager?.isFavoriteChannel(selectedChannel.id) ?: false)
+                    }
+
                     Row(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .clip(RoundedCornerShape(50))
-                            .background(if (isPlayerFocused) NoosBlue else Color(0x88000000))
-                            .border(1.dp, if (isPlayerFocused) FocusGlow else Color(0x44FFFFFF), RoundedCornerShape(50))
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        modifier = Modifier.align(Alignment.BottomEnd),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Fullscreen,
-                            contentDescription = "Plein écran",
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "Plein écran (OK)",
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        if (sessionManager != null) {
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(if (isFavorite) Color(0x55FFD700) else Color(0x66000000))
+                                    .border(1.dp, if (isFavorite) Color(0xFFFFD700) else Color(0x44FFFFFF), RoundedCornerShape(50))
+                                    .clickable {
+                                        isFavorite = sessionManager.toggleFavoriteChannel(selectedChannel.id)
+                                        onFavoriteToggled?.invoke()
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                                    contentDescription = "Favori",
+                                    tint = if (isFavorite) Color(0xFFFFD700) else Color.White,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = if (isFavorite) "Favori" else "Ajouter",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(if (isPlayerFocused) NoosBlue else Color(0x88000000))
+                                .border(1.dp, if (isPlayerFocused) FocusGlow else Color(0x44FFFFFF), RoundedCornerShape(50))
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Fullscreen,
+                                contentDescription = "Plein écran",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Plein écran (OK)",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }

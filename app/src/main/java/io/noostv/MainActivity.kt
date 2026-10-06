@@ -309,6 +309,9 @@ class MainActivity : ComponentActivity() {
                             isHdr = isHdr,
                             resolution = resolution,
                             codec = codec,
+                            channel = currentChannel,
+                            channels = channels,
+                            epgPrograms = epgPrograms,
                             onBack = {
                                 if (currentChannel == null) {
                                     playerEngine.stop()
@@ -328,7 +331,8 @@ class MainActivity : ComponentActivity() {
                                     val prev = if (idx > 0) channels[idx - 1] else channels.last()
                                     startPlayChannel(prev)
                                 }
-                            } else null
+                            } else null,
+                            onSelectChannel = { startPlayChannel(it) }
                         )
                     }
                 }

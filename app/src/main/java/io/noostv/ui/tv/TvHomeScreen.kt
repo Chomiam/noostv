@@ -143,9 +143,14 @@ fun TvHomeScreen(
         }
     }
 
+    // Persistance et suivi des chaînes favorites
+    var favoriteIds by remember { mutableStateOf(sessionManager.getFavoriteChannelIds()) }
+
     // Filtrage des chaînes en direct selon la catégorie sélectionnée
-    val filteredChannels = remember(channels, selectedLiveCategory) {
-        if (selectedLiveCategory == "Toutes") {
+    val filteredChannels = remember(channels, selectedLiveCategory, favoriteIds) {
+        if (selectedLiveCategory.startsWith("⭐ Favoris")) {
+            channels.filter { favoriteIds.contains(it.id) }
+        } else if (selectedLiveCategory == "Toutes") {
             channels
         } else {
             channels.filter { it.categoryName.equals(selectedLiveCategory, ignoreCase = true) || it.categoryId == selectedLiveCategory }
@@ -195,6 +200,7 @@ fun TvHomeScreen(
                             selectedChannel = previewChannel!!,
                             epgPrograms = epgPrograms,
                             playerEngine = playerEngine,
+                            sessionManager = sessionManager,
                             contentFocusRequester = contentFocusRequester,
                             onChannelChanged = { newChan ->
                                 previewChannel = newChan
@@ -210,11 +216,19 @@ fun TvHomeScreen(
                             },
                             onNavigateLeftToSidebar = {
                                 runCatching { sidebarFocusRequesters[TvNavTab.TV]?.requestFocus() }
+                            },
+                            onFavoriteToggled = {
+                                favoriteIds = sessionManager.getFavoriteChannelIds()
                             }
                         )
                     } else {
-                        val liveCatNames = remember(categories, channels) {
-                            listOf("Toutes") + (if (categories.isNotEmpty()) categories.map { it.name } else channels.map { it.categoryName }.distinct())
+                        val liveCatNames = remember(categories, channels, favoriteIds) {
+                            val list = mutableListOf("Toutes")
+                            if (favoriteIds.isNotEmpty()) {
+                                list.add("⭐ Favoris (${favoriteIds.size})")
+                            }
+                            list.addAll(if (categories.isNotEmpty()) categories.map { it.name } else channels.map { it.categoryName }.distinct())
+                            list
                         }
 
                         TvCategoryChipsRow(
@@ -244,6 +258,7 @@ fun TvHomeScreen(
                                     TvChannelGridCard(
                                         channel = channel,
                                         currentProgram = currentProg,
+                                        isFavorite = favoriteIds.contains(channel.id),
                                         onNavigateLeft = if (index % 4 == 0) {
                                             { sidebarFocusRequesters[TvNavTab.TV]?.requestFocus() }
                                         } else null,
@@ -654,6 +669,7 @@ fun TvCategoryChipsRow(
 fun TvChannelGridCard(
     channel: Channel,
     currentProgram: EpgProgram,
+    isFavorite: Boolean = false,
     onNavigateLeft: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
@@ -786,6 +802,9 @@ fun TvChannelGridCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    if (isFavorite) {
+                        Text("⭐", fontSize = 11.sp)
+                    }
                     LiveIndicatorBadge()
                     if (channel.isHdr) HdrBadge() else ResolutionBadge(resolution = channel.resolution)
                 }

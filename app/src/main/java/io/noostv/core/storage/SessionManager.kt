@@ -65,6 +65,23 @@ class SessionManager(context: Context) {
             .apply()
     }
 
+    fun getFavoriteChannelIds(): Set<String> = prefs.getStringSet("favorite_channel_ids", emptySet()) ?: emptySet()
+
+    fun toggleFavoriteChannel(id: String): Boolean {
+        val current = getFavoriteChannelIds().toMutableSet()
+        val isFav = if (current.contains(id)) {
+            current.remove(id)
+            false
+        } else {
+            current.add(id)
+            true
+        }
+        prefs.edit().putStringSet("favorite_channel_ids", current).apply()
+        return isFav
+    }
+
+    fun isFavoriteChannel(id: String): Boolean = getFavoriteChannelIds().contains(id)
+
     fun logout() {
         prefs.edit().clear().apply()
     }
