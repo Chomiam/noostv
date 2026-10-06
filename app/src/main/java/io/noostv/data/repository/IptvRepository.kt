@@ -59,6 +59,50 @@ class IptvRepository(
     }
 
     /**
+     * Charge l'ensemble du catalogue en direct depuis un serveur Xtream Codes
+     */
+    suspend fun loadFromXtream(serverUrl: String, username: String, password: String): Result<Unit> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+            // 1. Catégories direct
+            val liveCatsResult = xtreamClient.getLiveCategories(serverUrl, username, password)
+            val liveCats = liveCatsResult.getOrDefault(emptyList())
+
+            // 2. Chaînes direct
+            val liveStreamsResult = xtreamClient.getLiveStreams(serverUrl, username, password)
+            val liveStreams = liveStreamsResult.getOrDefault(emptyList())
+
+            val catMap = liveCats.associate { it.id to it.name }
+            val enrichedChannels = liveStreams.map { ch ->
+                val realCatName = catMap[ch.categoryId] ?: ch.categoryName
+                ch.copy(categoryName = realCatName)
+            }
+
+            // 3. VOD Films
+            val vodResult = xtreamClient.getVodStreams(serverUrl, username, password, limit = 40)
+            val vodMovies = vodResult.getOrDefault(emptyList())
+
+            // 4. Séries
+            val seriesResult = xtreamClient.getSeriesStreams(serverUrl, username, password, limit = 20)
+            val series = seriesResult.getOrDefault(emptyList())
+
+            if (enrichedChannels.isNotEmpty()) {
+                _channels.value = enrichedChannels
+                _categories.value = liveCats
+            }
+            if (vodMovies.isNotEmpty()) {
+                _movies.value = vodMovies
+            }
+            if (series.isNotEmpty()) {
+                _series.value = series
+            }
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Bascule le statut favori d'une chaîne
      */
     fun toggleFavorite(channelId: String) {

@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import io.noostv.core.device.DeviceDetector
 import io.noostv.core.entitlement.EntitlementManager
 import io.noostv.core.player.PlayerEngine
@@ -105,12 +106,30 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                val coroutineScope = rememberCoroutineScope()
+
+                // Chargement automatique en arrière-plan si déjà connecté
+                LaunchedEffect(sessionManager.isLoggedIn) {
+                    if (sessionManager.isLoggedIn && sessionManager.serverUrl.isNotBlank()) {
+                        repository.loadFromXtream(
+                            sessionManager.serverUrl,
+                            sessionManager.username,
+                            sessionManager.password
+                        )
+                    }
+                }
+
                 when (currentScreen) {
                     CurrentScreen.LOGIN -> {
                         LoginScreen(
                             onLoginSuccess = { server, user, pass ->
                                 sessionManager.saveCredentials(server, user, pass)
-                                Toast.makeText(this@MainActivity, "Connexion IPTV réussie !", Toast.LENGTH_SHORT).show()
+                                sessionManager.isPremium = true
+                                entitlementManager.upgradeToPremium("dev_vip_user")
+                                Toast.makeText(this@MainActivity, "Connexion réussie ! Chargement du catalogue...", Toast.LENGTH_SHORT).show()
+                                coroutineScope.launch {
+                                    repository.loadFromXtream(server, user, pass)
+                                }
                                 currentScreen = CurrentScreen.HOME
                             },
                             onDemoSelected = {
