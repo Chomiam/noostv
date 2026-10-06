@@ -51,7 +51,7 @@ fun TvSettingsContent(
 
     var selectedChannel by remember { mutableStateOf(sessionManager.updateChannel) }
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
-    val currentAppVersion = "1.0.1"
+    val currentAppVersion = io.noostv.BuildConfig.VERSION_NAME
 
     // Focus requesters pour D-Pad télécommande
     val stableBtnFocus = remember { FocusRequester() }

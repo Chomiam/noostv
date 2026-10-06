@@ -60,7 +60,7 @@ class UpdateManager(private val context: Context) {
     suspend fun checkForUpdates(
         channel: String,
         token: String,
-        currentVersion: String = "1.0.1"
+        currentVersion: String = io.noostv.BuildConfig.VERSION_NAME
     ): UpdateState = withContext(Dispatchers.IO) {
         try {
             val reqBuilder = Request.Builder()

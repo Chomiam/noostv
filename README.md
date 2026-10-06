@@ -10,7 +10,7 @@
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-3DDC84?logo=android&logoColor=white)](https://developer.android.com/)
 [![Compose TV](https://img.shields.io/badge/Jetpack%20Compose-Android%20TV%20%26%20M3-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![Media3](https://img.shields.io/badge/Media3%20ExoPlayer-1.2.1-FF6F00?logo=youtube&logoColor=white)](https://developer.android.com/media/media3)
-[![GitHub Releases](https://img.shields.io/badge/Release-v1.0.1%20%2F%20v1.1.0--beta.1-00E5FF)](https://github.com/Chomiam/noostv/releases)
+[![GitHub Releases](https://img.shields.io/badge/Release-v1.0.2%20%2F%20v1.1.0--beta.2-00E5FF)](https://github.com/Chomiam/noostv/releases)
 
 ---
 
@@ -167,14 +167,14 @@ Développée intégralement en **Kotlin** et **Jetpack Compose for TV**, NoosTV 
 
 ### Option 1 — Téléchargement des APKs
 Téléchargez directement le fichier `.apk` depuis la page des [Releases GitHub](https://github.com/Chomiam/noostv/releases) :
-- **Canal Stable** : `noostv-v1.0.1.apk`
-- **Canal Testing** : `noostv-v1.1.0-beta.1.apk`
+- **Canal Stable** : `noostv-v1.0.2.apk`
+- **Canal Testing** : `noostv-v1.1.0-beta.2.apk`
 
 ### Option 2 — Installation via ADB
 ```bash
 # Installation sur une TV ou Box connectée en réseau local
 adb connect <IP_DE_VOTRE_BOX>:5555
-adb install -r noostv-v1.0.1.apk
+adb install -r noostv-v1.0.2.apk
 
 # Lancement direct
 adb shell am start -n io.noostv/.MainActivity
