@@ -54,10 +54,12 @@ import io.noostv.data.model.Series
 import io.noostv.data.model.VodMovie
 import io.noostv.ui.common.HdrBadge
 import io.noostv.ui.common.LiveIndicatorBadge
+import io.noostv.ui.common.NoosPaginationBar
 import io.noostv.ui.common.PremiumVipBadge
 import io.noostv.ui.common.ResolutionBadge
 import io.noostv.ui.settings.TvSettingsContent
 import io.noostv.ui.theme.*
+import kotlin.math.ceil
 
 /**
  * 5 Catégories latérales :
@@ -100,7 +102,9 @@ fun TvHomeScreen(
     onSelectSeriesCategory: (Category) -> Unit,
     onOpenSearch: () -> Unit,
     onOpenUpgrade: () -> Unit,
-    onOpenLogin: () -> Unit
+    onOpenLogin: () -> Unit,
+    onFetchVodInfo: (suspend (String) -> VodMovie?)? = null,
+    onFetchSeriesInfo: (suspend (String) -> Series?)? = null
 ) {
     var selectedTab by remember { mutableStateOf(TvNavTab.TV) }
     var selectedLiveCategory by remember { mutableStateOf("Toutes") }
@@ -321,29 +325,46 @@ fun TvHomeScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
+                    val moviePageSize = 36
+                    var moviePage by remember(selectedVodCategory) { mutableIntStateOf(1) }
+                    val totalMoviePages = maxOf(1, ceil(movies.size.toDouble() / moviePageSize).toInt())
+                    val pagedMovies = remember(movies, moviePage) {
+                        movies.drop((moviePage - 1) * moviePageSize).take(moviePageSize)
+                    }
+
                     if (isVodLoading) {
                         TvLoadingProgress(message = "Chargement des films de $selectedVodCategory...")
                     } else if (movies.isEmpty()) {
                         TvEmptyState(message = "Aucun film disponible dans cette catégorie")
                     } else {
-                        // 6 colonnes avec ratio standard d'affiche 2:3 (non rognée)
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(6),
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(14.dp),
-                            contentPadding = PaddingValues(bottom = 32.dp)
-                        ) {
-                            items(movies.size) { index ->
-                                val movie = movies[index]
-                                TvMovieGridCard(
-                                    movie = movie,
-                                    onNavigateLeft = if (index % 6 == 0) {
-                                        { sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus() }
-                                    } else null,
-                                    onClick = { selectedMovieDetail = movie }
-                                )
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(6),
+                                modifier = Modifier.weight(1f),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(14.dp),
+                                contentPadding = PaddingValues(bottom = 16.dp)
+                            ) {
+                                items(pagedMovies.size) { index ->
+                                    val movie = pagedMovies[index]
+                                    TvMovieGridCard(
+                                        movie = movie,
+                                        onNavigateLeft = if (index % 6 == 0) {
+                                            { sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus() }
+                                        } else null,
+                                        onClick = { selectedMovieDetail = movie }
+                                    )
+                                }
                             }
+
+                            NoosPaginationBar(
+                                currentPage = moviePage,
+                                totalPages = totalMoviePages,
+                                totalItems = movies.size,
+                                itemLabel = "films",
+                                onPageChange = { moviePage = it },
+                                isTv = true
+                            )
                         }
                     }
                 }
@@ -370,29 +391,46 @@ fun TvHomeScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
+                    val seriesPageSize = 36
+                    var seriesPage by remember(selectedSeriesCategory) { mutableIntStateOf(1) }
+                    val totalSeriesPages = maxOf(1, ceil(series.size.toDouble() / seriesPageSize).toInt())
+                    val pagedSeries = remember(series, seriesPage) {
+                        series.drop((seriesPage - 1) * seriesPageSize).take(seriesPageSize)
+                    }
+
                     if (isSeriesLoading) {
                         TvLoadingProgress(message = "Chargement des séries de $selectedSeriesCategory...")
                     } else if (series.isEmpty()) {
                         TvEmptyState(message = "Aucune série disponible dans cette catégorie")
                     } else {
-                        // 6 colonnes avec ratio standard d'affiche 2:3 (non rognée)
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(6),
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(14.dp),
-                            contentPadding = PaddingValues(bottom = 32.dp)
-                        ) {
-                            items(series.size) { index ->
-                                val ser = series[index]
-                                TvSeriesGridCard(
-                                    series = ser,
-                                    onNavigateLeft = if (index % 6 == 0) {
-                                        { sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus() }
-                                    } else null,
-                                    onClick = { selectedSeriesDetail = ser }
-                                )
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(6),
+                                modifier = Modifier.weight(1f),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(14.dp),
+                                contentPadding = PaddingValues(bottom = 16.dp)
+                            ) {
+                                items(pagedSeries.size) { index ->
+                                    val ser = pagedSeries[index]
+                                    TvSeriesGridCard(
+                                        series = ser,
+                                        onNavigateLeft = if (index % 6 == 0) {
+                                            { sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus() }
+                                        } else null,
+                                        onClick = { selectedSeriesDetail = ser }
+                                    )
+                                }
                             }
+
+                            NoosPaginationBar(
+                                currentPage = seriesPage,
+                                totalPages = totalSeriesPages,
+                                totalItems = series.size,
+                                itemLabel = "séries",
+                                onPageChange = { seriesPage = it },
+                                isTv = true
+                            )
                         }
                     }
                 }
@@ -415,8 +453,7 @@ fun TvHomeScreen(
             TvMovieDetailModal(
                 movie = selectedMovieDetail!!,
                 isFavorite = favoriteMovieIds.contains(selectedMovieDetail!!.id),
-                onPlay = {
-                    val m = selectedMovieDetail!!
+                onPlay = { m ->
                     selectedMovieDetail = null
                     onSelectMovie(m)
                 },
@@ -425,7 +462,8 @@ fun TvHomeScreen(
                     sessionManager.toggleFavoriteMovie(id)
                     favoriteMovieIds = sessionManager.getFavoriteMovieIds()
                 },
-                onDismiss = { selectedMovieDetail = null }
+                onDismiss = { selectedMovieDetail = null },
+                onFetchFullInfo = { id -> onFetchVodInfo?.invoke(id) }
             )
         }
 
@@ -443,7 +481,8 @@ fun TvHomeScreen(
                     sessionManager.toggleFavoriteSeries(id)
                     favoriteSeriesIds = sessionManager.getFavoriteSeriesIds()
                 },
-                onDismiss = { selectedSeriesDetail = null }
+                onDismiss = { selectedSeriesDetail = null },
+                onFetchFullInfo = { id -> onFetchSeriesInfo?.invoke(id) }
             )
         }
     }
@@ -1522,15 +1561,28 @@ fun TvEmptyState(message: String) {
 fun TvMovieDetailModal(
     movie: VodMovie,
     isFavorite: Boolean,
-    onPlay: () -> Unit,
+    onPlay: (VodMovie) -> Unit,
     onToggleFavorite: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onFetchFullInfo: (suspend (String) -> VodMovie?)? = null
 ) {
     val playFocusRequester = remember { FocusRequester() }
     val context = LocalContext.current
+    var fullMovie by remember(movie.id) { mutableStateOf(movie) }
+    var isFetchingInfo by remember(movie.id) { mutableStateOf(onFetchFullInfo != null && movie.plot.isNullOrBlank()) }
 
     BackHandler {
         onDismiss()
+    }
+
+    LaunchedEffect(movie.id) {
+        if (movie.plot.isNullOrBlank() && onFetchFullInfo != null) {
+            isFetchingInfo = true
+            onFetchFullInfo(movie.id)?.let { enriched ->
+                fullMovie = enriched
+            }
+            isFetchingInfo = false
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -1581,14 +1633,15 @@ fun TvMovieDetailModal(
                             .border(1.5.dp, NoosCyan.copy(alpha = 0.4f), RoundedCornerShape(18.dp))
                             .background(Color(0xFF162032))
                     ) {
-                        if (!movie.posterUrl.isNullOrBlank()) {
+                        val poster = fullMovie.posterUrl ?: movie.posterUrl
+                        if (!poster.isNullOrBlank()) {
                             SubcomposeAsyncImage(
                                 model = ImageRequest.Builder(context)
-                                    .data(movie.posterUrl)
+                                    .data(poster)
                                     .crossfade(true)
                                     .allowHardware(false)
                                     .build(),
-                                contentDescription = movie.title,
+                                contentDescription = fullMovie.title,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -1598,9 +1651,9 @@ fun TvMovieDetailModal(
                             }
                         }
 
-                        if (movie.isHdr) {
+                        if (fullMovie.isHdr) {
                             Box(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)) {
-                                HdrBadge(text = movie.hdrFormat ?: "HDR")
+                                HdrBadge(text = fullMovie.hdrFormat ?: "HDR")
                             }
                         }
                     }
@@ -1610,14 +1663,14 @@ fun TvMovieDetailModal(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        ResolutionBadge(resolution = movie.resolution)
+                        ResolutionBadge(resolution = fullMovie.resolution)
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(SurfaceDarkVariant)
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
-                            Text(movie.videoCodec.uppercase(), color = TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Text(fullMovie.videoCodec.uppercase(), color = TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         }
                         Box(
                             modifier = Modifier
@@ -1625,7 +1678,7 @@ fun TvMovieDetailModal(
                                 .background(SurfaceDarkVariant)
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
-                            Text(movie.audioCodec.uppercase(), color = TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Text(fullMovie.audioCodec.uppercase(), color = TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -1645,7 +1698,7 @@ fun TvMovieDetailModal(
                             verticalAlignment = Alignment.Top
                         ) {
                             Text(
-                                text = movie.title,
+                                text = fullMovie.title,
                                 color = TextPrimary,
                                 fontSize = 24.sp,
                                 fontWeight = FontWeight.Black,
@@ -1668,17 +1721,17 @@ fun TvMovieDetailModal(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            movie.releaseYear?.let {
+                            fullMovie.releaseYear?.let {
                                 Text("$it", color = NoosCyan, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                             }
                             Text("•", color = TextSecondary)
-                            Text(movie.durationFormatted, color = TextPrimary, fontSize = 13.sp)
-                            if (movie.rating > 0f) {
+                            Text(fullMovie.durationFormatted, color = TextPrimary, fontSize = 13.sp)
+                            if (fullMovie.rating > 0f) {
                                 Text("•", color = TextSecondary)
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text("★ ", color = GoldVip, fontSize = 13.sp)
                                     Text(
-                                        text = String.format(java.util.Locale.US, "%.1f", movie.rating) + " / 10",
+                                        text = String.format(java.util.Locale.US, "%.1f", fullMovie.rating) + " / 10",
                                         color = TextPrimary,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold
@@ -1688,9 +1741,9 @@ fun TvMovieDetailModal(
                         }
 
                         // Tags Genres
-                        if (movie.genres.isNotEmpty()) {
+                        if (fullMovie.genres.isNotEmpty()) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                movie.genres.forEach { genre ->
+                                fullMovie.genres.forEach { genre ->
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(50))
@@ -1704,36 +1757,40 @@ fun TvMovieDetailModal(
                         }
 
                         // Synopsis / Plot
-                        if (!movie.plot.isNullOrBlank()) {
-                            Text(
-                                text = "Synopsis",
-                                color = TextPrimary,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = movie.plot,
-                                color = TextSecondary,
-                                fontSize = 12.sp,
-                                lineHeight = 18.sp,
-                                maxLines = 5,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                        Text(
+                            text = "Synopsis",
+                            color = TextPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        val moviePlot = fullMovie.plot
+                        val synopsisDisplay = when {
+                            !moviePlot.isNullOrBlank() -> moviePlot
+                            isFetchingInfo -> "Chargement du synopsis..."
+                            else -> "Aucun synopsis renseigné par le fournisseur."
                         }
+                        Text(
+                            text = synopsisDisplay,
+                            color = TextSecondary,
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp,
+                            maxLines = 5,
+                            overflow = TextOverflow.Ellipsis
+                        )
 
                         // Casting & Réalisation
-                        if (movie.director != null || movie.cast.isNotEmpty()) {
+                        if (fullMovie.director != null || fullMovie.cast.isNotEmpty()) {
                             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                movie.director?.let {
+                                fullMovie.director?.let {
                                     Column {
                                         Text("Réalisation", color = TextSecondary, fontSize = 10.sp)
                                         Text(it, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
-                                if (movie.cast.isNotEmpty()) {
+                                if (fullMovie.cast.isNotEmpty()) {
                                     Column {
                                         Text("Distribution", color = TextSecondary, fontSize = 10.sp)
-                                        Text(movie.cast.joinToString(", "), color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(fullMovie.cast.joinToString(", "), color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
                             }
@@ -1752,7 +1809,7 @@ fun TvMovieDetailModal(
 
                         // Bouton Play (Focus initial)
                         Button(
-                            onClick = onPlay,
+                            onClick = { onPlay(fullMovie) },
                             modifier = Modifier
                                 .focusRequester(playFocusRequester)
                                 .onFocusChanged { isPlayFocused = it.isFocused }
@@ -1819,37 +1876,33 @@ fun TvSeriesDetailModal(
     isFavorite: Boolean,
     onPlayEpisode: (Episode) -> Unit,
     onToggleFavorite: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onFetchFullInfo: (suspend (String) -> Series?)? = null
 ) {
     val context = LocalContext.current
     val firstFocusRequester = remember { FocusRequester() }
     var selectedSeasonIndex by remember { mutableStateOf(0) }
 
+    var fullSeries by remember(series.id) { mutableStateOf(series) }
+    var isLoadingInfo by remember(series.id) { mutableStateOf(series.seasons.isEmpty() && onFetchFullInfo != null) }
+
+    LaunchedEffect(series.id) {
+        if (series.seasons.isEmpty() && onFetchFullInfo != null) {
+            isLoadingInfo = true
+            val fetched = onFetchFullInfo(series.id)
+            if (fetched != null) {
+                fullSeries = fetched
+            }
+            isLoadingInfo = false
+        }
+    }
+
     BackHandler {
         onDismiss()
     }
 
-    val seasons = series.seasons.ifEmpty {
-        listOf(
-            Season(
-                seasonNumber = 1,
-                name = "Saison 1",
-                episodeCount = 1,
-                episodes = listOf(
-                    Episode(
-                        id = "${series.id}_e1",
-                        seriesId = series.id,
-                        seasonNumber = 1,
-                        episodeNumber = 1,
-                        title = "Épisode 1",
-                        streamUrl = ""
-                    )
-                )
-            )
-        )
-    }
-
-    val currentSeason = seasons.getOrElse(selectedSeasonIndex) { seasons.first() }
+    val seasons = fullSeries.seasons
+    val currentSeason = seasons.getOrNull(selectedSeasonIndex) ?: seasons.firstOrNull()
 
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(100)
@@ -1899,14 +1952,14 @@ fun TvSeriesDetailModal(
                             .border(1.5.dp, NoosCyan.copy(alpha = 0.4f), RoundedCornerShape(18.dp))
                             .background(Color(0xFF162032))
                     ) {
-                        if (!series.posterUrl.isNullOrBlank()) {
+                        if (!fullSeries.posterUrl.isNullOrBlank()) {
                             SubcomposeAsyncImage(
                                 model = ImageRequest.Builder(context)
-                                    .data(series.posterUrl)
+                                    .data(fullSeries.posterUrl)
                                     .crossfade(true)
                                     .allowHardware(false)
                                     .build(),
-                                contentDescription = series.title,
+                                contentDescription = fullSeries.title,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -1979,7 +2032,7 @@ fun TvSeriesDetailModal(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = series.title,
+                                text = fullSeries.title,
                                 color = TextPrimary,
                                 fontSize = 24.sp,
                                 fontWeight = FontWeight.Black
@@ -1989,12 +2042,14 @@ fun TvSeriesDetailModal(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                series.releaseYear?.let { Text("$it", color = NoosCyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
-                                Text("•", color = TextSecondary)
-                                Text("${seasons.size} Saison${if (seasons.size > 1) "s" else ""}", color = TextPrimary, fontSize = 12.sp)
-                                if (series.rating > 0f) {
+                                fullSeries.releaseYear?.let { Text("$it", color = NoosCyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+                                if (seasons.isNotEmpty()) {
                                     Text("•", color = TextSecondary)
-                                    Text("★ ${String.format(java.util.Locale.US, "%.1f", series.rating)}", color = GoldVip, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text("${seasons.size} Saison${if (seasons.size > 1) "s" else ""}", color = TextPrimary, fontSize = 12.sp)
+                                }
+                                if (fullSeries.rating > 0f) {
+                                    Text("•", color = TextSecondary)
+                                    Text("★ ${String.format(java.util.Locale.US, "%.1f", fullSeries.rating)}", color = GoldVip, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -2011,116 +2066,179 @@ fun TvSeriesDetailModal(
                     }
 
                     // Synopsis
-                    if (!series.plot.isNullOrBlank()) {
+                    val seriesPlot = fullSeries.plot
+                    if (!seriesPlot.isNullOrBlank()) {
                         Text(
-                            text = series.plot,
+                            text = seriesPlot,
                             color = TextSecondary,
                             fontSize = 11.sp,
-                            maxLines = 2,
+                            maxLines = 3,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
 
-                    // Sélecteur de Saisons
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(seasons.size) { idx ->
-                            val s = seasons[idx]
-                            val isSelected = idx == selectedSeasonIndex
-                            var isChipFocused by remember { mutableStateOf(false) }
-
-                            var chipMod = Modifier
-                                .clip(RoundedCornerShape(50))
-                                .onFocusChanged { isChipFocused = it.isFocused }
-                                .focusable()
-                                .clickable { selectedSeasonIndex = idx }
-                                .background(if (isChipFocused) Color.White else if (isSelected) NoosBlue.copy(alpha = 0.35f) else SurfaceDarkVariant)
-                                .border(
-                                    width = if (isChipFocused) 2.5.dp else if (isSelected) 1.dp else 1.dp,
-                                    color = if (isChipFocused) FocusGlow else if (isSelected) NoosBlue else CardBorderUnfocused,
-                                    shape = RoundedCornerShape(50)
+                    if (isLoadingInfo) {
+                        Box(
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(28.dp),
+                                    color = NoosCyan,
+                                    strokeWidth = 3.dp
                                 )
-                                .padding(horizontal = 14.dp, vertical = 6.dp)
-
-                            if (idx == 0) {
-                                chipMod = chipMod.focusRequester(firstFocusRequester)
-                            }
-
-                            Box(modifier = chipMod) {
-                                Text(
-                                    text = s.name.ifBlank { "Saison ${s.seasonNumber}" },
-                                    color = if (isChipFocused) Color.Black else if (isSelected) Color.White else TextSecondary,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Text("Chargement des saisons et épisodes...", color = TextSecondary, fontSize = 13.sp)
                             }
                         }
-                    }
-
-                    // Liste des Épisodes de la saison sélectionnée
-                    Text("Épisodes (${currentSeason.episodes.size})", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-
-                    LazyColumn(
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(bottom = 8.dp)
-                    ) {
-                        items(currentSeason.episodes) { ep ->
-                            var isEpFocused by remember { mutableStateOf(false) }
-
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .onFocusChanged { isEpFocused = it.isFocused }
-                                    .focusable()
-                                    .clickable { onPlayEpisode(ep) }
-                                    .background(if (isEpFocused) Color(0xFF1E2838) else SurfaceDarkVariant)
-                                    .border(
-                                        width = if (isEpFocused) 2.5.dp else 1.dp,
-                                        color = if (isEpFocused) FocusGlow else CardBorderUnfocused,
-                                        shape = RoundedCornerShape(12.dp)
-                                    )
-                                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    } else if (seasons.isEmpty()) {
+                        Box(
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                Text("Épisodes détaillés non indexés par le serveur", color = TextSecondary, fontSize = 13.sp)
+                                var isDirectPlayFocused by remember { mutableStateOf(false) }
+                                Button(
+                                    onClick = {
+                                        val fallbackEp = Episode(
+                                            id = fullSeries.id,
+                                            seriesId = fullSeries.id,
+                                            seasonNumber = 1,
+                                            episodeNumber = 1,
+                                            title = "Épisode 1",
+                                            streamUrl = ""
+                                        )
+                                        onPlayEpisode(fallbackEp)
+                                    },
+                                    modifier = Modifier
+                                        .onFocusChanged { isDirectPlayFocused = it.isFocused }
+                                        .focusable(),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isDirectPlayFocused) Color.White else NoosBlue
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = if (isDirectPlayFocused) Color.Black else Color.White)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Lancer la série (Épisode 1)", color = if (isDirectPlayFocused) Color.Black else Color.White, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    } else {
+                        // Sélecteur de Saisons
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(seasons.size) { idx ->
+                                val s = seasons[idx]
+                                val isSelected = idx == selectedSeasonIndex
+                                var isChipFocused by remember { mutableStateOf(false) }
+
+                                var chipMod = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .onFocusChanged { isChipFocused = it.isFocused }
+                                    .focusable()
+                                    .clickable { selectedSeasonIndex = idx }
+                                    .background(if (isChipFocused) Color.White else if (isSelected) NoosBlue.copy(alpha = 0.35f) else SurfaceDarkVariant)
+                                    .border(
+                                        width = if (isChipFocused) 2.5.dp else 1.dp,
+                                        color = if (isChipFocused) FocusGlow else if (isSelected) NoosBlue else CardBorderUnfocused,
+                                        shape = RoundedCornerShape(50)
+                                    )
+                                    .padding(horizontal = 14.dp, vertical = 6.dp)
+
+                                if (idx == 0) {
+                                    chipMod = chipMod.focusRequester(firstFocusRequester)
+                                }
+
+                                Box(modifier = chipMod) {
+                                    Text(
+                                        text = s.name.ifBlank { "Saison ${s.seasonNumber}" },
+                                        color = if (isChipFocused) Color.Black else if (isSelected) Color.White else TextSecondary,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
+                        // Liste des Épisodes de la saison sélectionnée
+                        val episodeList = currentSeason?.episodes ?: emptyList()
+                        Text("Épisodes (${episodeList.size})", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+
+                        LazyColumn(
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(bottom = 8.dp)
+                        ) {
+                            items(episodeList) { ep ->
+                                var isEpFocused by remember { mutableStateOf(false) }
+
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .onFocusChanged { isEpFocused = it.isFocused }
+                                        .focusable()
+                                        .clickable { onPlayEpisode(ep) }
+                                        .background(if (isEpFocused) Color(0xFF1E2838) else SurfaceDarkVariant)
+                                        .border(
+                                            width = if (isEpFocused) 2.5.dp else 1.dp,
+                                            color = if (isEpFocused) FocusGlow else CardBorderUnfocused,
+                                            shape = RoundedCornerShape(12.dp)
+                                        )
+                                        .padding(horizontal = 14.dp, vertical = 10.dp)
                                 ) {
                                     Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(32.dp)
-                                                .clip(CircleShape)
-                                                .background(if (isEpFocused) NoosCyan else NoosBlue),
-                                            contentAlignment = Alignment.Center
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                            modifier = Modifier.weight(1f)
                                         ) {
-                                            Icon(
-                                                Icons.Default.PlayArrow,
-                                                contentDescription = null,
-                                                tint = if (isEpFocused) Color.Black else Color.White,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(32.dp)
+                                                    .clip(CircleShape)
+                                                    .background(if (isEpFocused) NoosCyan else NoosBlue),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.PlayArrow,
+                                                    contentDescription = null,
+                                                    tint = if (isEpFocused) Color.Black else Color.White,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
 
-                                        Column {
-                                            Text(
-                                                text = "Épisode ${ep.episodeNumber} : ${ep.title}",
-                                                color = if (isEpFocused) NoosCyan else TextPrimary,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            ep.durationMinutes?.let { dur ->
-                                                Text("$dur min", color = TextSecondary, fontSize = 10.sp)
+                                            Column {
+                                                Text(
+                                                    text = "Épisode ${ep.episodeNumber} : ${ep.title}",
+                                                    color = if (isEpFocused) NoosCyan else TextPrimary,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    ep.durationMinutes?.let { dur ->
+                                                        Text("$dur min", color = TextSecondary, fontSize = 10.sp)
+                                                    }
+                                                    if (ep.containerExtension.isNotBlank()) {
+                                                        Text(ep.containerExtension.uppercase(), color = NoosCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
                                             }
                                         }
-                                    }
 
-                                    Text("▶ Lire", color = if (isEpFocused) NoosCyan else TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("▶ Lire", color = if (isEpFocused) NoosCyan else TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    }
                                 }
                             }
                         }

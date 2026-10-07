@@ -29,3 +29,9 @@ val GoldVip = Color(0xFFF5C518)
 val PurpleHdr = Color(0xFF8B5CF6)
 val FocusGlow = Color(0xFF3888FF)
 val RedLive = Color(0xFFFF3B30)
+
+// Aliases de compatibilité
+val DarkSurface = SurfaceDark
+val DarkCard = CardBackground
+val AccentAmber = GoldVip
+val AccentRed = RedLive

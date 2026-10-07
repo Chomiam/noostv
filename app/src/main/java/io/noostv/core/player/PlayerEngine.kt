@@ -19,6 +19,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+import android.util.Log
+import androidx.media3.common.PlaybackException
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+
 /**
  * Piste audio ou sous-titre disponible dans le flux
  */
@@ -50,20 +57,36 @@ class PlayerEngine(
         )
     }
 
-    // LoadControl optimisé pour zapping IPTV ultra-rapide (démarre dès 500ms de buffer)
-    private val liveLoadControl = DefaultLoadControl.Builder()
+    private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+        .setUserAgent("IPTVSmartersPro/3.1.5 (Linux; Android TV)")
+        .setAllowCrossProtocolRedirects(true)
+        .setConnectTimeoutMs(20_000)
+        .setReadTimeoutMs(30_000)
+
+    private val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+
+    private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+
+    private val renderersFactory = DefaultRenderersFactory(context)
+        .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+        .setEnableDecoderFallback(true)
+
+    // LoadControl optimisé pour zapping IPTV ultra-rapide et streaming VOD résilient
+    private val defaultLoadControl = DefaultLoadControl.Builder()
         .setBufferDurationsMs(
-            15_000, // minBufferMs
-            30_000, // maxBufferMs
-            500,    // bufferForPlaybackMs
-            1_500   // bufferForPlaybackAfterRebufferMs
+            20_000, // minBufferMs
+            50_000, // maxBufferMs
+            1_500,  // bufferForPlaybackMs
+            3_000   // bufferForPlaybackAfterRebufferMs
         )
+        .setPrioritizeTimeOverSizeThresholds(true)
         .build()
 
     val exoPlayer: ExoPlayer by lazy {
-        ExoPlayer.Builder(context)
+        ExoPlayer.Builder(context, renderersFactory)
+            .setMediaSourceFactory(mediaSourceFactory)
             .setTrackSelector(trackSelector)
-            .setLoadControl(liveLoadControl)
+            .setLoadControl(defaultLoadControl)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
@@ -72,12 +95,19 @@ class PlayerEngine(
                 /* handleAudioFocus = */ true
             )
             .setSeekBackIncrementMs(10_000)
-            .setSeekForwardIncrementMs(10_000)
+            .setSeekForwardIncrementMs(30_000)
             .build()
     }
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
+
+    private val _playerError = MutableStateFlow<String?>(null)
+    val playerError: StateFlow<String?> = _playerError.asStateFlow()
+
+    private var currentStreamUrl: String = ""
+    private var currentStreamTitle: String = ""
+    private var hasAttemptedFallback: Boolean = false
 
     private val _availableAudioTracks = MutableStateFlow<List<TrackInfo>>(emptyList())
     val availableAudioTracks: StateFlow<List<TrackInfo>> = _availableAudioTracks.asStateFlow()
@@ -92,10 +122,43 @@ class PlayerEngine(
         exoPlayer.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _isPlaying.value = isPlaying
+                if (isPlaying) {
+                    _playerError.value = null
+                }
             }
 
             override fun onTracksChanged(tracks: Tracks) {
                 extractTracks(tracks)
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                Log.e("NoosPlayer", "Erreur ExoPlayer (${error.errorCodeName}): ${error.message}", error)
+
+                if (!hasAttemptedFallback && currentStreamUrl.isNotBlank()) {
+                    val fallbackUrl = when {
+                        currentStreamUrl.endsWith(".mp4", ignoreCase = true) -> currentStreamUrl.dropLast(4) + ".mkv"
+                        currentStreamUrl.endsWith(".mkv", ignoreCase = true) -> currentStreamUrl.dropLast(4) + ".mp4"
+                        currentStreamUrl.endsWith(".ts", ignoreCase = true) -> currentStreamUrl.dropLast(3) + ".m3u8"
+                        else -> null
+                    }
+                    if (fallbackUrl != null) {
+                        hasAttemptedFallback = true
+                        Log.i("NoosPlayer", "Tentative de repli vers : $fallbackUrl")
+                        playStream(fallbackUrl, currentStreamTitle, _isHdrActive.value, false)
+                        return
+                    }
+                }
+
+                val userMessage = when (error.errorCode) {
+                    PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "Accès refusé ou flux indisponible (Erreur HTTP)"
+                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Délai de connexion dépassé au serveur IPTV"
+                    PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+                    PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED -> "Format vidéo ou conteneur non supporté"
+                    PlaybackException.ERROR_CODE_DECODER_INIT_FAILED -> "Décodeur matériel non compatible pour ce flux"
+                    else -> "Impossible de lire la vidéo (${error.errorCodeName})"
+                }
+                _playerError.value = userMessage
             }
         })
     }
@@ -109,7 +172,13 @@ class PlayerEngine(
             return false // Requiert la mise à niveau vers NoosTV Premium
         }
 
+        _playerError.value = null
+        currentStreamUrl = url
+        currentStreamTitle = title
+        hasAttemptedFallback = false
         _isHdrActive.value = isHdrStream
+
+        Log.i("NoosPlayer", "playStream: '$title' -> $url")
 
         val mediaItem = MediaItem.Builder()
             .setUri(Uri.parse(url))

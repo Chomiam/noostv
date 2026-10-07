@@ -10,7 +10,7 @@
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-3DDC84?logo=android&logoColor=white)](https://developer.android.com/)
 [![Compose TV](https://img.shields.io/badge/Jetpack%20Compose-Android%20TV%20%26%20M3-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![Media3](https://img.shields.io/badge/Media3%20ExoPlayer-1.2.1-FF6F00?logo=youtube&logoColor=white)](https://developer.android.com/media/media3)
-[![GitHub Releases](https://img.shields.io/badge/Release-v1.0.2%20%2F%20v1.1.0--beta.2-00E5FF)](https://github.com/Chomiam/noostv/releases)
+[![GitHub Releases](https://img.shields.io/badge/Release-v1.1.0%20%2F%20v1.1.0--beta.3-00E5FF)](https://github.com/Chomiam/noostv/releases)
 
 ---
 
@@ -18,165 +18,167 @@
 
 ## 📌 Présentation
 
-**NoosTV** est une application Android moderne et universelle conçue sur mesure pour offrir une expérience de streaming de premier plan sur **téléviseurs connectés, box Android TV (Nvidia Shield, Xiaomi Mi Box, Chromecast avec Google TV)** ainsi que sur **smartphones et tablettes Android**.
+**NoosTV** est une application Android moderne et universelle conçue pour offrir une expérience de streaming fluide et immersive sur **téléviseurs connectés, box Android TV (Nvidia Shield, Xiaomi Mi Box, Chromecast avec Google TV)** ainsi que sur **smartphones et tablettes Android (Google Pixel, Samsung Galaxy, etc.)**.
 
-Développée intégralement en **Kotlin** et **Jetpack Compose for TV**, NoosTV intègre les standards visuels les plus modernes : thème sombre OLED épuré, angles arrondis prononcés (16–24dp), halos lumineux de sélection télécommande D-Pad, miniatures cinématographiques avec texte défilant automatique (*marquee*), fiches de détails riches pour les films et séries, zapping instantané, seekbar VOD interactive et mode de prévisualisation live split sur un quart d'écran.
+Développée en **Kotlin** avec **Jetpack Compose for TV** et **Material 3**, NoosTV intègre les standards visuels les plus soignés :
+- Thème sombre OLED épuré (*Midnight Dark*),
+- Navigation D-Pad ultra-réactive avec halos lumineux néon,
+- Fiches de détails cinématographiques riches avec métadonnées complètes pour les films et séries,
+- Pagination intelligente pour explorer la totalité des catalogues de VOD volumineux (des dizaines de milliers de titres),
+- Moteur de lecture vidéo robuste basé sur **Media3 ExoPlayer** avec accélération matérielle HEVC/H.264 et bascule automatique de conteneur (.mp4 / .mkv),
+- Prévisualisation live sur 1/4 d'écran et zapping instantané,
+- Système de mise à jour transparente **OTA (Over-The-Air)** directement depuis GitHub Releases.
 
 ---
 
 ## ✨ Fonctionnalités Clés
 
-### 📺 1. TV en Direct avec Marquee & Backdrops Cinématographiques
-- **Grille de chaînes interactive** à 4 colonnes avec logos et jaquettes de programme adaptées.
-- **Défilement automatique du titre (*Marquee Text*)** : le nom du programme en cours défile en continu sur la carte pour une lisibilité parfaite même sur les titres longs.
-- **Illustration contextuelle en arrière-plan** : affichage d'une image immersive adaptée au type d'émission (sport, info, cinéma, documentaires, animation).
-- **Indicateurs en direct** : badge vibrant `DIRECT`, résolution (`1080p`, `4K UHD`, `HDR`) et jauge de progression horaire en temps réel.
-- **Système de Favoris ⭐** : filtre dédié avec accès immédiat à vos chaînes préférées.
+### 📺 1. TV en Direct avec Marquee & Prévisualisation 1/4 d'Écran
+- **Grille de chaînes interactive** avec logos et jaquettes thématiques adaptées au programme en cours.
+- **Texte défilant automatique (*Marquee*)** : le titre du programme défile en continu sur la carte pour une lisibilité parfaite.
+- **Indicateurs de direct** : pastille `DIRECT`, résolution (`1080p`, `4K UHD`, `HDR`) et jauge de progression en temps réel.
+- **Split-View 1/4 d'écran** : prévisualisation vidéo instantanée du flux sans quitter la liste des chaînes, avec guide EPG détaillé de l'émission actuelle et des suivantes. Passage en plein écran d'un seul clic.
 
 <div align="center">
-  <img src="docs/screenshots/tv_channels_marquee.png" alt="Grille TV avec Marquee et Backdrops" width="85%" />
-  <p><em>Grille TV avec jaquettes thématiques, texte défilant et badges de direct</em></p>
+  <img src="docs/screenshots/tv_channels_marquee.png" alt="Grille TV avec Marquee et Backdrops" width="48%" />
+  &nbsp;
+  <img src="docs/screenshots/tv_channel_preview_quadrant.png" alt="Prévisualisation 1/4 d'écran et Guide TV" width="48%" />
+  <p><em>Grille TV avec texte défilant et mode prévisualisation 1/4 d'écran avec EPG</em></p>
 </div>
 
 ---
 
-### 🔲 2. Prévisualisation Live 1/4 d'Écran & Guide TV Dédié
-- **Split View immersive** déclenchée au clic sur n'importe quelle chaîne :
-  - **Colonne de gauche** : liste des chaînes pour zapping instantané avec repère de la chaîne active.
-  - **Zone supérieure droite (1/4 d'écran)** : lecteur vidéo ExoPlayer diffusant le flux live en direct. Un clic sur `Plein écran (OK)` passe instantanément en mode plein écran sans coupure de flux.
-  - **Zone inférieure droite** : **Guide TV de la chaîne sélectionnée** avec le programme actuel (« EN CE MOMENT »), la jauge d'avancement, le résumé complet et les émissions suivantes.
-- **Bouton Favori ⭐** : marquage/démarquage rapide directement depuis la prévisualisation.
-- **Navigation télécommande intuitive** : retour direct du plein écran vers la prévisualisation, puis de la prévisualisation vers la grille complète.
+### 📚 2. Catalogues VOD Films & Séries avec Pagination Intégrale
+- **Navigation sans limite** : gestion paginée performante permettant de parcourir l'intégralité du catalogue VOD (plus de 39 000 films et 6 000 séries) avec une empreinte mémoire minimale et zéro latence.
+- **Barre de pagination interactive** : boutons Précédent / Suivant et indicateur de position (`Page 1 / 5 (98 films)`) optimisés à la fois pour la télécommande D-Pad sur TV et pour le tactile sur mobile.
+- **Filtres par catégories** : chips horizontaux défilants pour naviguer instantanément entre les genres et bouquets.
 
 <div align="center">
-  <img src="docs/screenshots/tv_channel_preview_quadrant.png" alt="Prévisualisation 1/4 d'écran et Guide TV" width="85%" />
-  <p><em>Prévisualisation live 1/4 d'écran avec flux en direct et guide TV de la chaîne en dessous</em></p>
+  <img src="docs/screenshots/tv_films_pagination.png" alt="Catalogue Films TV avec Pagination" width="48%" />
+  &nbsp;
+  <img src="docs/screenshots/tv_series_pagination.png" alt="Catalogue Séries TV avec Pagination" width="48%" />
+  <p><em>Catalogues VOD Films et Séries sur Android TV avec affiches 2:3 et barre de pagination</em></p>
 </div>
 
 ---
 
-### 🎬 3. Fiches de Détails Cinématographiques VOD (Films & Séries)
+### 🎬 3. Fiches de Métadonnées Cinématographiques Complètes
 - **Modale de Détails Films** :
-  - Affiche grand format au ratio cinéma 2:3 non rogné.
-  - Badges techniques complets : Définition (`4K UHD`, `1080p`), HDR (`HDR10`, `Dolby Vision`), Codec vidéo (`HEVC`, `AV1`) et audio (`AC3`, `AAC`).
-  - Année de sortie, durée précise, note IMDb avec étoile dorée, tags de genres.
-  - Synopsis complet, réalisateur et distribution.
-  - Bouton `[▶ Lancer le film]` (focus automatique), bouton favoris et fermeture rapide par télécommande.
+  - Affiche haute résolution au ratio cinéma 2:3 et bannière d'arrière-plan (*backdrop*) immersive avec dégradé subtil.
+  - Badges techniques complets : Définition (`1080p`, `4K UHD`), Codec vidéo (`HEVC`, `H264`), Codec audio (`AC3`, `AAC`), formats HDR.
+  - Année de production, durée précise, note IMDb avec étoile dorée, genres.
+  - Synopsis complet et bouton de lecture directe `[▶ Lancer le film]`.
 - **Modale de Détails Séries** :
   - Sélecteur horizontal de saisons (`Saison 1`, `Saison 2`, etc.).
-  - Liste interactive des épisodes avec titre, durée, synopsis et icône de lecture directe.
+  - Liste interactive des épisodes avec numérotation, titre, miniature et bouton de lecture unitaire.
+  - Bouton d'accès rapide au premier épisode (`▶ Regarder S1:E1`) avec repli automatique pour un lancement instantané sans attente réseau.
+  - Gestion des favoris avec bouton dédié.
 
 <div align="center">
-  <img src="docs/screenshots/vod_movie_details_modal.png" alt="Fiche Détail Film VOD" width="48%" />
+  <img src="docs/screenshots/vod_movie_details_modal.png" alt="Fiche Détail Film TV" width="48%" />
   &nbsp;
-  <img src="docs/screenshots/vod_series_details_modal.png" alt="Fiche Détail Série VOD" width="48%" />
-  <p><em>Fiches de détails interactives pour les Films et Séries TV sur Android TV</em></p>
+  <img src="docs/screenshots/vod_series_details_modal.png" alt="Fiche Détail Série TV" width="48%" />
+  <p><em>Fiches de métadonnées enrichies pour les Films et Séries sur grand écran Android TV</em></p>
 </div>
 
 ---
 
-### ⚡ 4. Lecteur Vidéo Avancé & Mini-HUD de Zapping
-- **Mini-HUD de Zapping** : lors d'un changement de chaîne ou appui `HAUT` / `BAS`, un bandeau dynamique affiche la chaîne, le programme en cours, la barre d'avancement et le programme à suivre avant de s'estomper après 3,5s.
-- **Zapping Numérique Direct** : saisie directe du numéro de chaîne via les touches numériques de la télécommande (0 à 9) avec pastille néon et temporisation d'1 seconde.
-- **Ratio d'aspect vidéo réglable** : bascule à la volée entre `Ajusté (Letterbox 16:9)`, `Zoom (Plein écran rogné)` et `Étiré (Fill)`.
-- **Seekbar VOD interactive** : timeline dynamique avec boutons saut arrière (-10s) et saut avant (+30s).
-- **Gestion des Pistes Audio & Sous-titres** : sélection multilingue avec détection automatique.
+### ⚡ 4. Moteur de Lecture Vidéo Avancé & Accélération Matérielle
+- **Media3 ExoPlayer haute performance** :
+  - Décodage matériel matériel optimisé pour flux **H.264, HEVC / H.265, AV1, VP9** jusqu'en 4K 60fps.
+  - Décodeur de secours automatique (`enableDecoderFallback = true`) pour garantir la lecture même sur les flux aux profils vidéo exotiques.
+  - Détection dynamique et repli automatique de conteneur : si un fichier VOD échoue en `.mp4`, le lecteur bascule automatiquement en flux `.mkv`.
+  - En-têtes HTTP et User-Agent compatibles pour contourner les restrictions fournisseurs et timeouts de passerelle.
+- **Contrôles OSD intuitifs** :
+  - Seekbar précise avec boutons de saut temporel (-10s / +30s).
+  - Bascule du ratio d'aspect vidéo : *Ajusté (16:9)*, *Zoom (Plein écran)*, *Étiré*.
+  - Mini-HUD de zapping en surimpression avec progression horaire et titre du programme suivant.
 
 <div align="center">
-  <img src="docs/screenshots/live_zapping_hud.png" alt="Mini-HUD de Zapping Live TV" width="85%" />
-  <p><em>Mini-HUD de Zapping en surimpression avec progression du direct et prochain programme</em></p>
-</div>
-
----
-
-### 📅 5. Guide TV Interactif (EPG Complet avec Bandeau Synopsis)
-- Vue tabulaire horizontale et chronologique pour visualiser les programmes par chaîne et par tranche horaire.
-- **Bandeau dynamique de description** : affiche en bas d'écran le titre complet, la catégorie et le synopsis de l'émission ciblée par le curseur télécommande.
-- Clic direct sur n'importe quelle émission pour lancer instantanément la chaîne en plein écran.
-
-<div align="center">
-  <img src="docs/screenshots/epg_interactive_synopsis.png" alt="Guide TV Interactif avec Bandeau Synopsis" width="85%" />
-  <p><em>Guide TV interactif avec mise en avant du programme ciblé et résumé complet</em></p>
-</div>
-
----
-
-### 📱 6. Application Android Mobile Dédiée
-- **Interface adaptée pour smartphones et tablettes** avec barre de navigation inférieure moderne à 5 onglets :
-  - **Direct** : liste des chaînes avec logos et programmes en cours.
-  - **Films** : grille d'affiches 2:3 avec notes et années de sortie.
-  - **Séries** : catalogue complet des séries avec filtres par catégorie.
-  - **Guide TV** : grille horaire chronologique tactile.
-  - **Paramètres** : gestion du compte, déconnexion et mises à jour OTA.
-
-<div align="center">
-  <img src="docs/screenshots/mobile_direct_tv.png" alt="Mobile Direct TV" width="23%" />
+  <img src="docs/screenshots/tv_osd_movie.png" alt="OSD Lecteur Vidéo Android TV" width="48%" />
   &nbsp;
-  <img src="docs/screenshots/mobile_vod_films.png" alt="Mobile VOD Films" width="23%" />
-  &nbsp;
-  <img src="docs/screenshots/mobile_vod_series.png" alt="Mobile VOD Séries" width="23%" />
-  &nbsp;
-  <img src="docs/screenshots/mobile_epg_guide.png" alt="Mobile Guide TV" width="23%" />
-  <p><em>Expérience mobile complète (testée et validée sur Google Pixel)</em></p>
+  <img src="docs/screenshots/live_zapping_hud.png" alt="Mini-HUD de Zapping Live TV" width="48%" />
+  <p><em>Lecteur vidéo avec décodage matériel et mini-HUD de zapping interactif</em></p>
 </div>
 
 ---
 
-### ⚙️ 7. Paramètres & Mises à Jour OTA GitHub (Stable / Testing)
-- **Sélecteur de canal de mise à jour** : permet de basculer en un clic entre la branche **Stable** (version de production) et la branche **Testing** (nouvelles fonctionnalités en avant-première).
-- **Vérification OTA intégrée** : interroge l'API GitHub Releases et affiche le numéro de version, les notes de version (*changelog*) et permet le téléchargement direct de l'APK.
-- **Gestionnaire de compte** : statut de connexion, affichage de l'URL du serveur actif et déconnexion sécurisée.
+### 📱 5. Expérience Dédiée Android Mobile
+Une interface pensée pour les écrans tactiles verticaux et validée sur **Google Pixel 10 Pro** :
+- **Barre de navigation inférieure à 5 onglets** : Direct, Films, Séries, Guide TV, Paramètres.
+- **Fiches de détails VOD en bottom sheet tactile** avec backdrops dynamiques, badges techniques et lecture en 1 geste.
+- **Lecteur vidéo mobile plein écran** avec commandes tactiles transparentes et bascule portrait/paysage.
 
 <div align="center">
-  <img src="docs/screenshots/settings_ota_updates.png" alt="Écran des Paramètres et Mises à Jour" width="85%" />
-  <p><em>Menu Paramètres avec sélecteur de canal Stable / Testing et vérification OTA</em></p>
+  <img src="docs/screenshots/mobile_direct_tv.png" alt="Mobile Direct TV" width="18%" />
+  &nbsp;
+  <img src="docs/screenshots/mobile_vod_films.png" alt="Mobile VOD Films" width="18%" />
+  &nbsp;
+  <img src="docs/screenshots/mobile_movie_modal.png" alt="Mobile Movie Modal" width="18%" />
+  &nbsp;
+  <img src="docs/screenshots/mobile_vod_series.png" alt="Mobile VOD Séries" width="18%" />
+  &nbsp;
+  <img src="docs/screenshots/mobile_series_modal.png" alt="Mobile Series Modal" width="18%" />
+  <p><em>Interface mobile Android moderne : chaînes en direct, catalogues paginés et fiches de détails</em></p>
 </div>
 
 ---
 
-### 🔑 8. Connexion Xtream Codes & Mode Démo
-- Écran de connexion ergonomique supportant la télécommande TV et le clavier virtuel :
-  - **URL du serveur** (HTTP / HTTPS)
-  - **Identifiant**
-  - **Mot de passe**
-- **Mode Démo intégré** : permet de tester immédiatement l'intégralité de l'application (flux live, 4K HDR, films, séries, EPG) sans identifiants externes.
+### 📅 6. Guide TV Électronique Interactif (EPG)
+- Grille tabulaire chronologique des programmes par tranche horaire et par chaîne.
+- **Bandeau de synopsis dynamique** : affiche en temps réel la description, le genre et les horaires exacts du programme sélectionné.
+- Clic direct sur n'importe quelle émission pour démarrer immédiatement la chaîne associée.
 
 <div align="center">
-  <img src="docs/screenshots/login_screen.png" alt="Écran de Connexion" width="70%" />
-  <p><em>Écran d'authentification Xtream Codes</em></p>
+  <img src="docs/screenshots/epg_interactive_synopsis.png" alt="Guide TV EPG Interactif" width="85%" />
+  <p><em>Guide TV interactif avec bandeau synopsis dynamique</em></p>
 </div>
 
 ---
 
-## 🛠️ Stack Technique & Architecture
+### 🔄 7. Mises à Jour OTA Automatiques (Stable & Testing)
+- **Gestionnaire OTA intégré** interrogeant directement GitHub Releases.
+- **Sélecteur de canal** : basculez d'un clic entre la branche **Stable** (production certifiée) et la branche **Testing** (nouvelles fonctionnalités et correctifs en avant-première).
+- Détection automatique des nouvelles versions, affichage des notes de mise à jour (*changelog*) et installation transparente de l'APK.
 
-| Composant | Technologie | Description |
+<div align="center">
+  <img src="docs/screenshots/settings_ota_updates.png" alt="Paramètres et Mises à Jour OTA" width="80%" />
+  <p><em>Menu Paramètres avec sélecteur de canal OTA et vérification des mises à jour</em></p>
+</div>
+
+---
+
+## 🛠️ Stack Technique
+
+| Composant | Technologie | Rôle |
 |---|---|---|
-| **Langage** | [Kotlin 1.9](https://kotlinlang.org/) | 100% Kotlin moderne avec Coroutines & Flow |
-| **Interface TV** | [Compose for TV 1.0](https://developer.android.com/jetpack/compose) | Composables TV optimisés pour le focus D-Pad |
-| **Interface Mobile** | [Jetpack Compose Material 3](https://m3.material.io/) | Responsive design pour écrans tactiles mobiles |
-| **Design System** | Midnight Dark OLED | Thème sombre OLED, palettes cyan & néon, arrondis 16–24dp |
-| **Lecteur Vidéo** | [AndroidX Media3 ExoPlayer 1.2.1](https://developer.android.com/media/media3) | Support HLS, DASH, TS, MP4, décodage HEVC / AV1 / 4K / HDR |
-| **Réseau & API** | [Ktor Client 2.3](https://ktor.io/) & [Kotlinx Serialization](https://github.com/Kotlin/kotlinx.serialization) | Client HTTP asynchrone pour l'API Xtream Codes |
-| **Images** | [Coil 2.5](https://coil-kt.github.io/coil/) | Chargement d'images asynchrone avec cache disque/RAM |
-| **Stockage** | [EncryptedSharedPreferences](https://developer.android.com/reference/androidx/security/crypto/EncryptedSharedPreferences) | Chiffrement matériel des identifiants et tokens de session |
+| **Langage** | [Kotlin 1.9.22](https://kotlinlang.org/) | Coroutines, StateFlow, code partagé TV / Mobile |
+| **Interface TV** | [Compose for TV 1.0](https://developer.android.com/jetpack/compose) | Composables TV optimisés pour la télécommande D-Pad |
+| **Interface Mobile** | [Jetpack Compose Material 3](https://m3.material.io/) | Composables tactiles pour smartphones et tablettes |
+| **Design System** | Midnight Dark OLED | Palette sombre, accents cyan `#00E5FF` et ambre `#FFB300` |
+| **Lecteur Vidéo** | [AndroidX Media3 ExoPlayer 1.2.1](https://developer.android.com/media/media3) | Décodage matériel HEVC / H.264 / AV1, HLS, DASH, TS, MP4, MKV |
+| **Réseau & API** | [OkHttp 4.12](https://square.github.io/okhttp/) & [Gson](https://github.com/google/gson) | Client Xtream Codes résilient avec timeouts optimisés et extraction zéro-latence |
+| **Images** | [Coil 2.5](https://coil-kt.github.io/coil/) | Chargement asynchrone des posters, bannières et logos avec mise en cache mémoire/disque |
+| **Sécurité** | [EncryptedSharedPreferences](https://developer.android.com/reference/androidx/security/crypto/EncryptedSharedPreferences) | Stockage sécurisé des identifiants et tokens de session |
 
 ---
 
 ## 📥 Téléchargement & Installation
 
 ### Option 1 — Téléchargement des APKs
-Téléchargez directement le fichier `.apk` depuis la page des [Releases GitHub](https://github.com/Chomiam/noostv/releases) :
-- **Canal Stable** : `noostv-v1.0.2.apk`
-- **Canal Testing** : `noostv-v1.1.0-beta.2.apk`
+Rendez-vous sur la page des [Releases GitHub](https://github.com/Chomiam/noostv/releases) pour télécharger l'APK correspondant à votre usage :
+- **Canal Stable** : `noostv-v1.1.0.apk` (Recommandé pour un usage quotidien)
+- **Canal Testing** : `noostv-v1.1.0-beta.3.apk` (Dernières nouveautés)
 
-### Option 2 — Installation via ADB
+### Option 2 — Déploiement via ADB
 ```bash
-# Installation sur une TV ou Box connectée en réseau local
-adb connect <IP_DE_VOTRE_BOX>:5555
-adb install -r noostv-v1.0.2.apk
+# 1. Connexion à votre appareil (Android TV ou smartphone en débogage sans fil)
+adb connect <ADRESSE_IP>:5555
 
-# Lancement direct
+# 2. Installation de l'APK
+adb install -r noostv-v1.1.0.apk
+
+# 3. Lancement de l'application
 adb shell am start -n io.noostv/.MainActivity
 ```
 
@@ -185,9 +187,9 @@ adb shell am start -n io.noostv/.MainActivity
 ## 🔨 Compilation depuis les Sources
 
 ### Prérequis
-- **JDK 17** ou supérieur
-- **Android SDK** (Build-Tools `34.0.0`, Platform `android-34`)
-- **Gradle 8.2+** (inclus via Gradle Wrapper)
+- **JDK 17** configuré (`JAVA_HOME`)
+- **Android SDK** avec Build-Tools `34.0.0` et Platform `android-34`
+- **Gradle 8.2+** (géré via `./gradlew`)
 
 ### Commandes
 ```bash
@@ -195,19 +197,19 @@ adb shell am start -n io.noostv/.MainActivity
 git clone https://github.com/Chomiam/noostv.git
 cd noostv
 
-# Compiler l'APK Debug
+# Compiler l'APK de débogage
 ./gradlew assembleDebug
 
 # Compiler l'APK Release optimisé
 ./gradlew assembleRelease
 
-# Déployer directement sur un appareil connecté
+# Déployer directement sur un appareil ADB connecté
 ./gradlew installDebug
 ```
 
 ---
 
-## 📄 Licence & Crédits
+## 📄 Licence
 
-- Projet développé pour l'écosystème **Noos**.
-- Tous droits réservés &copy; 2026 **NoosTV**.
+Projet développé pour l'écosystème **Noos**.  
+Tous droits réservés &copy; 2026 **NoosTV**.

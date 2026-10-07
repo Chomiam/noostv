@@ -48,10 +48,12 @@ import io.noostv.data.model.Series
 import io.noostv.data.model.VodMovie
 import io.noostv.ui.common.HdrBadge
 import io.noostv.ui.common.LiveIndicatorBadge
+import io.noostv.ui.common.NoosPaginationBar
 import io.noostv.ui.common.PremiumVipBadge
 import io.noostv.ui.common.ResolutionBadge
 import io.noostv.ui.theme.*
 import io.noostv.ui.tv.EpgProvider
+import kotlin.math.ceil
 import kotlinx.coroutines.launch
 
 enum class MobileBottomTab(val label: String, val icon: ImageVector) {
@@ -82,12 +84,22 @@ fun MobileHomeScreen(
     onSelectSeriesCategory: (Category) -> Unit,
     onOpenSearch: () -> Unit,
     onOpenUpgrade: () -> Unit,
-    onOpenLogin: () -> Unit
+    onOpenLogin: () -> Unit,
+    onSelectEpisode: ((Series, io.noostv.data.model.Episode) -> Unit)? = null,
+    onFetchVodInfo: (suspend (String) -> VodMovie?)? = null,
+    onFetchSeriesInfo: (suspend (String) -> Series?)? = null
 ) {
     var selectedTab by remember { mutableStateOf(MobileBottomTab.TV) }
     var selectedLiveCategory by remember { mutableStateOf("Toutes") }
     var selectedVodCategory by remember { mutableStateOf("Toutes") }
     var selectedSeriesCategory by remember { mutableStateOf("Toutes") }
+
+    var activeDetailMovie by remember { mutableStateOf<VodMovie?>(null) }
+    var activeDetailSeries by remember { mutableStateOf<Series?>(null) }
+    var favoriteMovieIds by remember { mutableStateOf(sessionManager.getFavoriteMovieIds()) }
+    var favoriteSeriesIds by remember { mutableStateOf(sessionManager.getFavoriteSeriesIds()) }
+    var moviePage by remember(selectedVodCategory) { mutableIntStateOf(1) }
+    var seriesPage by remember(selectedSeriesCategory) { mutableIntStateOf(1) }
 
     val subscription by entitlementManager.subscription.collectAsState()
 
@@ -221,27 +233,43 @@ fun MobileHomeScreen(
                             }
                         )
 
+                        val moviePageSize = 24
+                        val totalMoviePages = maxOf(1, ceil(movies.size.toDouble() / moviePageSize).toInt())
+                        val pagedMovies = remember(movies, moviePage) {
+                            movies.drop((moviePage - 1) * moviePageSize).take(moviePageSize)
+                        }
+
                         if (isVodLoading) {
                             MobileLoadingState("Chargement des films...")
                         } else if (movies.isEmpty()) {
                             MobileEmptyState(message = "Aucun film disponible dans cette catégorie")
                         } else {
-                            LazyVerticalGrid(
-                                columns = GridCells.Fixed(2),
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(movies, key = { it.id }) { movie ->
-                                    MobileVodCard(
-                                        title = movie.title,
-                                        posterUrl = movie.posterUrl,
-                                        subtitle = "${movie.releaseYear} • ★ ${movie.rating}",
-                                        badge = if (movie.isHdr) movie.hdrFormat ?: "HDR" else movie.resolution,
-                                        onClick = { onSelectMovie(movie) }
-                                    )
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                LazyVerticalGrid(
+                                    columns = GridCells.Fixed(2),
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    items(pagedMovies, key = { it.id }) { movie ->
+                                        MobileVodCard(
+                                            title = movie.title,
+                                            posterUrl = movie.posterUrl,
+                                            subtitle = "${movie.releaseYear ?: ""} • ★ ${movie.rating}",
+                                            badge = if (movie.isHdr) movie.hdrFormat ?: "HDR" else movie.resolution,
+                                            onClick = { activeDetailMovie = movie }
+                                        )
+                                    }
                                 }
+
+                                NoosPaginationBar(
+                                    currentPage = moviePage,
+                                    totalPages = totalMoviePages,
+                                    totalItems = movies.size,
+                                    itemLabel = "films",
+                                    onPageChange = { moviePage = it }
+                                )
                             }
                         }
                     }
@@ -266,27 +294,43 @@ fun MobileHomeScreen(
                             }
                         )
 
+                        val seriesPageSize = 24
+                        val totalSeriesPages = maxOf(1, ceil(series.size.toDouble() / seriesPageSize).toInt())
+                        val pagedSeries = remember(series, seriesPage) {
+                            series.drop((seriesPage - 1) * seriesPageSize).take(seriesPageSize)
+                        }
+
                         if (isSeriesLoading) {
                             MobileLoadingState("Chargement des séries...")
                         } else if (series.isEmpty()) {
                             MobileEmptyState(message = "Aucune série disponible dans cette catégorie")
                         } else {
-                            LazyVerticalGrid(
-                                columns = GridCells.Fixed(2),
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(series, key = { it.id }) { ser ->
-                                    MobileVodCard(
-                                        title = ser.title,
-                                        posterUrl = ser.posterUrl,
-                                        subtitle = "${ser.seasons.size} Saisons • ★ ${ser.rating}",
-                                        badge = "SERIES",
-                                        onClick = { onSelectSeries(ser) }
-                                    )
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                LazyVerticalGrid(
+                                    columns = GridCells.Fixed(2),
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    items(pagedSeries, key = { it.id }) { ser ->
+                                        MobileVodCard(
+                                            title = ser.title,
+                                            posterUrl = ser.posterUrl,
+                                            subtitle = "${ser.seasons.size} Saisons • ★ ${ser.rating}",
+                                            badge = "SERIES",
+                                            onClick = { activeDetailSeries = ser }
+                                        )
+                                    }
                                 }
+
+                                NoosPaginationBar(
+                                    currentPage = seriesPage,
+                                    totalPages = totalSeriesPages,
+                                    totalItems = series.size,
+                                    itemLabel = "séries",
+                                    onPageChange = { seriesPage = it }
+                                )
                             }
                         }
                     }
@@ -310,6 +354,44 @@ fun MobileHomeScreen(
                 }
             }
         }
+    }
+
+    activeDetailMovie?.let { movie ->
+        MobileMovieDetailModal(
+            movie = movie,
+            isFavorite = favoriteMovieIds.contains(movie.id),
+            onDismiss = { activeDetailMovie = null },
+            onPlay = { m ->
+                activeDetailMovie = null
+                onSelectMovie(m)
+            },
+            onToggleFavorite = { id ->
+                sessionManager.toggleFavoriteMovie(id)
+                favoriteMovieIds = sessionManager.getFavoriteMovieIds()
+            },
+            onFetchFullInfo = { id -> onFetchVodInfo?.invoke(id) }
+        )
+    }
+
+    activeDetailSeries?.let { ser ->
+        MobileSeriesDetailModal(
+            series = ser,
+            isFavorite = favoriteSeriesIds.contains(ser.id),
+            onDismiss = { activeDetailSeries = null },
+            onPlayEpisode = { s, ep ->
+                activeDetailSeries = null
+                if (onSelectEpisode != null) {
+                    onSelectEpisode(s, ep)
+                } else {
+                    onSelectSeries(s)
+                }
+            },
+            onToggleFavorite = { id ->
+                sessionManager.toggleFavoriteSeries(id)
+                favoriteSeriesIds = sessionManager.getFavoriteSeriesIds()
+            },
+            onFetchFullInfo = { id -> onFetchSeriesInfo?.invoke(id) }
+        )
     }
 }
 

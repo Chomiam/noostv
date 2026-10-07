@@ -84,6 +84,7 @@ fun NoosPlayerScreen(
     var numericBuffer by remember { mutableStateOf("") }
 
     val isPlaying by playerEngine.isPlaying.collectAsState()
+    val playerError by playerEngine.playerError.collectAsState()
     val audioTracks by playerEngine.availableAudioTracks.collectAsState()
     val subtitleTracks by playerEngine.availableSubtitleTracks.collectAsState()
 
@@ -590,6 +591,58 @@ fun NoosPlayerScreen(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        // ------------------ 5.5 BANNIÈRE D'ERREUR DE LECTURE ------------------
+        if (playerError != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xCC000000))
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth(0.6f)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(SurfaceDark)
+                        .border(1.5.dp, AccentRed, RoundedCornerShape(20.dp))
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = AccentRed,
+                        modifier = Modifier.size(44.dp)
+                    )
+                    Text(
+                        text = "Erreur de lecture",
+                        color = TextPrimary,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = playerError ?: "Impossible de lire la vidéo",
+                        color = TextSecondary,
+                        fontSize = 13.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Button(
+                        onClick = onBack,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = NoosCyan,
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        Text("Retour au catalogue", fontWeight = FontWeight.Bold)
                     }
                 }
             }

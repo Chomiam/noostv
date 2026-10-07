@@ -108,11 +108,11 @@ class IptvRepository(
                 _vodCategories.value = vodCats
             }
 
-            // 3. Charger uniquement la première catégorie Films VOD (50Ko au lieu de 20Mo)
+            // 3. Charger les films VOD de la première catégorie (catalogue complet pour cette catégorie)
             val firstVodCatId = vodCats.firstOrNull()?.id ?: ""
             if (firstVodCatId.isNotBlank()) {
                 _isVodLoading.value = true
-                val initialVodResult = xtreamClient.getVodStreams(serverUrl, username, password, categoryId = firstVodCatId, limit = 40)
+                val initialVodResult = xtreamClient.getVodStreams(serverUrl, username, password, categoryId = firstVodCatId, limit = null)
                 initialVodResult.onSuccess {
                     _movies.value = it
                 }
@@ -126,11 +126,11 @@ class IptvRepository(
                 _seriesCategories.value = seriesCats
             }
 
-            // 5. Charger uniquement la première catégorie Séries (limite 40)
+            // 5. Charger les séries de la première catégorie (catalogue complet pour cette catégorie)
             val firstSeriesCatId = seriesCats.firstOrNull()?.id ?: ""
             if (firstSeriesCatId.isNotBlank()) {
                 _isSeriesLoading.value = true
-                val initialSeriesResult = xtreamClient.getSeriesStreams(serverUrl, username, password, categoryId = firstSeriesCatId, limit = 40)
+                val initialSeriesResult = xtreamClient.getSeriesStreams(serverUrl, username, password, categoryId = firstSeriesCatId, limit = null)
                 initialSeriesResult.onSuccess {
                     _series.value = it
                 }
@@ -159,18 +159,41 @@ class IptvRepository(
         }
     }
 
+    private val vodDetailsCache = java.util.concurrent.ConcurrentHashMap<String, VodMovie>()
+    private val seriesDetailsCache = java.util.concurrent.ConcurrentHashMap<String, Series>()
+
     /**
-     * Charge les films VOD d'une catégorie spécifique sans surcharger la mémoire
+     * Récupère ou télécharge les métadonnées complètes d'un film VOD
+     */
+    suspend fun getOrFetchVodInfo(serverUrl: String, username: String, password: String, vodId: String): VodMovie? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        vodDetailsCache[vodId]?.let { return@withContext it }
+        val res = xtreamClient.getVodInfo(serverUrl, username, password, vodId)
+        res.getOrNull()?.also { enriched ->
+            vodDetailsCache[vodId] = enriched
+            _movies.value = _movies.value.map { if (it.id == vodId) enriched else it }
+        }
+    }
+
+    /**
+     * Récupère ou télécharge les métadonnées complètes d'une série avec saisons et épisodes
+     */
+    suspend fun getOrFetchSeriesInfo(serverUrl: String, username: String, password: String, seriesId: String): Series? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        seriesDetailsCache[seriesId]?.let { return@withContext it }
+        val res = xtreamClient.getSeriesInfo(serverUrl, username, password, seriesId)
+        res.getOrNull()?.also { enriched ->
+            seriesDetailsCache[seriesId] = enriched
+            _series.value = _series.value.map { if (it.id == seriesId) enriched else it }
+        }
+    }
+
+    /**
+     * Charge les films VOD d'une catégorie spécifique (ou de l'ensemble du catalogue si Toutes)
      */
     suspend fun loadVodByCategory(serverUrl: String, username: String, password: String, categoryId: String) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         _isVodLoading.value = true
         try {
-            val targetCatId = if (categoryId == "Toutes" || categoryId.isBlank()) {
-                _vodCategories.value.firstOrNull()?.id ?: ""
-            } else {
-                categoryId
-            }
-            val vodResult = xtreamClient.getVodStreams(serverUrl, username, password, categoryId = targetCatId, limit = 40)
+            val targetCatId = if (categoryId == "Toutes" || categoryId.isBlank()) null else categoryId
+            val vodResult = xtreamClient.getVodStreams(serverUrl, username, password, categoryId = targetCatId, limit = null)
             vodResult.onSuccess {
                 _movies.value = it
             }
@@ -180,17 +203,13 @@ class IptvRepository(
     }
 
     /**
-     * Charge les séries d'une catégorie spécifique sans surcharger la mémoire
+     * Charge les séries d'une catégorie spécifique (ou de l'ensemble du catalogue si Toutes)
      */
     suspend fun loadSeriesByCategory(serverUrl: String, username: String, password: String, categoryId: String) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         _isSeriesLoading.value = true
         try {
-            val targetCatId = if (categoryId == "Toutes" || categoryId.isBlank()) {
-                _seriesCategories.value.firstOrNull()?.id ?: ""
-            } else {
-                categoryId
-            }
-            val seriesResult = xtreamClient.getSeriesStreams(serverUrl, username, password, categoryId = targetCatId, limit = 40)
+            val targetCatId = if (categoryId == "Toutes" || categoryId.isBlank()) null else categoryId
+            val seriesResult = xtreamClient.getSeriesStreams(serverUrl, username, password, categoryId = targetCatId, limit = null)
             seriesResult.onSuccess {
                 _series.value = it
             }

@@ -22,6 +22,7 @@ data class VodMovie(
     val videoCodec: String = "hevc",
     val audioCodec: String = "ac3",
     val categoryId: String = "movies_all",
+    val containerExtension: String = "mp4",
     val playbackPositionMs: Long = 0L,
     val isFavorite: Boolean = false
 ) {

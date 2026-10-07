@@ -29,8 +29,8 @@ data class XtreamAccountInfo(
  */
 class XtreamCodesClient(
     private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+        .connectTimeout(6, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
         .build(),
     private val gson: Gson = Gson()
 ) {
@@ -180,19 +180,19 @@ class XtreamCodesClient(
     }
 
     /**
-     * Récupère les films VOD (avec limitation configurable pour préserver la RAM)
+     * Récupère les films VOD d'une catégorie (ou de l'ensemble du catalogue)
      */
     suspend fun getVodStreams(
         serverUrl: String,
         username: String,
         password: String,
         categoryId: String? = null,
-        limit: Int = 100
+        limit: Int? = null
     ): Result<List<VodMovie>> = withContext(Dispatchers.IO) {
         val cleanServer = serverUrl.trimEnd('/')
         val url = buildString {
             append("$cleanServer/player_api.php?username=$username&password=$password&action=get_vod_streams")
-            if (!categoryId.isNullOrBlank()) {
+            if (!categoryId.isNullOrBlank() && categoryId != "Toutes" && categoryId != "all") {
                 append("&category_id=$categoryId")
             }
         }
@@ -204,14 +204,26 @@ class XtreamCodesClient(
             val type = object : TypeToken<List<Map<String, Any>>>() {}.type
             val rawList: List<Map<String, Any>> = gson.fromJson(body, type)
 
-            val movies = rawList.take(limit).mapNotNull { item ->
+            val listToProcess = if (limit != null && limit > 0) rawList.take(limit) else rawList
+
+            val movies = listToProcess.mapNotNull { item ->
                 val streamId = item["stream_id"]?.toString()?.substringBefore(".") ?: return@mapNotNull null
                 val name = item["name"]?.toString() ?: "Film $streamId"
                 val poster = item["stream_icon"]?.toString()
                 val rating = (item["rating"]?.toString()?.toFloatOrNull()) ?: 0f
-                val year = (item["year"] as? Number)?.toInt()
+                val year = (item["year"] as? Number)?.toInt() ?: item["year"]?.toString()?.toIntOrNull()
                 val plot = item["plot"]?.toString()
                 val ext = item["container_extension"]?.toString() ?: "mp4"
+                val catId = item["category_id"]?.toString() ?: categoryId ?: "movies_all"
+
+                val genreStr = item["genre"]?.toString()
+                val genres = genreStr?.split(",", "/", ";")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+                val castStr = item["cast"]?.toString()
+                val cast = castStr?.split(",", ";")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+                val director = item["director"]?.toString()
+                val backdrops = item["backdrop_path"] as? List<*>
+                val backdropUrl = backdrops?.firstOrNull()?.toString() ?: poster
+                val duration = (item["duration"] as? Number)?.toInt() ?: item["duration"]?.toString()?.toIntOrNull()
 
                 val isHdr = name.contains("HDR", ignoreCase = true) || name.contains("Dolby Vision", ignoreCase = true)
                 val hdrFormat = if (name.contains("Dolby Vision", ignoreCase = true)) "Dolby Vision" else if (isHdr) "HDR10" else null
@@ -223,17 +235,120 @@ class XtreamCodesClient(
                     title = name,
                     streamUrl = streamUrl,
                     posterUrl = poster,
+                    backdropUrl = backdropUrl,
                     rating = rating,
                     releaseYear = year,
+                    durationMinutes = duration,
                     plot = plot,
+                    genres = genres,
+                    cast = cast,
+                    director = director,
                     isHdr = isHdr,
                     hdrFormat = hdrFormat,
                     resolution = resolution,
-                    videoCodec = if (isHdr) "hevc" else "h264"
+                    videoCodec = if (isHdr) "hevc" else "h264",
+                    categoryId = catId,
+                    containerExtension = ext
                 )
             }
 
             Result.success(movies)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Récupère les métadonnées complètes d'un film VOD (action=get_vod_info)
+     */
+    suspend fun getVodInfo(
+        serverUrl: String,
+        username: String,
+        password: String,
+        vodId: String
+    ): Result<VodMovie> = withContext(Dispatchers.IO) {
+        val cleanServer = serverUrl.trimEnd('/')
+        val url = "$cleanServer/player_api.php?username=$username&password=$password&action=get_vod_info&vod_id=$vodId"
+
+        try {
+            val request = Request.Builder().url(url).build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: return@withContext Result.failure(Exception("Réponse vide"))
+            val type = object : TypeToken<Map<String, Any>>() {}.type
+            val jsonMap: Map<String, Any> = gson.fromJson(body, type)
+
+            @Suppress("UNCHECKED_CAST")
+            val info = jsonMap["info"] as? Map<String, Any> ?: emptyMap()
+            @Suppress("UNCHECKED_CAST")
+            val movieData = jsonMap["movie_data"] as? Map<String, Any> ?: emptyMap()
+
+            val title = (info["name"] ?: movieData["name"])?.toString() ?: "Film $vodId"
+            val poster = (info["movie_image"] ?: info["cover_big"])?.toString()
+            val plot = (info["plot"] ?: info["description"])?.toString()
+            val castStr = (info["cast"] ?: info["actors"])?.toString()
+            val castList = castStr?.split(",", ";")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+            val director = info["director"]?.toString()
+            val genreStr = info["genre"]?.toString()
+            val genreList = genreStr?.split(",", "/", ";")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+
+            val releaseDate = (info["release_date"] ?: info["releasedate"])?.toString()
+            val year = releaseDate?.take(4)?.toIntOrNull()
+
+            val durationSecs = (info["duration_secs"] as? Number)?.toInt()
+                ?: info["duration_secs"]?.toString()?.toIntOrNull()
+            val durationMins = if (durationSecs != null && durationSecs > 0) {
+                durationSecs / 60
+            } else {
+                val durStr = info["duration"]?.toString()
+                if (durStr != null && durStr.contains(":")) {
+                    val parts = durStr.split(":")
+                    if (parts.size >= 2) {
+                        val h = parts[0].trim().toIntOrNull() ?: 0
+                        val m = parts[1].trim().toIntOrNull() ?: 0
+                        h * 60 + m
+                    } else null
+                } else null
+            }
+
+            val rating = (info["rating"]?.toString()?.toFloatOrNull())
+                ?: (info["rating_5based"]?.toString()?.toFloatOrNull()?.let { it * 2 })
+                ?: 0f
+
+            @Suppress("UNCHECKED_CAST")
+            val backdrops = info["backdrop_path"] as? List<*>
+            val backdropUrl = backdrops?.firstOrNull()?.toString() ?: poster
+
+            val ext = movieData["container_extension"]?.toString()
+                ?: info["container_extension"]?.toString()
+                ?: "mp4"
+
+            val streamUrl = buildVodStreamUrl(cleanServer, username, password, vodId, ext)
+
+            val isHdr = title.contains("HDR", ignoreCase = true) || title.contains("Dolby Vision", ignoreCase = true)
+            val hdrFormat = if (title.contains("Dolby Vision", ignoreCase = true)) "Dolby Vision" else if (isHdr) "HDR10" else null
+            val resolution = if (title.contains("4K", ignoreCase = true) || title.contains("UHD", ignoreCase = true)) "4K UHD" else "1080p"
+
+            val movie = VodMovie(
+                id = vodId,
+                title = title,
+                streamUrl = streamUrl,
+                posterUrl = poster,
+                backdropUrl = backdropUrl,
+                rating = rating,
+                releaseYear = year,
+                durationMinutes = durationMins,
+                plot = plot,
+                genres = genreList,
+                cast = castList,
+                director = director,
+                isHdr = isHdr,
+                hdrFormat = hdrFormat,
+                resolution = resolution,
+                videoCodec = if (isHdr) "hevc" else "h264",
+                containerExtension = ext
+            )
+
+            Result.success(movie)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -251,19 +366,19 @@ class XtreamCodesClient(
     }
 
     /**
-     * Récupère les séries
+     * Récupère les séries (avec support du catalogue complet sans limite artificielle)
      */
     suspend fun getSeriesStreams(
         serverUrl: String,
         username: String,
         password: String,
         categoryId: String? = null,
-        limit: Int = 100
+        limit: Int? = null
     ): Result<List<Series>> = withContext(Dispatchers.IO) {
         val cleanServer = serverUrl.trimEnd('/')
         val url = buildString {
             append("$cleanServer/player_api.php?username=$username&password=$password&action=get_series")
-            if (!categoryId.isNullOrBlank()) {
+            if (!categoryId.isNullOrBlank() && categoryId != "Toutes" && categoryId != "all") {
                 append("&category_id=$categoryId")
             }
         }
@@ -275,23 +390,174 @@ class XtreamCodesClient(
             val type = object : TypeToken<List<Map<String, Any>>>() {}.type
             val rawList: List<Map<String, Any>> = gson.fromJson(body, type)
 
-            val series = rawList.take(limit).mapNotNull { item ->
+            val listToProcess = if (limit != null && limit > 0) rawList.take(limit) else rawList
+
+            val series = listToProcess.mapNotNull { item ->
                 val seriesId = item["series_id"]?.toString()?.substringBefore(".") ?: return@mapNotNull null
                 val name = item["name"]?.toString() ?: "Série $seriesId"
                 val cover = item["cover"]?.toString()
                 val plot = item["plot"]?.toString()
                 val rating = (item["rating"]?.toString()?.toFloatOrNull()) ?: 0f
                 val year = item["releaseDate"]?.toString()?.toIntOrNull() ?: item["release_date"]?.toString()?.toIntOrNull()
+                val catId = item["category_id"]?.toString() ?: categoryId ?: "series_all"
+
+                val genreStr = item["genre"]?.toString()
+                val genres = genreStr?.split(",", "/", ";")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+                val castStr = item["cast"]?.toString()
+                val cast = castStr?.split(",", ";")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+                val backdrops = item["backdrop_path"] as? List<*>
+                val backdropUrl = backdrops?.firstOrNull()?.toString() ?: cover
+
+                val initialEpisodes = listOf(
+                    Episode(
+                        id = seriesId,
+                        seriesId = seriesId,
+                        seasonNumber = 1,
+                        episodeNumber = 1,
+                        title = "Épisode 1",
+                        streamUrl = buildSeriesStreamUrl(cleanServer, username, password, seriesId, "mp4"),
+                        containerExtension = "mp4",
+                        thumbnailUrl = cover,
+                        plot = plot
+                    )
+                )
 
                 Series(
                     id = seriesId,
                     title = name,
                     posterUrl = cover,
+                    backdropUrl = backdropUrl,
                     rating = rating,
                     releaseYear = year,
-                    plot = plot
+                    plot = plot,
+                    genres = genres,
+                    cast = cast,
+                    categoryId = catId,
+                    seasons = listOf(
+                        Season(
+                            seasonNumber = 1,
+                            name = "Saison 1",
+                            episodeCount = 1,
+                            episodes = initialEpisodes
+                        )
+                    )
                 )
             }
+
+            Result.success(series)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Récupère les métadonnées complètes d'une série avec toutes les saisons et tous les épisodes (action=get_series_info)
+     */
+    suspend fun getSeriesInfo(
+        serverUrl: String,
+        username: String,
+        password: String,
+        seriesId: String
+    ): Result<Series> = withContext(Dispatchers.IO) {
+        val cleanServer = serverUrl.trimEnd('/')
+        val url = "$cleanServer/player_api.php?username=$username&password=$password&action=get_series_info&series_id=$seriesId"
+
+        try {
+            val request = Request.Builder().url(url).build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: return@withContext Result.failure(Exception("Réponse vide"))
+            val type = object : TypeToken<Map<String, Any>>() {}.type
+            val jsonMap: Map<String, Any> = gson.fromJson(body, type)
+
+            @Suppress("UNCHECKED_CAST")
+            val info = jsonMap["info"] as? Map<String, Any> ?: emptyMap()
+            @Suppress("UNCHECKED_CAST")
+            val rawSeasons = jsonMap["seasons"] as? List<Map<String, Any>> ?: emptyList()
+            @Suppress("UNCHECKED_CAST")
+            val rawEpisodesMap = jsonMap["episodes"] as? Map<String, List<Map<String, Any>>> ?: emptyMap()
+
+            val title = info["name"]?.toString() ?: "Série $seriesId"
+            val poster = info["cover"]?.toString()
+            val plot = info["plot"]?.toString()
+            val castStr = info["cast"]?.toString()
+            val castList = castStr?.split(",", ";")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+            val genreStr = info["genre"]?.toString()
+            val genreList = genreStr?.split(",", "/", ";")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+            val rating = (info["rating"]?.toString()?.toFloatOrNull()) ?: 0f
+            val releaseDate = (info["releaseDate"] ?: info["release_date"])?.toString()
+            val year = releaseDate?.take(4)?.toIntOrNull()
+
+            @Suppress("UNCHECKED_CAST")
+            val backdrops = info["backdrop_path"] as? List<*>
+            val backdropUrl = backdrops?.firstOrNull()?.toString() ?: poster
+
+            val seasons = mutableListOf<Season>()
+            val seasonNumbers = (rawSeasons.mapNotNull { (it["season_number"] as? Number)?.toInt() ?: it["season_number"]?.toString()?.toIntOrNull() } +
+                    rawEpisodesMap.keys.mapNotNull { it.toIntOrNull() }).distinct().sorted()
+
+            for (sNum in seasonNumbers) {
+                val sMeta = rawSeasons.firstOrNull {
+                    val num = (it["season_number"] as? Number)?.toInt() ?: it["season_number"]?.toString()?.toIntOrNull()
+                    num == sNum
+                }
+                val sName = sMeta?.get("name")?.toString() ?: "Saison $sNum"
+                val epListRaw = rawEpisodesMap[sNum.toString()] ?: rawEpisodesMap["$sNum"] ?: emptyList()
+
+                val episodes = epListRaw.mapNotNull { epItem ->
+                    val epId = epItem["id"]?.toString()?.substringBefore(".") ?: return@mapNotNull null
+                    val epNum = (epItem["episode_num"] as? Number)?.toInt()
+                        ?: epItem["episode_num"]?.toString()?.toIntOrNull() ?: 1
+                    val epTitle = epItem["title"]?.toString()?.takeIf { it.isNotBlank() } ?: "Épisode $epNum"
+                    val ext = epItem["container_extension"]?.toString() ?: "mp4"
+
+                    @Suppress("UNCHECKED_CAST")
+                    val epInfo = epItem["info"] as? Map<String, Any> ?: emptyMap()
+                    val epPlot = epInfo["plot"]?.toString()
+                    val epRating = (epInfo["rating"]?.toString()?.toFloatOrNull()) ?: 0f
+                    val epDurationSecs = (epInfo["duration_secs"] as? Number)?.toInt()
+                        ?: epInfo["duration_secs"]?.toString()?.toIntOrNull()
+                    val epDurationMins = if (epDurationSecs != null && epDurationSecs > 0) epDurationSecs / 60 else null
+                    val epThumb = epInfo["movie_image"]?.toString()
+
+                    val streamUrl = buildSeriesStreamUrl(cleanServer, username, password, epId, ext)
+
+                    Episode(
+                        id = epId,
+                        seriesId = seriesId,
+                        seasonNumber = sNum,
+                        episodeNumber = epNum,
+                        title = epTitle,
+                        streamUrl = streamUrl,
+                        containerExtension = ext,
+                        thumbnailUrl = epThumb,
+                        durationMinutes = epDurationMins,
+                        plot = epPlot,
+                        rating = epRating
+                    )
+                }.sortedBy { it.episodeNumber }
+
+                seasons.add(
+                    Season(
+                        seasonNumber = sNum,
+                        name = sName,
+                        episodeCount = episodes.size,
+                        episodes = episodes
+                    )
+                )
+            }
+
+            val series = Series(
+                id = seriesId,
+                title = title,
+                posterUrl = poster,
+                backdropUrl = backdropUrl,
+                rating = rating,
+                releaseYear = year,
+                plot = plot,
+                genres = genreList,
+                cast = castList,
+                seasons = seasons
+            )
 
             Result.success(series)
         } catch (e: Exception) {

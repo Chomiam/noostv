@@ -78,6 +78,7 @@ class MainActivity : ComponentActivity() {
                 val seriesCategories by repository.seriesCategories.collectAsState()
                 val isVodLoading by repository.isVodLoading.collectAsState()
                 val isSeriesLoading by repository.isSeriesLoading.collectAsState()
+                val coroutineScope = rememberCoroutineScope()
 
                 var currentChannel by remember { mutableStateOf<Channel?>(null) }
                 var currentMovie by remember { mutableStateOf<VodMovie?>(null) }
@@ -120,7 +121,8 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun startPlayEpisode(ser: Series, ep: io.noostv.data.model.Episode) {
-                    val streamUrl = if (ep.streamUrl.isNotBlank()) ep.streamUrl else "${sessionManager.serverUrl.trimEnd('/')}/series/${sessionManager.username}/${sessionManager.password}/${ep.id}.mp4"
+                    val ext = if (ep.containerExtension.isNotBlank()) ep.containerExtension else "mp4"
+                    val streamUrl = if (ep.streamUrl.isNotBlank()) ep.streamUrl else "${sessionManager.serverUrl.trimEnd('/')}/series/${sessionManager.username}/${sessionManager.password}/${ep.id}.$ext"
                     val epSubtitle = "S${ep.seasonNumber}E${ep.episodeNumber}: ${ep.title}"
                     val success = playerEngine.playStream(
                         url = streamUrl,
@@ -140,30 +142,43 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun startPlaySeries(ser: Series) {
-                    val ep = ser.seasons.firstOrNull()?.episodes?.firstOrNull()
-                    if (ep != null) {
-                        startPlayEpisode(ser, ep)
-                    } else {
-                        val streamUrl = "${sessionManager.serverUrl.trimEnd('/')}/series/${sessionManager.username}/${sessionManager.password}/${ser.id}.mp4"
-                        val success = playerEngine.playStream(
-                            url = streamUrl,
-                            title = ser.title,
-                            isHdrStream = false,
-                            is4K = false
-                        )
-                        if (success) {
-                            currentMovie = null
-                            currentChannel = null
-                            customStreamTitle = ser.title
-                            customStreamSubtitle = "Série"
-                            currentScreen = CurrentScreen.PLAYER
+                    coroutineScope.launch {
+                        var targetSeries = ser
+                        if (targetSeries.seasons.isEmpty() && sessionManager.isLoggedIn) {
+                            val fetched = repository.getOrFetchSeriesInfo(
+                                sessionManager.serverUrl,
+                                sessionManager.username,
+                                sessionManager.password,
+                                ser.id
+                            )
+                            if (fetched != null) {
+                                targetSeries = fetched
+                            }
+                        }
+                        val ep = targetSeries.seasons.firstOrNull()?.episodes?.firstOrNull()
+                        if (ep != null) {
+                            startPlayEpisode(targetSeries, ep)
                         } else {
-                            showUpgradeDialog = true
+                            val ext = "mp4"
+                            val streamUrl = "${sessionManager.serverUrl.trimEnd('/')}/series/${sessionManager.username}/${sessionManager.password}/${targetSeries.id}.$ext"
+                            val success = playerEngine.playStream(
+                                url = streamUrl,
+                                title = targetSeries.title,
+                                isHdrStream = false,
+                                is4K = false
+                            )
+                            if (success) {
+                                currentMovie = null
+                                currentChannel = null
+                                customStreamTitle = targetSeries.title
+                                customStreamSubtitle = "Série"
+                                currentScreen = CurrentScreen.PLAYER
+                            } else {
+                                showUpgradeDialog = true
+                            }
                         }
                     }
                 }
-
-                val coroutineScope = rememberCoroutineScope()
 
                 // Chargement automatique en arrière-plan si déjà connecté
                 LaunchedEffect(sessionManager.isLoggedIn) {
@@ -237,6 +252,22 @@ class MainActivity : ComponentActivity() {
                                 onSelectMovie = { startPlayMovie(it) },
                                 onSelectSeries = { startPlaySeries(it) },
                                 onSelectEpisode = { ser, ep -> startPlayEpisode(ser, ep) },
+                                onFetchVodInfo = { movieId ->
+                                    repository.getOrFetchVodInfo(
+                                        sessionManager.serverUrl,
+                                        sessionManager.username,
+                                        sessionManager.password,
+                                        movieId
+                                    )
+                                },
+                                onFetchSeriesInfo = { seriesId ->
+                                    repository.getOrFetchSeriesInfo(
+                                        sessionManager.serverUrl,
+                                        sessionManager.username,
+                                        sessionManager.password,
+                                        seriesId
+                                    )
+                                },
                                 onSelectVodCategory = { cat ->
                                     coroutineScope.launch {
                                         repository.loadVodByCategory(
@@ -277,6 +308,23 @@ class MainActivity : ComponentActivity() {
                                 onSelectChannel = { startPlayChannel(it) },
                                 onSelectMovie = { startPlayMovie(it) },
                                 onSelectSeries = { startPlaySeries(it) },
+                                onSelectEpisode = { ser, ep -> startPlayEpisode(ser, ep) },
+                                onFetchVodInfo = { movieId ->
+                                    repository.getOrFetchVodInfo(
+                                        sessionManager.serverUrl,
+                                        sessionManager.username,
+                                        sessionManager.password,
+                                        movieId
+                                    )
+                                },
+                                onFetchSeriesInfo = { seriesId ->
+                                    repository.getOrFetchSeriesInfo(
+                                        sessionManager.serverUrl,
+                                        sessionManager.username,
+                                        sessionManager.password,
+                                        seriesId
+                                    )
+                                },
                                 onSelectVodCategory = { cat: Category ->
                                     coroutineScope.launch {
                                         repository.loadVodByCategory(

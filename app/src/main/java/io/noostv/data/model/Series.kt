@@ -10,6 +10,8 @@ data class Episode(
     val episodeNumber: Int,
     val title: String,
     val streamUrl: String,
+    val containerExtension: String = "mp4",
+    val thumbnailUrl: String? = null,
     val durationMinutes: Int? = null,
     val plot: String? = null,
     val rating: Float = 0.0f,
