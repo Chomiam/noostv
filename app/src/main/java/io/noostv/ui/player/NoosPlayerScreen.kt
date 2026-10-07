@@ -91,7 +91,9 @@ fun NoosPlayerScreen(
     onBack: () -> Unit,
     onNextChannel: (() -> Unit)? = null,
     onPreviousChannel: (() -> Unit)? = null,
-    onSelectChannel: ((Channel) -> Unit)? = null
+    onSelectChannel: ((Channel) -> Unit)? = null,
+    onEnterPip: (() -> Unit)? = null,
+    isPipMode: Boolean = false
 ) {
     val context = LocalContext.current
     var isOsdVisible by remember { mutableStateOf(true) }
@@ -310,7 +312,7 @@ fun NoosPlayerScreen(
         // ainsi son en-tête et ses groupes/catégories restent visibles (et non cachés par la vidéo).
         val playerHeightDp = if (isPortraitMobile) maxWidth * 9f / 16f else 0.dp
         // Guide TV : occupe tout ce qui se trouve SOUS la bande vidéo en portrait.
-        if (isPortraitMobile && isLive && onSelectChannel != null) {
+        if (isPortraitMobile && isLive && onSelectChannel != null && !isPipMode) {
             MobileTvGuidePanel(
                 channels = channels,
                 epgPrograms = epgPrograms,
@@ -506,7 +508,7 @@ fun NoosPlayerScreen(
         // ------------------ 1.5. COUCHE GESTES TACTILES (MOBILE) ------------------
         // Tap = afficher/masquer l'OSD • Double-tap gauche/droite = ±10 s
         // Glissement vertical = volume/luminosité • horizontal = avance/recul
-        if (isMobile) {
+        if (isMobile && !isPipMode) {
             PlayerTouchGestureLayer(
                 enabled = !showSettingsDialog,
                 isLive = isLive,
@@ -820,7 +822,7 @@ fun NoosPlayerScreen(
 
         // ------------------ 6. OVERLAY OSD COMPLET ------------------
         AnimatedVisibility(
-            visible = isOsdVisible,
+            visible = isOsdVisible && !isPipMode,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.fillMaxSize()
@@ -1119,19 +1121,34 @@ fun NoosPlayerScreen(
                     // transport : on les range dans le dialogue Réglages et on n'affiche qu'un bouton
                     // "Paramètres" compact, pour garantir un placement propre de play/précédent/suivant.
                     if (isPortraitMobile) {
-                        var isSettingsFocused by remember { mutableStateOf(false) }
-                        Button(
-                            onClick = { showSettingsDialog = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = SurfaceDark.copy(alpha = 0.85f)),
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                            modifier = Modifier
-                                .onFocusChanged { isSettingsFocused = it.isFocused }
-                                .border(1.5.dp, if (isSettingsFocused) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))
-                        ) {
-                            Icon(imageVector = Icons.Default.Settings, contentDescription = "Réglages", tint = NoosCyan, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Réglages", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (onEnterPip != null) {
+                                var isPipFocused by remember { mutableStateOf(false) }
+                                IconButton(
+                                    onClick = { onEnterPip() },
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (isPipFocused) SurfaceDarkVariant else SurfaceDark.copy(alpha = 0.85f))
+                                        .border(1.5.dp, if (isPipFocused) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))
+                                        .onFocusChanged { isPipFocused = it.isFocused }
+                                ) {
+                                    Icon(imageVector = Icons.Default.PictureInPicture, contentDescription = "Mode PiP", tint = NoosCyan, modifier = Modifier.size(20.dp))
+                                }
+                            }
+                            var isSettingsFocused by remember { mutableStateOf(false) }
+                            Button(
+                                onClick = { showSettingsDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = SurfaceDark.copy(alpha = 0.85f)),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                                modifier = Modifier
+                                    .onFocusChanged { isSettingsFocused = it.isFocused }
+                                    .border(1.5.dp, if (isSettingsFocused) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))
+                            ) {
+                                Icon(imageVector = Icons.Default.Settings, contentDescription = "Réglages", tint = NoosCyan, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Réglages", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     } else {
                         // FlowRow : sur écran étroit, les boutons se replient proprement
@@ -1139,6 +1156,23 @@ fun NoosPlayerScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // 0. Bouton Mode PiP (mobile uniquement, via le lecteur plein écran)
+                        if (isMobile && onEnterPip != null) {
+                            var isPipFocused by remember { mutableStateOf(false) }
+                            Button(
+                                onClick = { onEnterPip() },
+                                colors = ButtonDefaults.buttonColors(containerColor = if (isPipFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f)),
+                                border = if (isPipFocused) androidx.compose.foundation.BorderStroke(1.5.dp, NoosCyan) else null,
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.onFocusChanged { isPipFocused = it.isFocused }
+                            ) {
+                                Icon(imageVector = Icons.Default.PictureInPicture, contentDescription = "Mode PiP", tint = NoosCyan, modifier = Modifier.size(17.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("PiP", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+
                         // 1. Bouton Infos de lecture
                         var isInfoFocused by remember { mutableStateOf(false) }
                         Button(
