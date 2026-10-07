@@ -15,11 +15,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.noostv.core.audio.LocalSoundEffectManager
 import io.noostv.ui.theme.DarkCard
 import io.noostv.ui.theme.NoosCyan
 import io.noostv.ui.theme.TextPrimary
@@ -37,9 +46,18 @@ fun NoosPaginationBar(
     itemLabel: String,
     onPageChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    isTv: Boolean = false
+    isTv: Boolean = false,
+    prevFocusRequester: FocusRequester? = null,
+    nextFocusRequester: FocusRequester? = null,
+    onNavigateUp: (() -> Unit)? = null,
+    onNavigateUpFromPrev: (() -> Unit)? = onNavigateUp,
+    onNavigateUpFromNext: (() -> Unit)? = onNavigateUp,
+    onNavigateLeftToSidebar: (() -> Unit)? = null
 ) {
     if (totalPages <= 1) return
+
+    val internalPrevFocusRequester = prevFocusRequester ?: remember { FocusRequester() }
+    val internalNextFocusRequester = nextFocusRequester ?: remember { FocusRequester() }
 
     Row(
         modifier = modifier
@@ -60,8 +78,24 @@ fun NoosPaginationBar(
                 )
             },
             enabled = currentPage > 1,
-            onClick = { onPageChange(currentPage - 1) },
-            isTv = isTv
+            onClick = {
+                val newPage = currentPage - 1
+                onPageChange(newPage)
+                if (newPage <= 1) {
+                    runCatching { internalNextFocusRequester.requestFocus() }
+                }
+            },
+            isTv = isTv,
+            focusRequester = internalPrevFocusRequester,
+            rightFocusRequester = if (currentPage < totalPages) internalNextFocusRequester else null,
+            onNavigateRight = if (currentPage < totalPages) {
+                {
+                    runCatching { internalNextFocusRequester.requestFocus() }
+                    Unit
+                }
+            } else null,
+            onNavigateLeft = onNavigateLeftToSidebar,
+            onNavigateUp = onNavigateUpFromPrev
         )
 
         Spacer(modifier = Modifier.width(16.dp))
@@ -106,8 +140,23 @@ fun NoosPaginationBar(
                 )
             },
             enabled = currentPage < totalPages,
-            onClick = { onPageChange(currentPage + 1) },
-            isTv = isTv
+            onClick = {
+                val newPage = currentPage + 1
+                onPageChange(newPage)
+                if (newPage >= totalPages) {
+                    runCatching { internalPrevFocusRequester.requestFocus() }
+                }
+            },
+            isTv = isTv,
+            focusRequester = internalNextFocusRequester,
+            leftFocusRequester = if (currentPage > 1) internalPrevFocusRequester else null,
+            onNavigateLeft = if (currentPage > 1) {
+                {
+                    runCatching { internalPrevFocusRequester.requestFocus() }
+                    Unit
+                }
+            } else onNavigateLeftToSidebar,
+            onNavigateUp = onNavigateUpFromNext
         )
     }
 }
@@ -119,8 +168,15 @@ private fun PaginationButton(
     iconRight: (@Composable () -> Unit)? = null,
     enabled: Boolean,
     onClick: () -> Unit,
-    isTv: Boolean
+    isTv: Boolean,
+    focusRequester: FocusRequester? = null,
+    leftFocusRequester: FocusRequester? = null,
+    rightFocusRequester: FocusRequester? = null,
+    onNavigateUp: (() -> Unit)? = null,
+    onNavigateLeft: (() -> Unit)? = null,
+    onNavigateRight: (() -> Unit)? = null
 ) {
+    val soundManager = LocalSoundEffectManager.current
     var isFocused by remember { mutableStateOf(false) }
 
     val bg = when {
@@ -139,20 +195,66 @@ private fun PaginationButton(
         else -> TextSecondary.copy(alpha = 0.4f)
     }
 
+    var buttonModifier = Modifier
+        .clip(RoundedCornerShape(10.dp))
+        .background(bg)
+        .border(if (isFocused) 2.dp else 1.dp, borderColor, RoundedCornerShape(10.dp))
+        .clickable(enabled = enabled) {
+            soundManager?.playSelect()
+            onClick()
+        }
+
+    if (focusRequester != null) {
+        buttonModifier = buttonModifier.focusRequester(focusRequester)
+    }
+
+    if (isTv && enabled) {
+        buttonModifier = buttonModifier
+            .focusProperties {
+                if (leftFocusRequester != null) left = leftFocusRequester
+                if (rightFocusRequester != null) right = rightFocusRequester
+            }
+            .focusable()
+            .onFocusChanged {
+                if (it.isFocused && !isFocused) {
+                    soundManager?.playFocus()
+                }
+                isFocused = it.isFocused
+            }
+            .onPreviewKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown) {
+                    when (keyEvent.key) {
+                        Key.DirectionUp -> {
+                            if (onNavigateUp != null) {
+                                onNavigateUp()
+                                true
+                            } else false
+                        }
+                        Key.DirectionLeft -> {
+                            if (onNavigateLeft != null) {
+                                onNavigateLeft()
+                                true
+                            } else false
+                        }
+                        Key.DirectionRight -> {
+                            if (onNavigateRight != null) {
+                                onNavigateRight()
+                                true
+                            } else false
+                        }
+                        Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                            soundManager?.playSelect()
+                            onClick()
+                            true
+                        }
+                        else -> false
+                    }
+                } else false
+            }
+    }
+
     Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(bg)
-            .border(if (isFocused) 2.dp else 1.dp, borderColor, RoundedCornerShape(10.dp))
-            .clickable(enabled = enabled) { onClick() }
-            .then(
-                if (isTv && enabled) {
-                    Modifier
-                        .focusable()
-                        .onFocusChanged { isFocused = it.isFocused }
-                } else Modifier
-            )
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+        modifier = buttonModifier.padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {

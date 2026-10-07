@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -52,6 +53,7 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import io.noostv.R
+import io.noostv.core.audio.LocalSoundEffectManager
 import io.noostv.core.entitlement.EntitlementManager
 import io.noostv.core.player.PlayerEngine
 import io.noostv.core.storage.SessionManager
@@ -420,7 +422,21 @@ fun TvHomeScreen(
                         TvEmptyState(message = "Aucun film disponible dans cette catégorie")
                     } else {
                         Column(modifier = Modifier.fillMaxSize()) {
+                            val moviesGridState = rememberLazyGridState()
+                            val moviePaginationPrevFocusRequester = remember { FocusRequester() }
+                            val moviePaginationNextFocusRequester = remember { FocusRequester() }
+
+                            // Reset scroll to top on page or category change
+                            LaunchedEffect(moviePage, selectedVodCategory) {
+                                runCatching { moviesGridState.scrollToItem(0) }
+                            }
+
+                            val movieCardFocusRequesters = remember(moviePage, selectedVodCategory, pagedMovies.size) {
+                                List(pagedMovies.size) { FocusRequester() }
+                            }
+
                             LazyVerticalGrid(
+                                state = moviesGridState,
                                 columns = GridCells.Fixed(6),
                                 modifier = Modifier.weight(1f),
                                 horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -433,16 +449,28 @@ fun TvHomeScreen(
                                     contentType = { "movie_card" }
                                 ) { index ->
                                     val movie = pagedMovies[index]
+                                    val isBottomEdge = (index + 6 >= pagedMovies.size)
+                                    val targetPaginationFocusRequester = when {
+                                        moviePage == 1 -> moviePaginationNextFocusRequester
+                                        moviePage >= totalMoviePages -> moviePaginationPrevFocusRequester
+                                        (index % 6) < 3 -> moviePaginationPrevFocusRequester
+                                        else -> moviePaginationNextFocusRequester
+                                    }
+
                                     TvMovieGridCard(
                                         movie = movie,
-                                        focusRequester = if (index == 0) contentFocusRequesters[TvNavTab.MOVIES] else null,
+                                        focusRequester = if (index == 0) contentFocusRequesters[TvNavTab.MOVIES] else movieCardFocusRequesters.getOrNull(index),
                                         upFocusRequester = if (index < 6) moviesCategoryChipsFocusRequester else null,
+                                        downFocusRequester = if (isBottomEdge) targetPaginationFocusRequester else null,
                                         leftFocusRequester = if (index % 6 == 0) sidebarFocusRequesters[TvNavTab.MOVIES] else null,
                                         onNavigateLeft = if (index % 6 == 0) {
                                             { sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus() }
                                         } else null,
                                         onNavigateUp = if (index < 6) {
                                             { runCatching { moviesCategoryChipsFocusRequester.requestFocus() } }
+                                        } else null,
+                                        onNavigateDown = if (isBottomEdge) {
+                                            { runCatching { targetPaginationFocusRequester.requestFocus() } }
                                         } else null,
                                         onClick = { selectedMovieDetail = movie }
                                     )
@@ -455,7 +483,42 @@ fun TvHomeScreen(
                                 totalItems = movies.size,
                                 itemLabel = "films",
                                 onPageChange = { moviePage = it },
-                                isTv = true
+                                isTv = true,
+                                prevFocusRequester = moviePaginationPrevFocusRequester,
+                                nextFocusRequester = moviePaginationNextFocusRequester,
+                                onNavigateUpFromPrev = {
+                                    runCatching {
+                                        if (moviesGridState.firstVisibleItemIndex == 0) {
+                                            contentFocusRequesters[TvNavTab.MOVIES]?.requestFocus()
+                                        } else {
+                                            val bottomRowStart = maxOf(0, (pagedMovies.size - 1) / 6 * 6)
+                                            val req = movieCardFocusRequesters.getOrNull(bottomRowStart)
+                                            val ok = runCatching { req?.requestFocus() }.isSuccess
+                                            if (!ok) {
+                                                contentFocusRequesters[TvNavTab.MOVIES]?.requestFocus()
+                                            }
+                                        }
+                                        Unit
+                                    }
+                                },
+                                onNavigateUpFromNext = {
+                                    runCatching {
+                                        if (moviesGridState.firstVisibleItemIndex == 0) {
+                                            contentFocusRequesters[TvNavTab.MOVIES]?.requestFocus()
+                                        } else {
+                                            val lastIdx = pagedMovies.size - 1
+                                            val req = movieCardFocusRequesters.getOrNull(lastIdx)
+                                            val ok = runCatching { req?.requestFocus() }.isSuccess
+                                            if (!ok) {
+                                                contentFocusRequesters[TvNavTab.MOVIES]?.requestFocus()
+                                            }
+                                        }
+                                        Unit
+                                    }
+                                },
+                                onNavigateLeftToSidebar = {
+                                    sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus()
+                                }
                             )
                         }
                     }
@@ -506,7 +569,21 @@ fun TvHomeScreen(
                         TvEmptyState(message = "Aucune série disponible dans cette catégorie")
                     } else {
                         Column(modifier = Modifier.fillMaxSize()) {
+                            val seriesGridState = rememberLazyGridState()
+                            val seriesPaginationPrevFocusRequester = remember { FocusRequester() }
+                            val seriesPaginationNextFocusRequester = remember { FocusRequester() }
+
+                            // Reset scroll to top on page or category change
+                            LaunchedEffect(seriesPage, selectedSeriesCategory) {
+                                runCatching { seriesGridState.scrollToItem(0) }
+                            }
+
+                            val seriesCardFocusRequesters = remember(seriesPage, selectedSeriesCategory, pagedSeries.size) {
+                                List(pagedSeries.size) { FocusRequester() }
+                            }
+
                             LazyVerticalGrid(
+                                state = seriesGridState,
                                 columns = GridCells.Fixed(6),
                                 modifier = Modifier.weight(1f),
                                 horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -519,16 +596,28 @@ fun TvHomeScreen(
                                     contentType = { "series_card" }
                                 ) { index ->
                                     val ser = pagedSeries[index]
+                                    val isBottomEdge = (index + 6 >= pagedSeries.size)
+                                    val targetPaginationFocusRequester = when {
+                                        seriesPage == 1 -> seriesPaginationNextFocusRequester
+                                        seriesPage >= totalSeriesPages -> seriesPaginationPrevFocusRequester
+                                        (index % 6) < 3 -> seriesPaginationPrevFocusRequester
+                                        else -> seriesPaginationNextFocusRequester
+                                    }
+
                                     TvSeriesGridCard(
                                         series = ser,
-                                        focusRequester = if (index == 0) contentFocusRequesters[TvNavTab.SERIES] else null,
+                                        focusRequester = if (index == 0) contentFocusRequesters[TvNavTab.SERIES] else seriesCardFocusRequesters.getOrNull(index),
                                         upFocusRequester = if (index < 6) seriesCategoryChipsFocusRequester else null,
+                                        downFocusRequester = if (isBottomEdge) targetPaginationFocusRequester else null,
                                         leftFocusRequester = if (index % 6 == 0) sidebarFocusRequesters[TvNavTab.SERIES] else null,
                                         onNavigateLeft = if (index % 6 == 0) {
                                             { sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus() }
                                         } else null,
                                         onNavigateUp = if (index < 6) {
                                             { runCatching { seriesCategoryChipsFocusRequester.requestFocus() } }
+                                        } else null,
+                                        onNavigateDown = if (isBottomEdge) {
+                                            { runCatching { targetPaginationFocusRequester.requestFocus() } }
                                         } else null,
                                         onClick = { selectedSeriesDetail = ser }
                                     )
@@ -541,7 +630,42 @@ fun TvHomeScreen(
                                 totalItems = series.size,
                                 itemLabel = "séries",
                                 onPageChange = { seriesPage = it },
-                                isTv = true
+                                isTv = true,
+                                prevFocusRequester = seriesPaginationPrevFocusRequester,
+                                nextFocusRequester = seriesPaginationNextFocusRequester,
+                                onNavigateUpFromPrev = {
+                                    runCatching {
+                                        if (seriesGridState.firstVisibleItemIndex == 0) {
+                                            contentFocusRequesters[TvNavTab.SERIES]?.requestFocus()
+                                        } else {
+                                            val bottomRowStart = maxOf(0, (pagedSeries.size - 1) / 6 * 6)
+                                            val req = seriesCardFocusRequesters.getOrNull(bottomRowStart)
+                                            val ok = runCatching { req?.requestFocus() }.isSuccess
+                                            if (!ok) {
+                                                contentFocusRequesters[TvNavTab.SERIES]?.requestFocus()
+                                            }
+                                        }
+                                        Unit
+                                    }
+                                },
+                                onNavigateUpFromNext = {
+                                    runCatching {
+                                        if (seriesGridState.firstVisibleItemIndex == 0) {
+                                            contentFocusRequesters[TvNavTab.SERIES]?.requestFocus()
+                                        } else {
+                                            val lastIdx = pagedSeries.size - 1
+                                            val req = seriesCardFocusRequesters.getOrNull(lastIdx)
+                                            val ok = runCatching { req?.requestFocus() }.isSuccess
+                                            if (!ok) {
+                                                contentFocusRequesters[TvNavTab.SERIES]?.requestFocus()
+                                            }
+                                        }
+                                        Unit
+                                    }
+                                },
+                                onNavigateLeftToSidebar = {
+                                    sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus()
+                                }
                             )
                         }
                     }
@@ -1209,12 +1333,17 @@ fun TvMovieGridCard(
     movie: VodMovie,
     focusRequester: FocusRequester? = null,
     upFocusRequester: FocusRequester? = null,
+    downFocusRequester: FocusRequester? = null,
     leftFocusRequester: FocusRequester? = null,
+    rightFocusRequester: FocusRequester? = null,
     onNavigateLeft: (() -> Unit)? = null,
+    onNavigateRight: (() -> Unit)? = null,
     onNavigateUp: (() -> Unit)? = null,
+    onNavigateDown: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val soundManager = LocalSoundEffectManager.current
     var isFocused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(targetValue = if (isFocused) 1.06f else 1.0f, label = "vod_scale")
 
@@ -1234,13 +1363,27 @@ fun TvMovieGridCard(
                 if (upFocusRequester != null) {
                     up = upFocusRequester
                 }
+                if (downFocusRequester != null) {
+                    down = downFocusRequester
+                }
                 if (leftFocusRequester != null) {
                     left = leftFocusRequester
                 }
+                if (rightFocusRequester != null) {
+                    right = rightFocusRequester
+                }
             }
-            .onFocusChanged { isFocused = it.isFocused }
+            .onFocusChanged {
+                if (it.isFocused && !isFocused) {
+                    soundManager?.playFocus()
+                }
+                isFocused = it.isFocused
+            }
             .focusable()
-            .clickable { onClick() }
+            .clickable {
+                soundManager?.playSelect()
+                onClick()
+            }
             .onPreviewKeyEvent { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyDown) {
                     when (keyEvent.key) {
@@ -1250,9 +1393,21 @@ fun TvMovieGridCard(
                                 true
                             } else false
                         }
+                        Key.DirectionRight -> {
+                            if (onNavigateRight != null) {
+                                onNavigateRight()
+                                true
+                            } else false
+                        }
                         Key.DirectionUp -> {
                             if (onNavigateUp != null) {
                                 onNavigateUp()
+                                true
+                            } else false
+                        }
+                        Key.DirectionDown -> {
+                            if (onNavigateDown != null) {
+                                onNavigateDown()
                                 true
                             } else false
                         }
@@ -1355,12 +1510,17 @@ fun TvSeriesGridCard(
     series: Series,
     focusRequester: FocusRequester? = null,
     upFocusRequester: FocusRequester? = null,
+    downFocusRequester: FocusRequester? = null,
     leftFocusRequester: FocusRequester? = null,
+    rightFocusRequester: FocusRequester? = null,
     onNavigateLeft: (() -> Unit)? = null,
+    onNavigateRight: (() -> Unit)? = null,
     onNavigateUp: (() -> Unit)? = null,
+    onNavigateDown: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val soundManager = LocalSoundEffectManager.current
     var isFocused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(targetValue = if (isFocused) 1.06f else 1.0f, label = "series_scale")
 
@@ -1380,13 +1540,27 @@ fun TvSeriesGridCard(
                 if (upFocusRequester != null) {
                     up = upFocusRequester
                 }
+                if (downFocusRequester != null) {
+                    down = downFocusRequester
+                }
                 if (leftFocusRequester != null) {
                     left = leftFocusRequester
                 }
+                if (rightFocusRequester != null) {
+                    right = rightFocusRequester
+                }
             }
-            .onFocusChanged { isFocused = it.isFocused }
+            .onFocusChanged {
+                if (it.isFocused && !isFocused) {
+                    soundManager?.playFocus()
+                }
+                isFocused = it.isFocused
+            }
             .focusable()
-            .clickable { onClick() }
+            .clickable {
+                soundManager?.playSelect()
+                onClick()
+            }
             .onPreviewKeyEvent { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyDown) {
                     when (keyEvent.key) {
@@ -1396,9 +1570,21 @@ fun TvSeriesGridCard(
                                 true
                             } else false
                         }
+                        Key.DirectionRight -> {
+                            if (onNavigateRight != null) {
+                                onNavigateRight()
+                                true
+                            } else false
+                        }
                         Key.DirectionUp -> {
                             if (onNavigateUp != null) {
                                 onNavigateUp()
+                                true
+                            } else false
+                        }
+                        Key.DirectionDown -> {
+                            if (onNavigateDown != null) {
+                                onNavigateDown()
                                 true
                             } else false
                         }
