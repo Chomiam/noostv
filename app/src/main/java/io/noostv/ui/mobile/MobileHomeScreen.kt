@@ -379,10 +379,11 @@ fun MobileHomeScreen(
                                     verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     items(pagedSeries, key = { it.id }) { ser ->
+                                        val seasonInfo = if (ser.seasons.isNotEmpty()) "${ser.seasons.size} Saison${if (ser.seasons.size > 1) "s" else ""} • " else ""
                                         MobileVodCard(
                                             title = ser.title,
                                             posterUrl = ser.posterUrl,
-                                            subtitle = "${ser.seasons.size} Saisons • ★ ${ser.rating}",
+                                            subtitle = "${seasonInfo}★ ${ser.rating}",
                                             badge = "SERIES",
                                             onClick = { activeDetailSeries = ser }
                                         )

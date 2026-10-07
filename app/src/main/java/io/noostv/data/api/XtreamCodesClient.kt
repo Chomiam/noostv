@@ -408,20 +408,6 @@ class XtreamCodesClient(
                 val backdrops = item["backdrop_path"] as? List<*>
                 val backdropUrl = backdrops?.firstOrNull()?.toString() ?: cover
 
-                val initialEpisodes = listOf(
-                    Episode(
-                        id = seriesId,
-                        seriesId = seriesId,
-                        seasonNumber = 1,
-                        episodeNumber = 1,
-                        title = "Épisode 1",
-                        streamUrl = buildSeriesStreamUrl(cleanServer, username, password, seriesId, "mp4"),
-                        containerExtension = "mp4",
-                        thumbnailUrl = cover,
-                        plot = plot
-                    )
-                )
-
                 Series(
                     id = seriesId,
                     title = name,
@@ -433,14 +419,7 @@ class XtreamCodesClient(
                     genres = genres,
                     cast = cast,
                     categoryId = catId,
-                    seasons = listOf(
-                        Season(
-                            seasonNumber = 1,
-                            name = "Saison 1",
-                            episodeCount = 1,
-                            episodes = initialEpisodes
-                        )
-                    )
+                    seasons = emptyList()
                 )
             }
 
@@ -471,10 +450,41 @@ class XtreamCodesClient(
 
             @Suppress("UNCHECKED_CAST")
             val info = jsonMap["info"] as? Map<String, Any> ?: emptyMap()
-            @Suppress("UNCHECKED_CAST")
-            val rawSeasons = jsonMap["seasons"] as? List<Map<String, Any>> ?: emptyList()
-            @Suppress("UNCHECKED_CAST")
-            val rawEpisodesMap = jsonMap["episodes"] as? Map<String, List<Map<String, Any>>> ?: emptyMap()
+
+            // 1. Parser les saisons tolérant (supporte List ou Map d'objets)
+            val rawSeasonsList: List<Map<String, Any>> = when (val s = jsonMap["seasons"]) {
+                is List<*> -> s.filterIsInstance<Map<String, Any>>()
+                is Map<*, *> -> s.values.filterIsInstance<Map<String, Any>>()
+                else -> emptyList()
+            }
+
+            // 2. Parser les épisodes tolérant (supporte Map<String, List>, Map<String, Map>, ou List à plat)
+            val episodesBySeasonKey = mutableMapOf<String, MutableList<Map<String, Any>>>()
+
+            when (val rawEpisodes = jsonMap["episodes"]) {
+                is Map<*, *> -> {
+                    for ((k, v) in rawEpisodes) {
+                        val keyStr = k?.toString() ?: continue
+                        val epList = when (v) {
+                            is List<*> -> v.filterIsInstance<Map<String, Any>>()
+                            is Map<*, *> -> v.values.filterIsInstance<Map<String, Any>>()
+                            else -> emptyList()
+                        }
+                        if (epList.isNotEmpty()) {
+                            episodesBySeasonKey.getOrPut(keyStr) { mutableListOf() }.addAll(epList)
+                        }
+                    }
+                }
+                is List<*> -> {
+                    for (item in rawEpisodes.filterIsInstance<Map<String, Any>>()) {
+                        val sNum = (item["season"] as? Number)?.toInt()
+                            ?: (item["season_num"] as? Number)?.toInt()
+                            ?: item["season"]?.toString()?.filter { it.isDigit() }?.toIntOrNull()
+                            ?: 1
+                        episodesBySeasonKey.getOrPut(sNum.toString()) { mutableListOf() }.add(item)
+                    }
+                }
+            }
 
             val title = info["name"]?.toString() ?: "Série $seriesId"
             val poster = info["cover"]?.toString()
@@ -491,33 +501,73 @@ class XtreamCodesClient(
             val backdrops = info["backdrop_path"] as? List<*>
             val backdropUrl = backdrops?.firstOrNull()?.toString() ?: poster
 
-            val seasons = mutableListOf<Season>()
-            val seasonNumbers = (rawSeasons.mapNotNull { (it["season_number"] as? Number)?.toInt() ?: it["season_number"]?.toString()?.toIntOrNull() } +
-                    rawEpisodesMap.keys.mapNotNull { it.toIntOrNull() }).distinct().sorted()
-
-            for (sNum in seasonNumbers) {
-                val sMeta = rawSeasons.firstOrNull {
-                    val num = (it["season_number"] as? Number)?.toInt() ?: it["season_number"]?.toString()?.toIntOrNull()
-                    num == sNum
+            // Map des métadonnées de saison indexée par numéro
+            val metaByNumber = mutableMapOf<Int, Map<String, Any>>()
+            for (sMeta in rawSeasonsList) {
+                val num = (sMeta["season_number"] as? Number)?.toInt()
+                    ?: sMeta["season_number"]?.toString()?.filter { it.isDigit() }?.toIntOrNull()
+                if (num != null) {
+                    metaByNumber[num] = sMeta
                 }
-                val sName = sMeta?.get("name")?.toString() ?: "Saison $sNum"
-                val epListRaw = rawEpisodesMap[sNum.toString()] ?: rawEpisodesMap["$sNum"] ?: emptyList()
+            }
+
+            // Normalisation des épisodes par numéro de saison
+            val episodesBySeasonNumber = mutableMapOf<Int, MutableList<Map<String, Any>>>()
+            for ((key, eps) in episodesBySeasonKey) {
+                val num = key.filter { it.isDigit() }.toIntOrNull()
+                    ?: (eps.firstOrNull()?.get("season") as? Number)?.toInt()
+                    ?: eps.firstOrNull()?.get("season")?.toString()?.filter { it.isDigit() }?.toIntOrNull()
+                    ?: 1
+                episodesBySeasonNumber.getOrPut(num) { mutableListOf() }.addAll(eps)
+            }
+
+            val allSeasonNumbers = (metaByNumber.keys + episodesBySeasonNumber.keys).distinct().sorted()
+            val finalSeasonNumbers = if (allSeasonNumbers.isEmpty() && episodesBySeasonKey.isNotEmpty()) listOf(1) else allSeasonNumbers
+
+            val seasons = mutableListOf<Season>()
+
+            for (sNum in finalSeasonNumbers) {
+                val sMeta = metaByNumber[sNum]
+                val rawName = sMeta?.get("name")?.toString()
+                val sName = if (!rawName.isNullOrBlank()) rawName else "Saison $sNum"
+
+                val epListRaw = episodesBySeasonNumber[sNum]
+                    ?: episodesBySeasonKey[sNum.toString()]
+                    ?: emptyList()
 
                 val episodes = epListRaw.mapNotNull { epItem ->
-                    val epId = epItem["id"]?.toString()?.substringBefore(".") ?: return@mapNotNull null
+                    val epId = (epItem["id"] ?: epItem["episode_id"] ?: epItem["stream_id"])
+                        ?.toString()?.substringBefore(".") ?: return@mapNotNull null
+
                     val epNum = (epItem["episode_num"] as? Number)?.toInt()
-                        ?: epItem["episode_num"]?.toString()?.toIntOrNull() ?: 1
-                    val epTitle = epItem["title"]?.toString()?.takeIf { it.isNotBlank() } ?: "Épisode $epNum"
-                    val ext = epItem["container_extension"]?.toString() ?: "mp4"
+                        ?: epItem["episode_num"]?.toString()?.filter { it.isDigit() }?.toIntOrNull()
+                        ?: (epItem["episode"] as? Number)?.toInt()
+                        ?: (epItem["episode"]?.toString()?.filter { it.isDigit() }?.toIntOrNull())
+                        ?: 1
 
                     @Suppress("UNCHECKED_CAST")
                     val epInfo = epItem["info"] as? Map<String, Any> ?: emptyMap()
-                    val epPlot = epInfo["plot"]?.toString()
-                    val epRating = (epInfo["rating"]?.toString()?.toFloatOrNull()) ?: 0f
+
+                    val rawTitle = epItem["title"]?.toString()?.takeIf { it.isNotBlank() }
+                        ?: epInfo["title"]?.toString()?.takeIf { it.isNotBlank() }
+                        ?: epItem["name"]?.toString()?.takeIf { it.isNotBlank() }
+                    val epTitle = rawTitle?.let { maybeDecodeBase64(it) } ?: "Épisode $epNum"
+
+                    val ext = (epItem["container_extension"] ?: epInfo["container_extension"] ?: "mp4")
+                        .toString().replace(".", "").ifBlank { "mp4" }
+
+                    val epPlot = (epInfo["plot"] ?: epItem["plot"])?.toString()
+                    val epRating = (epInfo["rating"]?.toString()?.toFloatOrNull())
+                        ?: (epItem["rating"]?.toString()?.toFloatOrNull())
+                        ?: 0f
+
                     val epDurationSecs = (epInfo["duration_secs"] as? Number)?.toInt()
                         ?: epInfo["duration_secs"]?.toString()?.toIntOrNull()
+                        ?: (epItem["duration_secs"] as? Number)?.toInt()
+                        ?: epItem["duration_secs"]?.toString()?.toIntOrNull()
                     val epDurationMins = if (epDurationSecs != null && epDurationSecs > 0) epDurationSecs / 60 else null
-                    val epThumb = epInfo["movie_image"]?.toString()
+
+                    val epThumb = (epInfo["movie_image"] ?: epItem["movie_image"] ?: epInfo["cover"] ?: epItem["cover"])?.toString()
 
                     val streamUrl = buildSeriesStreamUrl(cleanServer, username, password, epId, ext)
 
@@ -534,16 +584,18 @@ class XtreamCodesClient(
                         plot = epPlot,
                         rating = epRating
                     )
-                }.sortedBy { it.episodeNumber }
+                }.distinctBy { it.id }.sortedBy { it.episodeNumber }
 
-                seasons.add(
-                    Season(
-                        seasonNumber = sNum,
-                        name = sName,
-                        episodeCount = episodes.size,
-                        episodes = episodes
+                if (episodes.isNotEmpty() || sMeta != null) {
+                    seasons.add(
+                        Season(
+                            seasonNumber = sNum,
+                            name = sName,
+                            episodeCount = if (episodes.isNotEmpty()) episodes.size else (sMeta?.get("episode_count") as? Number)?.toInt() ?: 0,
+                            episodes = episodes
+                        )
                     )
-                )
+                }
             }
 
             val series = Series(

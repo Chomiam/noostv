@@ -229,27 +229,37 @@ fun TvProfileModal(
                             }
                         }
 
-                        IconButton(
-                            onClick = {
-                                if (isFormOpen) {
-                                    isFormOpen = false
-                                    editingProfile = null
-                                } else {
-                                    onDismiss()
-                                }
-                            },
+                        var isCloseIconFocused by remember { mutableStateOf(false) }
+                        Box(
                             modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
                                 .focusRequester(closeFocusRequester)
+                                .onFocusChanged { isCloseIconFocused = it.isFocused }
                                 .onPreviewKeyEvent { keyEvent ->
                                     if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.DirectionDown) {
                                         if (isFormOpen) nameFieldRequester.requestFocus() else firstCardRequester.requestFocus()
                                         true
                                     } else false
                                 }
-                                .clip(CircleShape)
-                                .background(GlassSurface)
+                                .focusable()
+                                .clickable {
+                                    if (isFormOpen) {
+                                        isFormOpen = false
+                                        editingProfile = null
+                                    } else {
+                                        onDismiss()
+                                    }
+                                }
+                                .background(if (isCloseIconFocused) Color(0xFFE50914) else GlassSurface)
+                                .border(
+                                    width = if (isCloseIconFocused) 2.5.dp else 1.dp,
+                                    color = if (isCloseIconFocused) Color.White else GlassBorder,
+                                    shape = CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.Close, contentDescription = "Fermer", tint = Color.White)
+                            Icon(Icons.Default.Close, contentDescription = "Fermer", tint = Color.White, modifier = Modifier.size(20.dp))
                         }
                     }
 

@@ -203,7 +203,7 @@ class IptvRepository(
      * Récupère ou télécharge les métadonnées complètes d'une série avec saisons et épisodes
      */
     suspend fun getOrFetchSeriesInfo(serverUrl: String, username: String, password: String, seriesId: String): Series? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        seriesDetailsCache[seriesId]?.let { return@withContext it }
+        seriesDetailsCache[seriesId]?.takeIf { it.seasons.isNotEmpty() && it.seasons.any { s -> s.episodes.isNotEmpty() } }?.let { return@withContext it }
         val res = xtreamClient.getSeriesInfo(serverUrl, username, password, seriesId)
         res.getOrNull()?.also { enriched ->
             seriesDetailsCache[seriesId] = enriched
@@ -235,8 +235,13 @@ class IptvRepository(
         try {
             val targetCatId = if (categoryId == "Toutes" || categoryId.isBlank()) null else categoryId
             val seriesResult = xtreamClient.getSeriesStreams(serverUrl, username, password, categoryId = targetCatId, limit = null)
-            seriesResult.onSuccess {
-                _series.value = it
+            seriesResult.onSuccess { list ->
+                val enriched = list.map { ser ->
+                    seriesDetailsCache[ser.id]?.let { cached ->
+                        ser.copy(seasons = cached.seasons)
+                    } ?: ser
+                }
+                _series.value = enriched
             }
         } finally {
             _isSeriesLoading.value = false

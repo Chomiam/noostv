@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+
 package io.noostv.ui.tv
 
 import androidx.activity.compose.BackHandler
@@ -9,12 +11,15 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -34,6 +40,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.launch
 import io.noostv.R
 import io.noostv.core.entitlement.EntitlementManager
 import io.noostv.core.player.PlayerEngine
@@ -172,7 +180,17 @@ fun TvHomeScreen(
             TvNavTab.SETTINGS to FocusRequester()
         )
     }
-    val contentFocusRequester = remember { FocusRequester() }
+    val contentFocusRequesters = remember {
+        mapOf(
+            TvNavTab.TV to FocusRequester(),
+            TvNavTab.EPG to FocusRequester(),
+            TvNavTab.MOVIES to FocusRequester(),
+            TvNavTab.SERIES to FocusRequester(),
+            TvNavTab.FAVORITES to FocusRequester(),
+            TvNavTab.FILTERS to FocusRequester(),
+            TvNavTab.SETTINGS to FocusRequester()
+        )
+    }
 
     LaunchedEffect(Unit) {
         sidebarFocusRequesters[TvNavTab.TV]?.requestFocus()
@@ -212,23 +230,30 @@ fun TvHomeScreen(
         }
     }
 
+    val isAnyModalOpen = selectedMovieDetail != null || selectedSeriesDetail != null || isProfileModalOpen
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(GlassMeshBackground)
     ) {
         Row(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .focusProperties {
+                    canFocus = !isAnyModalOpen
+                }
         ) {
         // ==================== BARRE LATÉRALE GAUCHE MODERNE & ARRONDIE ====================
         TvSidebar(
             selectedTab = selectedTab,
             sidebarFocusRequesters = sidebarFocusRequesters,
+            contentFocusRequester = contentFocusRequesters[selectedTab],
             onTabSelected = { tab ->
                 selectedTab = tab
             },
             onNavigateRight = {
-                runCatching { contentFocusRequester.requestFocus() }
+                runCatching { contentFocusRequesters[selectedTab]?.requestFocus() }
             }
         )
 
@@ -261,7 +286,7 @@ fun TvHomeScreen(
                             epgPrograms = epgPrograms,
                             playerEngine = playerEngine,
                             sessionManager = sessionManager,
-                            contentFocusRequester = contentFocusRequester,
+                            contentFocusRequester = contentFocusRequesters[TvNavTab.TV]!!,
                             onChannelChanged = { newChan ->
                                 previewChannel = newChan
                                 onLoadChannelEpg?.invoke(newChan)
@@ -294,7 +319,7 @@ fun TvHomeScreen(
                         TvCategoryChipsRow(
                             categories = liveCatNames,
                             selectedCategory = selectedLiveCategory,
-                            focusRequester = contentFocusRequester,
+                            focusRequester = contentFocusRequesters[TvNavTab.TV],
                             onNavigateLeft = { sidebarFocusRequesters[TvNavTab.TV]?.requestFocus() },
                             onSelectCategory = { selectedLiveCategory = it }
                         )
@@ -338,7 +363,7 @@ fun TvHomeScreen(
                     TvEpgContent(
                         channels = channels,
                         epgPrograms = epgPrograms,
-                        focusRequester = contentFocusRequester,
+                        focusRequester = contentFocusRequesters[TvNavTab.EPG]!!,
                         onNavigateLeft = { sidebarFocusRequesters[TvNavTab.EPG]?.requestFocus() },
                         onSelectChannel = onSelectChannel
                     )
@@ -356,7 +381,7 @@ fun TvHomeScreen(
                     TvCategoryChipsRow(
                         categories = vodCatNames,
                         selectedCategory = selectedVodCategory,
-                        focusRequester = contentFocusRequester,
+                        focusRequester = contentFocusRequesters[TvNavTab.MOVIES],
                         onNavigateLeft = { sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus() },
                         onSelectCategory = { catName ->
                             selectedVodCategory = catName
@@ -425,7 +450,7 @@ fun TvHomeScreen(
                     TvCategoryChipsRow(
                         categories = seriesCatNames,
                         selectedCategory = selectedSeriesCategory,
-                        focusRequester = contentFocusRequester,
+                        focusRequester = contentFocusRequesters[TvNavTab.SERIES],
                         onNavigateLeft = { sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus() },
                         onSelectCategory = { catName ->
                             selectedSeriesCategory = catName
@@ -489,7 +514,7 @@ fun TvHomeScreen(
                         movies = movies,
                         series = series,
                         sessionManager = sessionManager,
-                        focusRequester = contentFocusRequester,
+                        focusRequester = contentFocusRequesters[TvNavTab.FAVORITES]!!,
                         onNavigateLeftToSidebar = {
                             sidebarFocusRequesters[TvNavTab.FAVORITES]?.requestFocus()
                         },
@@ -511,7 +536,7 @@ fun TvHomeScreen(
                         vodCategories = vodCategories,
                         seriesCategories = seriesCategories,
                         sessionManager = sessionManager,
-                        focusRequester = contentFocusRequester,
+                        focusRequester = contentFocusRequesters[TvNavTab.FILTERS]!!,
                         onNavigateLeftToSidebar = {
                             sidebarFocusRequesters[TvNavTab.FILTERS]?.requestFocus()
                         },
@@ -525,7 +550,7 @@ fun TvHomeScreen(
                 TvNavTab.SETTINGS -> {
                     TvSettingsContent(
                         sessionManager = sessionManager,
-                        focusRequester = contentFocusRequester,
+                        focusRequester = contentFocusRequesters[TvNavTab.SETTINGS]!!,
                         onNavigateLeft = { sidebarFocusRequesters[TvNavTab.SETTINGS]?.requestFocus() },
                         onOpenLogin = onOpenLogin,
                         onLogout = onLogout,
@@ -600,6 +625,7 @@ fun TvHomeScreen(
 fun TvSidebar(
     selectedTab: TvNavTab,
     sidebarFocusRequesters: Map<TvNavTab, FocusRequester>,
+    contentFocusRequester: FocusRequester? = null,
     onTabSelected: (TvNavTab) -> Unit,
     onNavigateRight: () -> Unit
 ) {
@@ -635,6 +661,11 @@ fun TvSidebar(
                     .scale(scale)
                     .clip(RoundedCornerShape(18.dp))
                     .focusRequester(myRequester)
+                    .focusProperties {
+                        if (contentFocusRequester != null) {
+                            right = contentFocusRequester
+                        }
+                    }
                     .onFocusChanged {
                         isFocused = it.isFocused
                         if (it.isFocused) {
@@ -854,11 +885,14 @@ fun TvCategoryChipsRow(
     onNavigateLeft: (() -> Unit)? = null,
     onSelectCategory: (String) -> Unit
 ) {
-    LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(horizontal = 2.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(categories) { category ->
+        categories.forEach { category ->
             val isSelected = category.equals(selectedCategory, ignoreCase = true)
             var isFocused by remember { mutableStateOf(false) }
 
@@ -1721,7 +1755,11 @@ fun TvMovieDetailModal(
     onFetchFullInfo: (suspend (String) -> VodMovie?)? = null
 ) {
     val playFocusRequester = remember { FocusRequester() }
+    val closeFocusRequester = remember { FocusRequester() }
+    val favFocusRequester = remember { FocusRequester() }
+    val bottomCloseFocusRequester = remember { FocusRequester() }
     val context = LocalContext.current
+    val view = LocalView.current
     var fullMovie by remember(movie.id) { mutableStateOf(movie) }
     var isFetchingInfo by remember(movie.id) { mutableStateOf(onFetchFullInfo != null && movie.plot.isNullOrBlank()) }
 
@@ -1748,6 +1786,9 @@ fun TvMovieDetailModal(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xEE080A0F))
+            .focusProperties {
+                exit = { FocusRequester.Cancel }
+            }
             .onPreviewKeyEvent { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.Back) {
                     onDismiss()
@@ -1859,14 +1900,50 @@ fun TvMovieDetailModal(
                                 modifier = Modifier.weight(1f)
                             )
 
-                            IconButton(
-                                onClick = onDismiss,
+                            var isCloseIconFocused by remember { mutableStateOf(false) }
+                            Box(
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(42.dp)
                                     .clip(CircleShape)
-                                    .background(SurfaceDarkVariant)
+                                    .focusRequester(closeFocusRequester)
+                                    .onFocusChanged { isCloseIconFocused = it.isFocused }
+                                    .focusProperties {
+                                        down = playFocusRequester
+                                    }
+                                    .onPreviewKeyEvent { event ->
+                                        if (event.type == KeyEventType.KeyDown) {
+                                            when (event.key) {
+                                                Key.DirectionDown -> {
+                                                    view.post { playFocusRequester.requestFocus() }
+                                                    true
+                                                }
+                                                Key.Enter, Key.DirectionCenter -> {
+                                                    onDismiss()
+                                                    true
+                                                }
+                                                else -> false
+                                            }
+                                        } else false
+                                    }
+                                    .focusable()
+                                    .clickable { onDismiss() }
+                                    .background(
+                                        if (isCloseIconFocused) Color(0xFFE50914)
+                                        else SurfaceDarkVariant
+                                    )
+                                    .border(
+                                        width = if (isCloseIconFocused) 2.5.dp else 1.dp,
+                                        color = if (isCloseIconFocused) Color.White else CardBorderUnfocused,
+                                        shape = CircleShape
+                                    ),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Default.Close, contentDescription = "Fermer", tint = TextPrimary, modifier = Modifier.size(18.dp))
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Fermer",
+                                    tint = if (isCloseIconFocused) Color.White else TextPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                         }
 
@@ -1967,6 +2044,16 @@ fun TvMovieDetailModal(
                             modifier = Modifier
                                 .focusRequester(playFocusRequester)
                                 .onFocusChanged { isPlayFocused = it.isFocused }
+                                .focusProperties {
+                                    up = closeFocusRequester
+                                    right = favFocusRequester
+                                }
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
+                                        view.post { closeFocusRequester.requestFocus() }
+                                        true
+                                    } else false
+                                }
                                 .focusable(),
                             colors = ButtonDefaults.buttonColors(containerColor = if (isPlayFocused) NoosCyan else NoosBlue),
                             shape = RoundedCornerShape(14.dp),
@@ -1981,7 +2068,19 @@ fun TvMovieDetailModal(
                         OutlinedButton(
                             onClick = onToggleFavorite,
                             modifier = Modifier
+                                .focusRequester(favFocusRequester)
                                 .onFocusChanged { isFavFocused = it.isFocused }
+                                .focusProperties {
+                                    up = closeFocusRequester
+                                    left = playFocusRequester
+                                    right = bottomCloseFocusRequester
+                                }
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
+                                        view.post { closeFocusRequester.requestFocus() }
+                                        true
+                                    } else false
+                                }
                                 .focusable(),
                             colors = ButtonDefaults.outlinedButtonColors(
                                 containerColor = if (isFavFocused) Color(0xFF1E2838) else Color.Transparent
@@ -2000,7 +2099,18 @@ fun TvMovieDetailModal(
                         OutlinedButton(
                             onClick = onDismiss,
                             modifier = Modifier
+                                .focusRequester(bottomCloseFocusRequester)
                                 .onFocusChanged { isCloseFocused = it.isFocused }
+                                .focusProperties {
+                                    up = closeFocusRequester
+                                    left = favFocusRequester
+                                }
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
+                                        view.post { closeFocusRequester.requestFocus() }
+                                        true
+                                    } else false
+                                }
                                 .focusable(),
                             colors = ButtonDefaults.outlinedButtonColors(
                                 containerColor = if (isCloseFocused) Color(0xFF1E2838) else Color.Transparent
@@ -2034,17 +2144,25 @@ fun TvSeriesDetailModal(
     onFetchFullInfo: (suspend (String) -> Series?)? = null
 ) {
     val context = LocalContext.current
-    val firstFocusRequester = remember { FocusRequester() }
+    val view = LocalView.current
+    val coroutineScope = rememberCoroutineScope()
+    val closeFocusRequester = remember { FocusRequester() }
+    val seasonFocusRequester = remember { FocusRequester() }
+    val episodeFocusRequester = remember { FocusRequester() }
+    val favBtnFocusRequester = remember { FocusRequester() }
+    val closeBtnUnderPosterFocusRequester = remember { FocusRequester() }
+    val directPlayFocusRequester = remember { FocusRequester() }
     var selectedSeasonIndex by remember { mutableStateOf(0) }
+    var isCloseIconFocused by remember { mutableStateOf(false) }
 
     var fullSeries by remember(series.id) { mutableStateOf(series) }
-    var isLoadingInfo by remember(series.id) { mutableStateOf(series.seasons.isEmpty() && onFetchFullInfo != null) }
+    var isLoadingInfo by remember(series.id) { mutableStateOf(onFetchFullInfo != null && (series.seasons.isEmpty() || series.seasons.all { it.episodes.size <= 1 })) }
 
     LaunchedEffect(series.id) {
-        if (series.seasons.isEmpty() && onFetchFullInfo != null) {
+        if (onFetchFullInfo != null && (fullSeries.seasons.isEmpty() || fullSeries.seasons.all { it.episodes.size <= 1 })) {
             isLoadingInfo = true
             val fetched = onFetchFullInfo(series.id)
-            if (fetched != null) {
+            if (fetched != null && fetched.seasons.isNotEmpty()) {
                 fullSeries = fetched
             }
             isLoadingInfo = false
@@ -2058,16 +2176,23 @@ fun TvSeriesDetailModal(
     val seasons = fullSeries.seasons
     val currentSeason = seasons.getOrNull(selectedSeasonIndex) ?: seasons.firstOrNull()
 
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(100)
-        runCatching { firstFocusRequester.requestFocus() }
+    LaunchedEffect(seasons.size, isLoadingInfo) {
+        kotlinx.coroutines.delay(120)
+        val res = runCatching {
+            closeFocusRequester.requestFocus()
+        }
+        android.util.Log.d("TV_NAV", "Initial requestFocus result: $res (seasons=${seasons.size}, loading=$isLoadingInfo)")
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xEE080A0F))
+            .focusProperties {
+                exit = { FocusRequester.Cancel }
+            }
             .onPreviewKeyEvent { keyEvent ->
+                android.util.Log.d("TV_NAV", "Root modal onPreviewKeyEvent: key=${keyEvent.key} type=${keyEvent.type}")
                 if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.Back) {
                     onDismiss()
                     true
@@ -2134,7 +2259,18 @@ fun TvSeriesDetailModal(
                             onClick = onToggleFavorite,
                             modifier = Modifier
                                 .weight(1f)
+                                .focusRequester(favBtnFocusRequester)
                                 .onFocusChanged { isFavFocused = it.isFocused }
+                                .focusProperties {
+                                    up = closeFocusRequester
+                                    right = closeBtnUnderPosterFocusRequester
+                                }
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
+                                        view.post { closeFocusRequester.requestFocus() }
+                                        true
+                                    } else false
+                                }
                                 .focusable(),
                             colors = ButtonDefaults.outlinedButtonColors(
                                 containerColor = if (isFavFocused) Color(0xFF1E2838) else Color.Transparent
@@ -2154,7 +2290,19 @@ fun TvSeriesDetailModal(
                             onClick = onDismiss,
                             modifier = Modifier
                                 .weight(1f)
+                                .focusRequester(closeBtnUnderPosterFocusRequester)
                                 .onFocusChanged { isCloseBtnFocused = it.isFocused }
+                                .focusProperties {
+                                    up = closeFocusRequester
+                                    left = favBtnFocusRequester
+                                    right = if (seasons.isNotEmpty()) seasonFocusRequester else directPlayFocusRequester
+                                }
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
+                                        view.post { closeFocusRequester.requestFocus() }
+                                        true
+                                    } else false
+                                }
                                 .focusable(),
                             colors = ButtonDefaults.outlinedButtonColors(
                                 containerColor = if (isCloseBtnFocused) Color(0xFF1E2838) else Color.Transparent
@@ -2208,14 +2356,65 @@ fun TvSeriesDetailModal(
                             }
                         }
 
-                        IconButton(
-                            onClick = onDismiss,
+                        // Bouton Croix Fermer (en haut à droite)
+                        Box(
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(42.dp)
                                 .clip(CircleShape)
-                                .background(SurfaceDarkVariant)
+                                .focusRequester(closeFocusRequester)
+                                .focusProperties {
+                                    down = if (seasons.isNotEmpty()) seasonFocusRequester else directPlayFocusRequester
+                                    left = closeBtnUnderPosterFocusRequester
+                                }
+                                .onFocusChanged {
+                                    isCloseIconFocused = it.isFocused
+                                    android.util.Log.d("TV_NAV", "Series Close icon isFocused=${it.isFocused}")
+                                }
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyDown) {
+                                        when (event.key) {
+                                            Key.DirectionDown -> {
+                                                coroutineScope.launch {
+                                                    kotlinx.coroutines.delay(50)
+                                                    if (seasons.isNotEmpty()) seasonFocusRequester.requestFocus()
+                                                    else directPlayFocusRequester.requestFocus()
+                                                }
+                                                true
+                                            }
+                                            Key.DirectionLeft -> {
+                                                coroutineScope.launch {
+                                                    kotlinx.coroutines.delay(50)
+                                                    closeBtnUnderPosterFocusRequester.requestFocus()
+                                                }
+                                                true
+                                            }
+                                            Key.Enter, Key.DirectionCenter -> {
+                                                onDismiss()
+                                                true
+                                            }
+                                            else -> false
+                                        }
+                                    } else false
+                                }
+                                .focusable()
+                                .clickable { onDismiss() }
+                                .background(
+                                    if (isCloseIconFocused) Color(0xFFE50914)
+                                    else SurfaceDarkVariant
+                                )
+                                .border(
+                                    width = if (isCloseIconFocused) 2.5.dp else 1.dp,
+                                    color = if (isCloseIconFocused) Color.White else CardBorderUnfocused,
+                                    shape = CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.Close, contentDescription = "Fermer", tint = TextPrimary, modifier = Modifier.size(18.dp))
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Fermer",
+                                tint = if (isCloseIconFocused) Color.White else TextPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
 
@@ -2269,10 +2468,21 @@ fun TvSeriesDetailModal(
                                             title = "Épisode 1",
                                             streamUrl = ""
                                         )
-                                        onPlayEpisode(fallbackEp)
+                                         onPlayEpisode(fallbackEp)
                                     },
                                     modifier = Modifier
+                                        .focusRequester(directPlayFocusRequester)
                                         .onFocusChanged { isDirectPlayFocused = it.isFocused }
+                                        .focusProperties {
+                                            up = closeFocusRequester
+                                            left = closeBtnUnderPosterFocusRequester
+                                        }
+                                        .onPreviewKeyEvent { event ->
+                                            if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
+                                                view.post { closeFocusRequester.requestFocus() }
+                                                true
+                                            } else false
+                                        }
                                         .focusable(),
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = if (isDirectPlayFocused) Color.White else NoosBlue
@@ -2287,35 +2497,88 @@ fun TvSeriesDetailModal(
                         }
                     } else {
                         // Sélecteur de Saisons
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(seasons.size) { idx ->
-                                val s = seasons[idx]
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusProperties {
+                                    up = closeFocusRequester
+                                    down = episodeFocusRequester
+                                    left = closeBtnUnderPosterFocusRequester
+                                },
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            seasons.forEachIndexed { idx, s ->
                                 val isSelected = idx == selectedSeasonIndex
                                 var isChipFocused by remember { mutableStateOf(false) }
 
-                                var chipMod = Modifier
-                                    .clip(RoundedCornerShape(50))
-                                    .onFocusChanged { isChipFocused = it.isFocused }
-                                    .focusable()
-                                    .clickable { selectedSeasonIndex = idx }
-                                    .background(if (isChipFocused) Color.White else if (isSelected) NoosBlue.copy(alpha = 0.35f) else SurfaceDarkVariant)
-                                    .border(
-                                        width = if (isChipFocused) 2.5.dp else 1.dp,
-                                        color = if (isChipFocused) FocusGlow else if (isSelected) NoosBlue else CardBorderUnfocused,
-                                        shape = RoundedCornerShape(50)
-                                    )
-                                    .padding(horizontal = 14.dp, vertical = 6.dp)
-
-                                if (idx == 0) {
-                                    chipMod = chipMod.focusRequester(firstFocusRequester)
-                                }
-
-                                Box(modifier = chipMod) {
+                                Box(
+                                    modifier = (if (idx == 0) Modifier.focusRequester(seasonFocusRequester) else Modifier)
+                                        .focusProperties {
+                                            up = closeFocusRequester
+                                            if (idx == 0) {
+                                                left = closeBtnUnderPosterFocusRequester
+                                            }
+                                            down = episodeFocusRequester
+                                        }
+                                        .onFocusChanged {
+                                            isChipFocused = it.isFocused
+                                            android.util.Log.d("TV_NAV", "Season chip idx=$idx isFocused=${it.isFocused}")
+                                            if (it.isFocused) {
+                                                selectedSeasonIndex = idx
+                                            }
+                                        }
+                                        .onPreviewKeyEvent { event ->
+                                            if (event.type == KeyEventType.KeyDown) {
+                                                when (event.key) {
+                                                    Key.DirectionUp -> {
+                                                        coroutineScope.launch {
+                                                            kotlinx.coroutines.delay(50)
+                                                            val r = runCatching { closeFocusRequester.requestFocus() }
+                                                            android.util.Log.d("TV_NAV", "Season chip coroutine closeFocusRequester: $r")
+                                                        }
+                                                        true
+                                                    }
+                                                    Key.DirectionLeft -> {
+                                                        if (idx == 0) {
+                                                            coroutineScope.launch {
+                                                                kotlinx.coroutines.delay(50)
+                                                                closeBtnUnderPosterFocusRequester.requestFocus()
+                                                            }
+                                                            true
+                                                        } else false
+                                                    }
+                                                    Key.DirectionDown -> {
+                                                        coroutineScope.launch {
+                                                            kotlinx.coroutines.delay(50)
+                                                            episodeFocusRequester.requestFocus()
+                                                        }
+                                                        true
+                                                    }
+                                                    else -> false
+                                                }
+                                            } else false
+                                        }
+                                        .focusable()
+                                        .clickable { selectedSeasonIndex = idx }
+                                        .clip(RoundedCornerShape(50))
+                                        .background(
+                                            if (isChipFocused) Color.White
+                                            else if (isSelected) NoosBlue.copy(alpha = 0.35f)
+                                            else SurfaceDarkVariant
+                                        )
+                                        .border(
+                                            width = if (isChipFocused) 2.5.dp else 1.dp,
+                                            color = if (isChipFocused) FocusGlow else if (isSelected) NoosBlue else CardBorderUnfocused,
+                                            shape = RoundedCornerShape(50)
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
                                     Text(
                                         text = s.name.ifBlank { "Saison ${s.seasonNumber}" },
                                         color = if (isChipFocused) Color.Black else if (isSelected) Color.White else TextSecondary,
                                         fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                                     )
                                 }
                             }
@@ -2326,30 +2589,68 @@ fun TvSeriesDetailModal(
                         Text("Épisodes (${episodeList.size})", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
 
                         LazyColumn(
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .focusProperties {
+                                    up = seasonFocusRequester
+                                    left = closeBtnUnderPosterFocusRequester
+                                },
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             contentPadding = PaddingValues(bottom = 8.dp)
                         ) {
-                            items(episodeList) { ep ->
+                            itemsIndexed(episodeList, key = { _, ep -> "${ep.seasonNumber}_${ep.episodeNumber}_${ep.id}" }) { epIndex, ep ->
                                 var isEpFocused by remember { mutableStateOf(false) }
 
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
+                                        .then(if (epIndex == 0) Modifier.focusRequester(episodeFocusRequester) else Modifier)
+                                        .focusProperties {
+                                            if (epIndex == 0) {
+                                                up = seasonFocusRequester
+                                            }
+                                            left = closeBtnUnderPosterFocusRequester
+                                        }
                                         .onFocusChanged { isEpFocused = it.isFocused }
+                                        .onPreviewKeyEvent { event ->
+                                            if (event.type == KeyEventType.KeyDown) {
+                                                when (event.key) {
+                                                    Key.DirectionUp -> {
+                                                        if (epIndex == 0) {
+                                                            coroutineScope.launch {
+                                                                kotlinx.coroutines.delay(50)
+                                                                if (seasons.isNotEmpty()) seasonFocusRequester.requestFocus()
+                                                                else closeFocusRequester.requestFocus()
+                                                            }
+                                                            true
+                                                        } else false
+                                                    }
+                                                    Key.DirectionLeft -> {
+                                                        coroutineScope.launch {
+                                                            kotlinx.coroutines.delay(50)
+                                                            closeBtnUnderPosterFocusRequester.requestFocus()
+                                                        }
+                                                        true
+                                                    }
+                                                    else -> false
+                                                }
+                                            } else false
+                                        }
                                         .focusable()
                                         .clickable { onPlayEpisode(ep) }
+                                        .clip(RoundedCornerShape(12.dp))
                                         .background(if (isEpFocused) Color(0xFF1E2838) else SurfaceDarkVariant)
                                         .border(
                                             width = if (isEpFocused) 2.5.dp else 1.dp,
                                             color = if (isEpFocused) FocusGlow else CardBorderUnfocused,
                                             shape = RoundedCornerShape(12.dp)
                                         )
-                                        .padding(horizontal = 14.dp, vertical = 10.dp)
                                 ) {
                                     Row(
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 10.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {

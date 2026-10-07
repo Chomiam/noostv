@@ -321,7 +321,7 @@ fun MobileSeriesDetailModal(
     onFetchFullInfo: suspend (String) -> Series?
 ) {
     var fullSeries by remember(series.id) { mutableStateOf(series) }
-    var isLoadingInfo by remember(series.id) { mutableStateOf(series.seasons.isEmpty()) }
+    var isLoadingInfo by remember(series.id) { mutableStateOf(series.seasons.isEmpty() || series.seasons.all { it.episodes.size <= 1 }) }
     var selectedSeasonIndex by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(series.id) {
@@ -482,7 +482,7 @@ fun MobileSeriesDetailModal(
                             }
                         }
                     } else if (activeSeason != null && activeSeason.episodes.isNotEmpty()) {
-                        items(activeSeason.episodes, key = { it.id }) { ep ->
+                        items(activeSeason.episodes, key = { "${it.seasonNumber}_${it.episodeNumber}_${it.id}" }) { ep ->
                             MobileEpisodeCard(
                                 episode = ep,
                                 onPlay = {

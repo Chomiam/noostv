@@ -173,14 +173,14 @@ class MainActivity : ComponentActivity() {
                 fun startPlaySeries(ser: Series) {
                     coroutineScope.launch {
                         var targetSeries = ser
-                        if (targetSeries.seasons.isEmpty() && sessionManager.isLoggedIn) {
+                        if ((targetSeries.seasons.isEmpty() || targetSeries.seasons.all { it.episodes.size <= 1 }) && sessionManager.isLoggedIn) {
                             val fetched = repository.getOrFetchSeriesInfo(
                                 sessionManager.serverUrl,
                                 sessionManager.username,
                                 sessionManager.password,
                                 ser.id
                             )
-                            if (fetched != null) {
+                            if (fetched != null && fetched.seasons.isNotEmpty()) {
                                 targetSeries = fetched
                             }
                         }
