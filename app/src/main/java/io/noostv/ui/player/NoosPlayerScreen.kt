@@ -306,8 +306,22 @@ fun NoosPlayerScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        // Guide TV en arrière-plan : il remplit l'écran, la vidéo 16:9 par-dessus
+        // ne couvre que sa partie haute en portrait.
+        if (isPortraitMobile && isLive && onSelectChannel != null) {
+            MobileTvGuidePanel(
+                channels = channels,
+                epgPrograms = epgPrograms,
+                activeChannel = channel,
+                onSelectChannel = { selected -> onSelectChannel.invoke(selected) },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .fillMaxHeight(1f)
+            )
+        }
         Box(
-        modifier = (if (isPortraitMobile) Modifier.fillMaxWidth().fillMaxHeight(0.42f) else Modifier.fillMaxSize())
+        modifier = (if (isPortraitMobile) Modifier.align(Alignment.TopCenter).fillMaxWidth().aspectRatio(16f / 9f) else Modifier.fillMaxSize())
             .background(Color.Black)
             .focusRequester(playerFocusRequester)
             .focusable()
@@ -1243,22 +1257,6 @@ fun NoosPlayerScreen(
             )
         }
         } // fin Box lecteur
-
-        // ------------------ 8. GUIDE TV (MOBILE EN VERTICAL) ------------------
-        // Le téléphone en portrait affiche le lecteur en haut (16:9) et ce
-        // guide des chaînes en dessous, avec le programme en cours de chacune.
-        if (isPortraitMobile && isLive && onSelectChannel != null) {
-            MobileTvGuidePanel(
-                channels = channels,
-                epgPrograms = epgPrograms,
-                activeChannel = channel,
-                onSelectChannel = { selected -> onSelectChannel.invoke(selected) },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.58f)
-            )
-        }
     } // fin Box racine
 }
 
