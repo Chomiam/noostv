@@ -102,6 +102,17 @@ class MainActivity : ComponentActivity() {
                 var customStreamTitle by remember { mutableStateOf<String?>(null) }
                 var customStreamSubtitle by remember { mutableStateOf<String?>(null) }
 
+                fun performLogout() {
+                    playerEngine.stop()
+                    repository.clear()
+                    sessionManager.logout()
+                    currentChannel = null
+                    currentMovie = null
+                    customStreamTitle = null
+                    customStreamSubtitle = null
+                    currentScreen = CurrentScreen.LOGIN
+                }
+
                 fun startPlayMovie(movie: VodMovie) {
                     val success = playerEngine.playStream(
                         url = movie.streamUrl,
@@ -290,7 +301,8 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onOpenSearch = { currentScreen = CurrentScreen.SEARCH },
                                 onOpenUpgrade = { showUpgradeDialog = true },
-                                onOpenLogin = { currentScreen = CurrentScreen.LOGIN }
+                                onOpenLogin = { currentScreen = CurrentScreen.LOGIN },
+                                onLogout = { performLogout() }
                             )
                         } else {
                             MobileHomeScreen(
@@ -347,7 +359,8 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onOpenSearch = { currentScreen = CurrentScreen.SEARCH },
                                 onOpenUpgrade = { showUpgradeDialog = true },
-                                onOpenLogin = { currentScreen = CurrentScreen.LOGIN }
+                                onOpenLogin = { currentScreen = CurrentScreen.LOGIN },
+                                onLogout = { performLogout() }
                             )
                         }
                     }

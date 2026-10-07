@@ -108,6 +108,7 @@ fun TvHomeScreen(
     onOpenSearch: () -> Unit,
     onOpenUpgrade: () -> Unit,
     onOpenLogin: () -> Unit,
+    onLogout: () -> Unit,
     onFetchVodInfo: (suspend (String) -> VodMovie?)? = null,
     onFetchSeriesInfo: (suspend (String) -> Series?)? = null
 ) {
@@ -502,7 +503,8 @@ fun TvHomeScreen(
                         sessionManager = sessionManager,
                         focusRequester = contentFocusRequester,
                         onNavigateLeft = { sidebarFocusRequesters[TvNavTab.SETTINGS]?.requestFocus() },
-                        onOpenLogin = onOpenLogin
+                        onOpenLogin = onOpenLogin,
+                        onLogout = onLogout
                     )
                 }
             }

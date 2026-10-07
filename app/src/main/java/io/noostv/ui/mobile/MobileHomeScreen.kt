@@ -85,6 +85,7 @@ fun MobileHomeScreen(
     onOpenSearch: () -> Unit,
     onOpenUpgrade: () -> Unit,
     onOpenLogin: () -> Unit,
+    onLogout: () -> Unit,
     onSelectEpisode: ((Series, io.noostv.data.model.Episode) -> Unit)? = null,
     onFetchVodInfo: (suspend (String) -> VodMovie?)? = null,
     onFetchSeriesInfo: (suspend (String) -> Series?)? = null
@@ -349,7 +350,8 @@ fun MobileHomeScreen(
                 MobileBottomTab.SETTINGS -> {
                     MobileSettingsView(
                         sessionManager = sessionManager,
-                        onOpenLogin = onOpenLogin
+                        onOpenLogin = onOpenLogin,
+                        onLogout = onLogout
                     )
                 }
             }
@@ -832,7 +834,8 @@ private fun MobileEpgContent(
 @Composable
 private fun MobileSettingsView(
     sessionManager: SessionManager,
-    onOpenLogin: () -> Unit
+    onOpenLogin: () -> Unit,
+    onLogout: () -> Unit
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -1030,6 +1033,19 @@ private fun MobileSettingsView(
                     Icon(imageVector = Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Changer d'identifiants IPTV", fontSize = 12.sp)
+                }
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                OutlinedButton(
+                    onClick = onLogout,
+                    modifier = Modifier.fillMaxWidth().height(42.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF5252))
+                ) {
+                    Icon(imageVector = Icons.Default.ExitToApp, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Se déconnecter", fontSize = 12.sp)
                 }
             }
         }

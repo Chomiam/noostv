@@ -52,6 +52,25 @@ class IptvRepository(
     }
 
     /**
+     * Vide tout l'état du dépôt (catalogue live, VOD, séries, EPG, catégories).
+     * Appelé lors de la déconnexion pour ne laisser aucune donnée en mémoire.
+     */
+    fun clear() {
+        _channels.value = emptyList()
+        _movies.value = emptyList()
+        _series.value = emptyList()
+        _epgPrograms.value = emptyList()
+        _categories.value = emptyList()
+        _vodCategories.value = emptyList()
+        _seriesCategories.value = emptyList()
+        _isVodLoading.value = false
+        _isSeriesLoading.value = false
+        _isLiveLoading.value = false
+        vodDetailsCache.clear()
+        seriesDetailsCache.clear()
+    }
+
+    /**
      * Charge une liste M3U / M3U8
      */
     fun loadM3uPlaylist(m3uContent: String) {
