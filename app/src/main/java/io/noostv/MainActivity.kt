@@ -6,6 +6,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
+import androidx.compose.runtime.CompositionLocalProvider
+import io.noostv.core.localization.AppLanguage
+import io.noostv.core.localization.AppStrings
+import io.noostv.core.localization.LocalAppLanguage
+import io.noostv.core.localization.LocalStrings
+import io.noostv.core.localization.LocaleHelper
 import kotlinx.coroutines.launch
 import io.noostv.core.device.DeviceDetector
 import io.noostv.core.entitlement.EntitlementManager
@@ -62,11 +68,23 @@ class MainActivity : ComponentActivity() {
         playerEngine = PlayerEngine(this, entitlementManager)
 
         setContent {
-            NoosTvTheme {
-                // Si l'utilisateur n'a pas encore configuré d'identifiants, on démarre sur LOGIN
-                var currentScreen by remember {
-                    mutableStateOf(if (sessionManager.isLoggedIn) CurrentScreen.HOME else CurrentScreen.LOGIN)
-                }
+            var currentLanguage by remember {
+                mutableStateOf(AppLanguage.fromCode(sessionManager.appLanguage))
+            }
+
+            LaunchedEffect(currentLanguage) {
+                LocaleHelper.setAppLocale(this@MainActivity, currentLanguage)
+            }
+
+            CompositionLocalProvider(
+                LocalAppLanguage provides currentLanguage,
+                LocalStrings provides AppStrings.get(currentLanguage)
+            ) {
+                NoosTvTheme {
+                    // Si l'utilisateur n'a pas encore configuré d'identifiants, on démarre sur LOGIN
+                    var currentScreen by remember {
+                        mutableStateOf(if (sessionManager.isLoggedIn) CurrentScreen.HOME else CurrentScreen.LOGIN)
+                    }
                 var showUpgradeDialog by remember { mutableStateOf(false) }
 
                 val channels by repository.channels.collectAsState()
@@ -302,7 +320,11 @@ class MainActivity : ComponentActivity() {
                                 onOpenSearch = { currentScreen = CurrentScreen.SEARCH },
                                 onOpenUpgrade = { showUpgradeDialog = true },
                                 onOpenLogin = { currentScreen = CurrentScreen.LOGIN },
-                                onLogout = { performLogout() }
+                                onLogout = { performLogout() },
+                                onLanguageChanged = { newLang ->
+                                    currentLanguage = newLang
+                                    sessionManager.appLanguage = newLang.code
+                                }
                             )
                         } else {
                             MobileHomeScreen(
@@ -360,7 +382,11 @@ class MainActivity : ComponentActivity() {
                                 onOpenSearch = { currentScreen = CurrentScreen.SEARCH },
                                 onOpenUpgrade = { showUpgradeDialog = true },
                                 onOpenLogin = { currentScreen = CurrentScreen.LOGIN },
-                                onLogout = { performLogout() }
+                                onLogout = { performLogout() },
+                                onLanguageChanged = { newLang ->
+                                    currentLanguage = newLang
+                                    sessionManager.appLanguage = newLang.code
+                                }
                             )
                         }
                     }
@@ -445,6 +471,7 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
 
     override fun onDestroy() {
         super.onDestroy()

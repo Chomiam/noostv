@@ -57,6 +57,9 @@ import io.noostv.data.model.VodMovie
 import io.noostv.ui.common.HdrBadge
 import io.noostv.ui.common.LiveIndicatorBadge
 import io.noostv.ui.common.NoosPaginationBar
+import io.noostv.core.localization.AppLanguage
+import io.noostv.core.localization.AppStrings
+import io.noostv.core.localization.LocalStrings
 import io.noostv.ui.common.PremiumVipBadge
 import io.noostv.ui.common.ResolutionBadge
 import io.noostv.ui.settings.TvSettingsContent
@@ -80,7 +83,17 @@ enum class TvNavTab(val label: String, val icon: ImageVector) {
     SERIES("Séries", Icons.Default.VideoLibrary),
     FAVORITES("Favoris", Icons.Default.Star),
     FILTERS("Filtres", Icons.Default.Tune),
-    SETTINGS("Paramètres", Icons.Default.Settings)
+    SETTINGS("Paramètres", Icons.Default.Settings);
+
+    fun getLabel(strings: AppStrings): String = when (this) {
+        TV -> strings.navLiveTv
+        EPG -> strings.navEpg
+        MOVIES -> strings.navMovies
+        SERIES -> strings.navSeries
+        FAVORITES -> strings.navFavorites
+        FILTERS -> strings.navFilters
+        SETTINGS -> strings.navSettings
+    }
 }
 
 @Composable
@@ -111,8 +124,10 @@ fun TvHomeScreen(
     onOpenLogin: () -> Unit,
     onLogout: () -> Unit,
     onFetchVodInfo: (suspend (String) -> VodMovie?)? = null,
-    onFetchSeriesInfo: (suspend (String) -> Series?)? = null
+    onFetchSeriesInfo: (suspend (String) -> Series?)? = null,
+    onLanguageChanged: (AppLanguage) -> Unit = {}
 ) {
+    val strings = LocalStrings.current
     var selectedTab by remember { mutableStateOf(TvNavTab.TV) }
     var selectedLiveCategory by remember { mutableStateOf("Toutes") }
     var selectedVodCategory by remember { mutableStateOf("Toutes") }
@@ -505,7 +520,8 @@ fun TvHomeScreen(
                         focusRequester = contentFocusRequester,
                         onNavigateLeft = { sidebarFocusRequesters[TvNavTab.SETTINGS]?.requestFocus() },
                         onOpenLogin = onOpenLogin,
-                        onLogout = onLogout
+                        onLogout = onLogout,
+                        onLanguageChanged = onLanguageChanged
                     )
                 }
             }
@@ -579,6 +595,7 @@ fun TvSidebar(
     onTabSelected: (TvNavTab) -> Unit,
     onNavigateRight: () -> Unit
 ) {
+    val strings = LocalStrings.current
     val tabList = remember { TvNavTab.values().toList() }
 
     Column(
@@ -658,19 +675,20 @@ fun TvSidebar(
                     ),
                 contentAlignment = Alignment.Center
             ) {
+                val tabLabel = tab.getLabel(strings)
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
                     Icon(
                         imageVector = tab.icon,
-                        contentDescription = tab.label,
+                        contentDescription = tabLabel,
                         tint = if (isFocused) Color.White else if (isSelected) NoosCyan else TextSecondary,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = tab.label,
+                        text = tabLabel,
                         color = if (isFocused) Color.White else if (isSelected) NoosCyan else TextSecondary,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
@@ -694,6 +712,7 @@ fun TvHeader(
     onOpenUpgrade: () -> Unit,
     onLogout: () -> Unit
 ) {
+    val strings = LocalStrings.current
     var showLogoutConfirm by remember { mutableStateOf(false) }
 
     Row(
@@ -737,7 +756,7 @@ fun TvHeader(
                     shape = RoundedCornerShape(50),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)
                 ) {
-                    Text("Débloquer VIP", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(strings.upgradePremium, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -764,7 +783,7 @@ fun TvHeader(
             ) {
                 Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(15.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Recherche", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text(strings.searchTitle, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
 
             // Bouton Se déconnecter Pilule Glassy (remplace Identifiants IPTV)
@@ -790,7 +809,7 @@ fun TvHeader(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "Se déconnecter",
+                    text = strings.logout,
                     color = if (isLogoutFocused) Color.White else TextPrimary,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold
@@ -2383,6 +2402,7 @@ fun TvLogoutConfirmModal(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val strings = LocalStrings.current
     val confirmBtnRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
@@ -2418,14 +2438,14 @@ fun TvLogoutConfirmModal(
                 }
 
                 Text(
-                    text = "Se déconnecter ?",
+                    text = strings.logoutConfirmTitle,
                     color = Color.White,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
                 )
 
                 Text(
-                    text = "Êtes-vous sûr de vouloir vous déconnecter de votre compte IPTV ?",
+                    text = strings.logoutConfirmMsg,
                     color = TextSecondary,
                     fontSize = 12.sp,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -2444,7 +2464,7 @@ fun TvLogoutConfirmModal(
                             .onFocusChanged { cancelFocused = it.isFocused }
                             .border(if (cancelFocused) 1.5.dp else 0.dp, NoosCyan, RoundedCornerShape(50))
                     ) {
-                        Text("Annuler", color = if (cancelFocused) Color.White else TextSecondary)
+                        Text(strings.cancel, color = if (cancelFocused) Color.White else TextSecondary)
                     }
 
                     var confirmFocused by remember { mutableStateOf(false) }
@@ -2457,7 +2477,7 @@ fun TvLogoutConfirmModal(
                         colors = ButtonDefaults.buttonColors(containerColor = RedLive),
                         shape = RoundedCornerShape(50)
                     ) {
-                        Text("Déconnexion", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(strings.logout, color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
             }

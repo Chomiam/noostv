@@ -27,6 +27,7 @@ class SessionManager(context: Context) {
         private const val KEY_PASSWORD = "password"
         private const val KEY_PLAYLIST_NAME = "playlist_name"
         private const val KEY_UPDATE_CHANNEL = "update_channel"
+        private const val KEY_APP_LANGUAGE = "app_language"
         private const val KEY_GITHUB_TOKEN = "github_token"
         private val DEFAULT_TOKEN: String
             get() = runCatching { io.noostv.BuildConfig.GITHUB_TOKEN }.getOrDefault("")
@@ -34,6 +35,10 @@ class SessionManager(context: Context) {
         private const val KEY_PROFILES_JSON = "profiles_json"
         private const val KEY_ACTIVE_PROFILE_ID = "active_profile_id"
     }
+
+    var appLanguage: String
+        get() = prefs.getString(KEY_APP_LANGUAGE, "fr") ?: "fr"
+        set(value) = prefs.edit().putString(KEY_APP_LANGUAGE, value).apply()
 
     var updateChannel: String
         get() = prefs.getString(KEY_UPDATE_CHANNEL, "stable") ?: "stable"

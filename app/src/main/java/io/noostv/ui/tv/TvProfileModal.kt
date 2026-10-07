@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import io.noostv.core.localization.LocalStrings
 import io.noostv.core.storage.SessionManager
 import io.noostv.data.model.UserProfile
 import io.noostv.ui.theme.*
@@ -118,6 +119,7 @@ fun TvProfileModal(
     onDismiss: () -> Unit,
     onProfileChanged: (UserProfile) -> Unit
 ) {
+    val strings = LocalStrings.current
     BackHandler { onDismiss() }
 
     var profiles by remember { mutableStateOf(sessionManager.getProfiles()) }
@@ -207,9 +209,9 @@ fun TvProfileModal(
                             Column {
                                 Text(
                                     text = when {
-                                        editingProfile != null -> "Modifier le profil"
-                                        isFormOpen -> "Créer un nouveau profil"
-                                        else -> "Profils Utilisateur"
+                                        editingProfile != null -> strings.editProfile
+                                        isFormOpen -> strings.addProfile
+                                        else -> strings.profilesTitle
                                     },
                                     color = Color.White,
                                     fontSize = 20.sp,
@@ -626,7 +628,7 @@ fun TvProfileModal(
                                                 shape = RoundedCornerShape(50)
                                             )
                                     ) {
-                                        Text("Annuler", color = if (isCancelFocused) Color.White else TextSecondary)
+                                        Text(strings.cancel, color = if (isCancelFocused) Color.White else TextSecondary)
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
                                     var isValFocused by remember { mutableStateOf(false) }
@@ -676,7 +678,7 @@ fun TvProfileModal(
                                         shape = RoundedCornerShape(50)
                                     ) {
                                         Text(
-                                            text = if (editingProfile != null) "Enregistrer" else "Valider et Activer",
+                                            text = strings.save,
                                             color = Color.White,
                                             fontWeight = FontWeight.Bold
                                         )

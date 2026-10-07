@@ -32,6 +32,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.noostv.core.localization.LocalStrings
 import io.noostv.core.storage.SessionManager
 import io.noostv.data.model.Category
 import io.noostv.ui.theme.*
@@ -54,6 +55,7 @@ fun TvCategoryFiltersContent(
     onNavigateLeftToSidebar: (() -> Unit)? = null,
     onFiltersUpdated: () -> Unit
 ) {
+    val strings = LocalStrings.current
     var selectedType by remember { mutableStateOf(FilterCategoryType.MOVIES) }
 
     var hiddenVodIds by remember { mutableStateOf(sessionManager.getHiddenVodCategoryIds()) }
@@ -92,14 +94,14 @@ fun TvCategoryFiltersContent(
                         modifier = Modifier.size(20.dp)
                     )
                     Text(
-                        text = "Filtres des Catégories",
+                        text = strings.filtersTitle,
                         color = Color.White,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
                 Text(
-                    text = "Profil actif : ${sessionManager.getActiveProfile().name}",
+                    text = "${strings.activeProfile} : ${sessionManager.getActiveProfile().name}",
                     color = TextSecondary,
                     fontSize = 12.sp
                 )
@@ -165,7 +167,7 @@ fun TvCategoryFiltersContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             FilterTypeTabButton(
-                title = "Films VOD (${vodCategories.size})",
+                title = "${strings.movieCategories} (${vodCategories.size})",
                 icon = Icons.Default.Movie,
                 isSelected = selectedType == FilterCategoryType.MOVIES,
                 focusRequester = moviesTabRequester,
@@ -174,7 +176,7 @@ fun TvCategoryFiltersContent(
             )
 
             FilterTypeTabButton(
-                title = "Séries VOD (${seriesCategories.size})",
+                title = "${strings.seriesCategories} (${seriesCategories.size})",
                 icon = Icons.Default.VideoLibrary,
                 isSelected = selectedType == FilterCategoryType.SERIES,
                 focusRequester = seriesTabRequester,

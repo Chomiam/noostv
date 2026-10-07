@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">NoosTV</string>
+    <string name="tagline">Next-Gen IPTV &amp; VOD Player</string>
+    <string name="live_tv">Live-TV</string>
+    <string name="vod_movies">VOD-Filme</string>
+    <string name="vod_series">Serien</string>
+    <string name="tv_guide">TV-Programm (EPG)</string>
+    <string name="search">Suchen...</string>
+    <string name="favorites">Favoriten</string>
+    <string name="settings">Einstellungen</string>
+    <string name="upgrade_premium">Auf NoosTV Premium upgraden</string>
+    <string name="premium_badge">PREMIUM VIP</string>
+    <string name="free_badge">STANDARD</string>
+</resources>

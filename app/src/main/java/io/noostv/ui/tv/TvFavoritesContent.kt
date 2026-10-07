@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.noostv.core.localization.LocalStrings
 import io.noostv.core.storage.SessionManager
 import io.noostv.data.model.Channel
 import io.noostv.data.model.Series
@@ -63,6 +64,7 @@ fun TvFavoritesContent(
     onSelectSeries: (Series) -> Unit,
     onFavoriteChanged: () -> Unit
 ) {
+    val strings = LocalStrings.current
     var selectedFilter by remember { mutableStateOf(FavoriteFilterTab.ALL) }
 
     val activeProfile = sessionManager.getActiveProfile()
@@ -81,7 +83,6 @@ fun TvFavoritesContent(
     }
 
     val totalFavorites = favChannels.size + favMovies.size + favSeries.size
-
     val allTabRequester = remember { FocusRequester() }
 
     Column(
@@ -108,14 +109,14 @@ fun TvFavoritesContent(
                         modifier = Modifier.size(20.dp)
                     )
                     Text(
-                        text = "Mes Favoris",
+                        text = strings.favoritesTitle,
                         color = Color.White,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
                 Text(
-                    text = "Profil actif : ${activeProfile.name}",
+                    text = "${strings.activeProfile} : ${activeProfile.name}",
                     color = TextSecondary,
                     fontSize = 12.sp
                 )
@@ -203,14 +204,14 @@ fun TvFavoritesContent(
                     }
 
                     Text(
-                        text = "Aucun programme épinglé pour le moment",
+                        text = strings.noFavorites,
                         color = Color.White,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
 
                     Text(
-                        text = "Cliquez sur l'étoile ⭐ sur une chaîne en direct, un film ou une série pour l'épingler dans vos favoris.",
+                        text = strings.noFavoritesHint,
                         color = TextSecondary,
                         fontSize = 12.sp,
                         modifier = Modifier.widthIn(max = 480.dp),
@@ -228,7 +229,7 @@ fun TvFavoritesContent(
                 if ((selectedFilter == FavoriteFilterTab.ALL || selectedFilter == FavoriteFilterTab.CHANNELS) && favChannels.isNotEmpty()) {
                     item {
                         Text(
-                            text = "Chaînes TV en Direct (${favChannels.size})",
+                            text = "${strings.pinnedChannels} (${favChannels.size})",
                             color = Color.White,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
@@ -256,7 +257,7 @@ fun TvFavoritesContent(
                 if ((selectedFilter == FavoriteFilterTab.ALL || selectedFilter == FavoriteFilterTab.MOVIES) && favMovies.isNotEmpty()) {
                     item {
                         Text(
-                            text = "Films VOD (${favMovies.size})",
+                            text = "${strings.pinnedMovies} (${favMovies.size})",
                             color = Color.White,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
@@ -287,7 +288,7 @@ fun TvFavoritesContent(
                 if ((selectedFilter == FavoriteFilterTab.ALL || selectedFilter == FavoriteFilterTab.SERIES) && favSeries.isNotEmpty()) {
                     item {
                         Text(
-                            text = "Séries VOD (${favSeries.size})",
+                            text = "${strings.pinnedSeries} (${favSeries.size})",
                             color = Color.White,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,

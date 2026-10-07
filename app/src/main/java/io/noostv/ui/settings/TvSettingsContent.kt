@@ -29,6 +29,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.noostv.core.localization.AppLanguage
+import io.noostv.core.localization.LocalAppLanguage
+import io.noostv.core.localization.LocalStrings
 import io.noostv.core.storage.SessionManager
 import io.noostv.core.update.ReleaseInfo
 import io.noostv.core.update.UpdateManager
@@ -44,11 +47,14 @@ fun TvSettingsContent(
     focusRequester: FocusRequester,
     onNavigateLeft: () -> Unit,
     onOpenLogin: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onLanguageChanged: (AppLanguage) -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val updateManager = remember { UpdateManager(context) }
+    val strings = LocalStrings.current
+    val currentLanguage = LocalAppLanguage.current
 
     var selectedChannel by remember { mutableStateOf(sessionManager.updateChannel) }
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
@@ -58,6 +64,10 @@ fun TvSettingsContent(
     val stableBtnFocus = remember { FocusRequester() }
     val testingBtnFocus = remember { FocusRequester() }
     val checkBtnFocus = remember { FocusRequester() }
+    val logoutBtnFocus = remember { FocusRequester() }
+
+    // Focus requesters pour les 7 langues
+    val langFocusRequesters = remember { List(AppLanguage.entries.size) { FocusRequester() } }
 
     fun checkUpdates(channel: String) {
         updateState = UpdateState.Checking
@@ -89,13 +99,13 @@ fun TvSettingsContent(
         ) {
             Column {
                 Text(
-                    text = "Paramètres & Mises à Jour",
+                    text = strings.settingsTitle,
                     color = TextPrimary,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Gestion des canaux de version GitHub et diagnostic système",
+                    text = strings.settingsSubtitle,
                     color = TextSecondary,
                     fontSize = 12.sp
                 )
@@ -109,7 +119,7 @@ fun TvSettingsContent(
                     .padding(horizontal = 12.dp, vertical = 4.dp)
             ) {
                 Text(
-                    text = "Version $currentAppVersion",
+                    text = "${strings.version} $currentAppVersion",
                     color = NoosCyan,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
@@ -121,7 +131,7 @@ fun TvSettingsContent(
 
         // ==================== SECTION 1 : CANAL GITHUB (STABLE VS TESTING) ====================
         Text(
-            text = "CANAL DE DISTRIBUTION GITHUB",
+            text = strings.githubChannelTitle,
             color = NoosCyan,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
@@ -135,10 +145,11 @@ fun TvSettingsContent(
         ) {
             // Option 1 : Branche Stable
             ChannelSelectionCard(
-                title = "Branche Stable (Recommandé)",
-                description = "Versions officielles éprouvées, stabilité maximale pour un usage quotidien.",
+                title = strings.stableBranchTitle,
+                description = strings.stableBranchDesc,
                 branchName = "stable",
                 isSelected = selectedChannel == "stable",
+                activeLabel = strings.activeBadge,
                 focusRequester = focusRequester,
                 onNavigateLeft = onNavigateLeft,
                 onNavigateRight = { testingBtnFocus.requestFocus() },
@@ -152,10 +163,11 @@ fun TvSettingsContent(
 
             // Option 2 : Branche Testing
             ChannelSelectionCard(
-                title = "Branche Testing (Expérimental)",
-                description = "Mises à jour préliminaires et nouvelles fonctionnalités en avant-première.",
+                title = strings.testingBranchTitle,
+                description = strings.testingBranchDesc,
                 branchName = "testing",
                 isSelected = selectedChannel == "testing",
+                activeLabel = strings.activeBadge,
                 focusRequester = testingBtnFocus,
                 onNavigateLeft = { focusRequester.requestFocus() },
                 onNavigateRight = null,
@@ -172,7 +184,7 @@ fun TvSettingsContent(
 
         // ==================== SECTION 2 : ÉTAT DES MISES À JOUR ====================
         Text(
-            text = "ÉTAT DU LOGICIEL",
+            text = strings.checkUpdates.uppercase(),
             color = NoosCyan,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
@@ -201,7 +213,7 @@ fun TvSettingsContent(
                                 strokeWidth = 2.5.dp
                             )
                             Text(
-                                text = "Recherche des versions sur GitHub ($selectedChannel)...",
+                                text = "${strings.checkingUpdates} ($selectedChannel)",
                                 color = TextPrimary,
                                 fontSize = 14.sp
                             )
@@ -219,33 +231,35 @@ fun TvSettingsContent(
                                     modifier = Modifier
                                         .size(32.dp)
                                         .clip(CircleShape)
-                                        .background(Color(0x3334C759)),
+                                        .background(GreenLive.copy(alpha = 0.2f)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(imageVector = Icons.Default.Check, contentDescription = null, tint = Color(0xFF34C759), modifier = Modifier.size(18.dp))
+                                    Icon(imageVector = Icons.Default.Check, contentDescription = null, tint = GreenLive, modifier = Modifier.size(18.dp))
                                 }
                                 Column {
                                     Text(
-                                        text = "Votre application est à jour !",
+                                        text = strings.noUpdateAvailable,
                                         color = TextPrimary,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold
                                     )
                                     Text(
-                                        text = "Version $currentAppVersion installée sur le canal $selectedChannel",
+                                        text = "NoosTV v$currentAppVersion • ${if (selectedChannel == "stable") strings.channelStableBadge else strings.channelTestingBadge}",
                                         color = TextSecondary,
-                                        fontSize = 12.sp
+                                        fontSize = 11.sp
                                     )
                                 }
                             }
 
-                            // Bouton Vérifier
                             SettingsActionButton(
-                                text = "Vérifier à nouveau",
+                                text = strings.checkAgain,
                                 icon = Icons.Default.Refresh,
                                 focusRequester = checkBtnFocus,
                                 onNavigateLeft = onNavigateLeft,
                                 onNavigateUp = { focusRequester.requestFocus() },
+                                onNavigateDown = {
+                                    if (langFocusRequesters.isNotEmpty()) langFocusRequesters[0].requestFocus()
+                                },
                                 onClick = { checkUpdates(selectedChannel) }
                             )
                         }
@@ -264,20 +278,20 @@ fun TvSettingsContent(
                                         modifier = Modifier
                                             .size(32.dp)
                                             .clip(CircleShape)
-                                            .background(Color(0x33FF9500)),
+                                            .background(NoosBlue.copy(alpha = 0.2f)),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Icon(imageVector = Icons.Default.SystemUpdate, contentDescription = null, tint = Color(0xFFFF9500), modifier = Modifier.size(18.dp))
+                                        Icon(imageVector = Icons.Default.SystemUpdate, contentDescription = null, tint = NoosBlue, modifier = Modifier.size(18.dp))
                                     }
                                     Column {
                                         Text(
-                                            text = "Mise à jour disponible : ${release.title}",
-                                            color = NoosCyan,
-                                            fontSize = 15.sp,
+                                            text = "${strings.updateAvailable} ${release.title.ifBlank { release.tag }}",
+                                            color = Color.White,
+                                            fontSize = 14.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
-                                            text = "Canal ${state.channel} • Publiée le ${release.publishedAt.take(10)} • Taille : ${String.format(java.util.Locale.US, "%.1f", release.apkSizeMb)} Mo",
+                                            text = "${if (release.isPrerelease) strings.channelTestingBadge else strings.channelStableBadge} • ${strings.publishedOn} ${release.publishedAt.take(10)} • ${strings.size} ${"%.1f".format(release.apkSizeMb)} Mo",
                                             color = TextSecondary,
                                             fontSize = 11.sp
                                         )
@@ -285,14 +299,16 @@ fun TvSettingsContent(
                                 }
 
                                 SettingsActionButton(
-                                    text = "Télécharger & Installer",
+                                    text = strings.downloadAndInstall,
                                     icon = Icons.Default.Download,
                                     isPrimary = true,
                                     focusRequester = checkBtnFocus,
                                     onNavigateLeft = onNavigateLeft,
                                     onNavigateUp = { focusRequester.requestFocus() },
+                                    onNavigateDown = {
+                                        if (langFocusRequesters.isNotEmpty()) langFocusRequesters[0].requestFocus()
+                                    },
                                     onClick = {
-                                        updateState = UpdateState.Downloading(0, 0, release.apkSizeBytes)
                                         coroutineScope.launch {
                                             val dlResult = updateManager.downloadApk(
                                                 release = release,
@@ -307,7 +323,7 @@ fun TvSettingsContent(
                                                     updateManager.installApk(file)
                                                 },
                                                 onFailure = { err ->
-                                                    updateState = UpdateState.Error("Erreur téléchargement : ${err.localizedMessage}")
+                                                    updateState = UpdateState.Error("Erreur : ${err.localizedMessage}")
                                                 }
                                             )
                                         }
@@ -321,6 +337,7 @@ fun TvSettingsContent(
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(12.dp))
                                         .background(SurfaceDarkVariant)
+                                        .padding(12.dp)
                                 ) {
                                     Text(
                                         text = release.notes,
@@ -340,7 +357,7 @@ fun TvSettingsContent(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Téléchargement de la mise à jour...", color = TextPrimary, fontSize = 13.sp)
+                                Text(strings.downloadingUpdate, color = TextPrimary, fontSize = 13.sp)
                                 Text("${state.progressPercent} %", color = NoosCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             }
                             LinearProgressIndicator(
@@ -361,14 +378,17 @@ fun TvSettingsContent(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("APK prêt ! L'installateur Android a été ouvert.", color = TextPrimary, fontSize = 13.sp)
+                            Text(strings.installerReady, color = TextPrimary, fontSize = 13.sp)
                             SettingsActionButton(
-                                text = "Réouvrir l'installateur",
+                                text = strings.reopenInstaller,
                                 icon = Icons.Default.InstallMobile,
                                 isPrimary = true,
                                 focusRequester = checkBtnFocus,
                                 onNavigateLeft = onNavigateLeft,
                                 onNavigateUp = { focusRequester.requestFocus() },
+                                onNavigateDown = {
+                                    if (langFocusRequesters.isNotEmpty()) langFocusRequesters[0].requestFocus()
+                                },
                                 onClick = { updateManager.installApk(state.apkFile) }
                             )
                         }
@@ -385,11 +405,14 @@ fun TvSettingsContent(
                                 Text(text = state.message, color = RedLive, fontSize = 12.sp)
                             }
                             SettingsActionButton(
-                                text = "Réessayer",
+                                text = strings.retry,
                                 icon = Icons.Default.Refresh,
                                 focusRequester = checkBtnFocus,
                                 onNavigateLeft = onNavigateLeft,
                                 onNavigateUp = { focusRequester.requestFocus() },
+                                onNavigateDown = {
+                                    if (langFocusRequesters.isNotEmpty()) langFocusRequesters[0].requestFocus()
+                                },
                                 onClick = { checkUpdates(selectedChannel) }
                             )
                         }
@@ -397,11 +420,14 @@ fun TvSettingsContent(
 
                     is UpdateState.Idle -> {
                         SettingsActionButton(
-                            text = "Vérifier les mises à jour",
+                            text = strings.checkUpdates,
                             icon = Icons.Default.Refresh,
                             focusRequester = checkBtnFocus,
                             onNavigateLeft = onNavigateLeft,
                             onNavigateUp = { focusRequester.requestFocus() },
+                            onNavigateDown = {
+                                if (langFocusRequesters.isNotEmpty()) langFocusRequesters[0].requestFocus()
+                            },
                             onClick = { checkUpdates(selectedChannel) }
                         )
                     }
@@ -411,9 +437,77 @@ fun TvSettingsContent(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // ==================== SECTION 3 : COMPTE IPTV & INFOS TECHNIQUES ====================
+        // ==================== SECTION 3 : LANGUE DE L'INTERFACE ====================
         Text(
-            text = "ABONNEMENT IPTV & MATÉRIEL",
+            text = strings.languageSectionTitle,
+            color = NoosCyan,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = strings.languageSectionSubtitle,
+            color = TextSecondary,
+            fontSize = 12.sp
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Rangée 1 : Français, English, Español, Deutsch
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            val row1 = listOf(AppLanguage.FRENCH, AppLanguage.ENGLISH, AppLanguage.SPANISH, AppLanguage.GERMAN)
+            row1.forEachIndexed { index, lang ->
+                LanguageSelectionCard(
+                    language = lang,
+                    isSelected = currentLanguage == lang,
+                    focusRequester = langFocusRequesters[index],
+                    onNavigateLeft = if (index == 0) onNavigateLeft else { { langFocusRequesters[index - 1].requestFocus() } },
+                    onNavigateRight = if (index < row1.size - 1) { { langFocusRequesters[index + 1].requestFocus() } } else null,
+                    onNavigateUp = { checkBtnFocus.requestFocus() },
+                    onNavigateDown = {
+                        val nextIdx = 4 + index.coerceAtMost(2)
+                        langFocusRequesters[nextIdx].requestFocus()
+                    },
+                    onSelect = { onLanguageChanged(lang) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Rangée 2 : Italiano, العربية, Português
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            val row2 = listOf(AppLanguage.ITALIAN, AppLanguage.ARABIC, AppLanguage.PORTUGUESE)
+            row2.forEachIndexed { index, lang ->
+                val actualIndex = 4 + index
+                LanguageSelectionCard(
+                    language = lang,
+                    isSelected = currentLanguage == lang,
+                    focusRequester = langFocusRequesters[actualIndex],
+                    onNavigateLeft = if (index == 0) onNavigateLeft else { { langFocusRequesters[actualIndex - 1].requestFocus() } },
+                    onNavigateRight = if (index < row2.size - 1) { { langFocusRequesters[actualIndex + 1].requestFocus() } } else null,
+                    onNavigateUp = { langFocusRequesters[index].requestFocus() },
+                    onNavigateDown = { logoutBtnFocus.requestFocus() },
+                    onSelect = { onLanguageChanged(lang) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            // Espaceur pour garder l'alignement
+            Spacer(modifier = Modifier.weight(1f))
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // ==================== SECTION 4 : COMPTE IPTV & INFOS TECHNIQUES ====================
+        Text(
+            text = strings.subscriptionSectionTitle,
             color = NoosCyan,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
@@ -440,33 +534,23 @@ fun TvSettingsContent(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Session IPTV", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text(strings.iptvSession, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         PremiumVipBadge()
                     }
-                    Text("Serveur : ${sessionManager.getMaskedServerUrl()}", color = TextSecondary, fontSize = 11.sp)
-                    Text("Identifiant : ${sessionManager.getMaskedUsername()}", color = TextSecondary, fontSize = 11.sp)
+                    Text("${strings.server} ${sessionManager.getMaskedServerUrl()}", color = TextSecondary, fontSize = 11.sp)
+                    Text("${strings.username} ${sessionManager.getMaskedUsername()}", color = TextSecondary, fontSize = 11.sp)
 
                     Spacer(modifier = Modifier.height(4.dp))
                     Button(
-                        onClick = onOpenLogin,
-                        shape = RoundedCornerShape(50),
-                        colors = ButtonDefaults.buttonColors(containerColor = SurfaceDarkVariant),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.Key, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Changer d'identifiants", color = TextPrimary, fontSize = 11.sp)
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Button(
                         onClick = onLogout,
+                        modifier = Modifier.focusRequester(logoutBtnFocus),
                         shape = RoundedCornerShape(50),
                         colors = ButtonDefaults.buttonColors(containerColor = SurfaceDarkVariant),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
                     ) {
                         Icon(imageVector = Icons.Default.ExitToApp, contentDescription = null, tint = Color(0xFFFF5252), modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Se déconnecter", color = Color(0xFFFF5252), fontSize = 11.sp)
+                        Text(strings.logout, color = Color(0xFFFF5252), fontSize = 11.sp)
                     }
                 }
             }
@@ -481,12 +565,127 @@ fun TvSettingsContent(
                     .padding(16.dp)
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Informations Système", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    Text("Appareil : ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT})", color = TextSecondary, fontSize = 11.sp)
-                    Text("Décodeur vidéo : ExoPlayer Media3 (4K HDR10, H.265, AV1)", color = TextSecondary, fontSize = 11.sp)
-                    Text("Moteur d'images : Coil 2.6 (100 Mo disque / Hardware-safe Mali)", color = TextSecondary, fontSize = 11.sp)
-                    Text("Branche Git active : $selectedChannel", color = NoosCyan, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Text(strings.systemDiag, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("${strings.device} ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT})", color = TextSecondary, fontSize = 11.sp)
+                    Text("ExoPlayer Media3 (4K HDR10, H.265, AV1)", color = TextSecondary, fontSize = 11.sp)
+                    Text("Coil 2.6 (100 Mo cache / Mali Hardware-safe)", color = TextSecondary, fontSize = 11.sp)
+                    Text("Git: $selectedChannel", color = NoosCyan, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Carte de sélection de langue d'interface avec drapeau émoji et navigation D-Pad
+ */
+@Composable
+fun LanguageSelectionCard(
+    language: AppLanguage,
+    isSelected: Boolean,
+    focusRequester: FocusRequester,
+    onNavigateLeft: (() -> Unit)? = null,
+    onNavigateRight: (() -> Unit)? = null,
+    onNavigateDown: (() -> Unit)? = null,
+    onNavigateUp: (() -> Unit)? = null,
+    onSelect: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(targetValue = if (isFocused) 1.05f else 1.0f, label = "lang_card")
+
+    Box(
+        modifier = modifier
+            .scale(scale)
+            .clip(RoundedCornerShape(16.dp))
+            .focusRequester(focusRequester)
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable()
+            .clickable { onSelect() }
+            .onPreviewKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown) {
+                    when (keyEvent.key) {
+                        Key.DirectionLeft -> {
+                            if (onNavigateLeft != null) { onNavigateLeft(); true } else false
+                        }
+                        Key.DirectionRight -> {
+                            if (onNavigateRight != null) { onNavigateRight(); true } else false
+                        }
+                        Key.DirectionDown -> {
+                            if (onNavigateDown != null) { onNavigateDown(); true } else false
+                        }
+                        Key.DirectionUp -> {
+                            if (onNavigateUp != null) { onNavigateUp(); true } else false
+                        }
+                        Key.Enter, Key.DirectionCenter, Key.Spacebar -> {
+                            onSelect()
+                            true
+                        }
+                        else -> false
+                    }
+                } else false
+            }
+            .background(
+                when {
+                    isFocused -> Color(0xFF1E2838)
+                    isSelected -> NoosBlue.copy(alpha = 0.25f)
+                    else -> SurfaceDark
+                }
+            )
+            .border(
+                width = if (isFocused) 3.dp else if (isSelected) 1.5.dp else 1.dp,
+                color = when {
+                    isFocused -> FocusGlow
+                    isSelected -> NoosCyan
+                    else -> CardBorderUnfocused
+                },
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // Drapeau stylisé
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(Color(0x22FFFFFF))
+                    .border(1.dp, Color(0x33FFFFFF), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = language.flagEmoji,
+                    fontSize = 18.sp
+                )
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = language.nativeName,
+                    color = if (isFocused || isSelected) Color.White else TextPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+                Text(
+                    text = language.displayName,
+                    color = TextSecondary,
+                    fontSize = 10.sp,
+                    maxLines = 1
+                )
+            }
+
+            if (isSelected) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = NoosCyan,
+                    modifier = Modifier.size(16.dp)
+                )
             }
         }
     }
@@ -501,6 +700,7 @@ fun ChannelSelectionCard(
     description: String,
     branchName: String,
     isSelected: Boolean,
+    activeLabel: String = "ACTIF",
     focusRequester: FocusRequester,
     onNavigateLeft: (() -> Unit)? = null,
     onNavigateRight: (() -> Unit)? = null,
@@ -593,7 +793,7 @@ fun ChannelSelectionCard(
                             .background(NoosBlue)
                             .padding(horizontal = 8.dp, vertical = 2.dp)
                     ) {
-                        Text("ACTIF", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                        Text(activeLabel, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black)
                     }
                 }
             }
@@ -607,7 +807,7 @@ fun ChannelSelectionCard(
 
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(imageVector = Icons.Default.AltRoute, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(14.dp))
-                Text(text = "Cible Git : $branchName", color = NoosCyan, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                Text(text = "Git : $branchName", color = NoosCyan, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -624,6 +824,7 @@ fun SettingsActionButton(
     focusRequester: FocusRequester,
     onNavigateLeft: (() -> Unit)? = null,
     onNavigateUp: (() -> Unit)? = null,
+    onNavigateDown: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
@@ -647,6 +848,12 @@ fun SettingsActionButton(
                         Key.DirectionUp -> {
                             if (onNavigateUp != null) {
                                 onNavigateUp()
+                                true
+                            } else false
+                        }
+                        Key.DirectionDown -> {
+                            if (onNavigateDown != null) {
+                                onNavigateDown()
                                 true
                             } else false
                         }

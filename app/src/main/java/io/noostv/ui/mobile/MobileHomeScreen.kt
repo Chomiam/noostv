@@ -47,6 +47,10 @@ import io.noostv.data.model.EpgProgram
 import io.noostv.data.model.Series
 import io.noostv.data.model.VodMovie
 import io.noostv.ui.common.HdrBadge
+import io.noostv.core.localization.AppLanguage
+import io.noostv.core.localization.AppStrings
+import io.noostv.core.localization.LocalAppLanguage
+import io.noostv.core.localization.LocalStrings
 import io.noostv.data.model.UserProfile
 import io.noostv.ui.common.LiveIndicatorBadge
 import io.noostv.ui.common.NoosPaginationBar
@@ -68,7 +72,17 @@ enum class MobileBottomTab(val label: String, val icon: ImageVector) {
     FAVORITES("Favoris", Icons.Default.Star),
     FILTERS("Filtres", Icons.Default.Tune),
     EPG("Guide TV", Icons.Default.CalendarToday),
-    SETTINGS("Paramètres", Icons.Default.Settings)
+    SETTINGS("Paramètres", Icons.Default.Settings);
+
+    fun getLabel(strings: AppStrings): String = when (this) {
+        TV -> strings.navLiveTv
+        MOVIES -> strings.navMovies
+        SERIES -> strings.navSeries
+        FAVORITES -> strings.navFavorites
+        FILTERS -> strings.navFilters
+        EPG -> strings.navEpg
+        SETTINGS -> strings.navSettings
+    }
 }
 
 @Composable
@@ -95,8 +109,10 @@ fun MobileHomeScreen(
     onLogout: () -> Unit,
     onSelectEpisode: ((Series, io.noostv.data.model.Episode) -> Unit)? = null,
     onFetchVodInfo: (suspend (String) -> VodMovie?)? = null,
-    onFetchSeriesInfo: (suspend (String) -> Series?)? = null
+    onFetchSeriesInfo: (suspend (String) -> Series?)? = null,
+    onLanguageChanged: (AppLanguage) -> Unit = {}
 ) {
+    val strings = LocalStrings.current
     var selectedTab by remember { mutableStateOf(MobileBottomTab.TV) }
     var selectedLiveCategory by remember { mutableStateOf("Toutes") }
     var selectedVodCategory by remember { mutableStateOf("Toutes") }
@@ -180,6 +196,7 @@ fun MobileHomeScreen(
             ) {
                 MobileBottomTab.values().forEach { tab ->
                     val isSelected = selectedTab == tab
+                    val tabLabel = tab.getLabel(strings)
                     NavigationBarItem(
                         selected = isSelected,
                         onClick = { selectedTab = tab },
@@ -187,13 +204,13 @@ fun MobileHomeScreen(
                         icon = {
                             Icon(
                                 imageVector = tab.icon,
-                                contentDescription = tab.label,
+                                contentDescription = tabLabel,
                                 modifier = Modifier.size(20.dp)
                             )
                         },
                         label = {
                             Text(
-                                text = tab.label,
+                                text = tabLabel,
                                 fontSize = 10.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                 maxLines = 1
@@ -420,7 +437,8 @@ fun MobileHomeScreen(
                     MobileSettingsView(
                         sessionManager = sessionManager,
                         onOpenLogin = onOpenLogin,
-                        onLogout = onLogout
+                        onLogout = onLogout,
+                        onLanguageChanged = onLanguageChanged
                     )
                 }
             }
@@ -914,11 +932,14 @@ private fun MobileEpgContent(
 private fun MobileSettingsView(
     sessionManager: SessionManager,
     onOpenLogin: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onLanguageChanged: (AppLanguage) -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val updateManager = remember { UpdateManager(context) }
+    val strings = LocalStrings.current
+    val currentLanguage = LocalAppLanguage.current
 
     var selectedChannel by remember { mutableStateOf(sessionManager.updateChannel) }
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
@@ -948,8 +969,8 @@ private fun MobileSettingsView(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // En-tête
-        Text("Paramètres & Mises à Jour", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Text("Canaux GitHub Releases et diagnostic système", color = TextSecondary, fontSize = 12.sp)
+        Text(strings.settingsTitle, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text(strings.settingsSubtitle, color = TextSecondary, fontSize = 12.sp)
 
         // 1. Canal de mise à jour (Stable vs Testing)
         Card(
@@ -958,7 +979,7 @@ private fun MobileSettingsView(
             colors = CardDefaults.cardColors(containerColor = SurfaceDark)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("CANAL DE DIFFUSION DES VERSIONS", color = NoosCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(strings.githubChannelTitle, color = NoosCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
 
                 // Option Stable
                 Row(
@@ -975,9 +996,9 @@ private fun MobileSettingsView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
-                        Text("Branche Stable (Recommandé)", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("Versions testées et validées en production", color = TextSecondary, fontSize = 11.sp)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(strings.stableBranchTitle, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text(strings.stableBranchDesc, color = TextSecondary, fontSize = 11.sp)
                     }
                     RadioButton(
                         selected = selectedChannel == "stable",
@@ -1004,9 +1025,9 @@ private fun MobileSettingsView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
-                        Text("Branche Testing (Bêta)", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("Dernières fonctionnalités en avant-première", color = TextSecondary, fontSize = 11.sp)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(strings.testingBranchTitle, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text(strings.testingBranchDesc, color = TextSecondary, fontSize = 11.sp)
                     }
                     RadioButton(
                         selected = selectedChannel == "testing",
@@ -1027,7 +1048,7 @@ private fun MobileSettingsView(
                 ) {
                     Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Vérifier les mises à jour ($selectedChannel)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("${strings.checkUpdates} ($selectedChannel)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
 
                 // Statut de la vérification
@@ -1035,15 +1056,15 @@ private fun MobileSettingsView(
                     is UpdateState.Checking -> {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), color = NoosCyan, strokeWidth = 2.dp)
-                            Text("Recherche de nouvelles versions...", color = TextSecondary, fontSize = 12.sp)
+                            Text(strings.checkingUpdates, color = TextSecondary, fontSize = 12.sp)
                         }
                     }
                     is UpdateState.UpToDate -> {
-                        Text("✅ Votre application est à jour ($currentAppVersion)", color = Color(0xFF4CAF50), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("✅ ${strings.noUpdateAvailable}", color = Color(0xFF4CAF50), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                     is UpdateState.UpdateAvailable -> {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("🎉 Mise à jour disponible : v${state.release.version}", color = NoosCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text("🎉 ${strings.updateAvailable} ${state.release.title.ifBlank { state.release.tag }}", color = NoosCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             Button(
                                 onClick = {
                                     coroutineScope.launch {
@@ -1070,7 +1091,7 @@ private fun MobileSettingsView(
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00C853))
                             ) {
-                                Text("Installer la mise à jour (${state.release.apkSizeMb.toInt()} Mo)")
+                                Text("${strings.installUpdate} (${"%.1f".format(state.release.apkSizeMb)} Mo)")
                             }
                         }
                     }
@@ -1082,39 +1103,90 @@ private fun MobileSettingsView(
             }
         }
 
-        // 2. Compte & Serveur IPTV
+        // 2. Langue de l'interface avec drapeaux
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = SurfaceDark)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(strings.languageSectionTitle, color = NoosCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(strings.languageSectionSubtitle, color = TextSecondary, fontSize = 11.sp)
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AppLanguage.entries.forEach { lang ->
+                        val isSelected = currentLanguage == lang
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isSelected) NoosBlue.copy(alpha = 0.2f) else SurfaceDarkVariant)
+                                .border(1.dp, if (isSelected) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))
+                                .clickable { onLanguageChanged(lang) }
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0x22FFFFFF))
+                                        .border(1.dp, Color(0x33FFFFFF), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(lang.flagEmoji, fontSize = 18.sp)
+                                }
+                                Column {
+                                    Text(
+                                        text = lang.nativeName,
+                                        color = if (isSelected) Color.White else TextPrimary,
+                                        fontSize = 14.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = lang.displayName,
+                                        color = TextSecondary,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = { onLanguageChanged(lang) },
+                                colors = RadioButtonDefaults.colors(selectedColor = NoosCyan)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Compte & Serveur IPTV
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = SurfaceDark)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("SESSION IPTV XTREAM CODES", color = NoosCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(strings.subscriptionSectionTitle, color = NoosCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Serveur", color = TextSecondary, fontSize = 12.sp)
+                    Text(strings.server, color = TextSecondary, fontSize = 12.sp)
                     Text(sessionManager.getMaskedServerUrl(), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Utilisateur", color = TextSecondary, fontSize = 12.sp)
+                    Text(strings.username, color = TextSecondary, fontSize = 12.sp)
                     Text(sessionManager.getMaskedUsername(), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
-
-                OutlinedButton(
-                    onClick = onOpenLogin,
-                    modifier = Modifier.fillMaxWidth().height(42.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = NoosCyan)
-                ) {
-                    Icon(imageVector = Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Changer d'identifiants IPTV", fontSize = 12.sp)
-                }
-
-                Spacer(modifier = Modifier.height(2.dp))
 
                 OutlinedButton(
                     onClick = onLogout,
@@ -1124,7 +1196,7 @@ private fun MobileSettingsView(
                 ) {
                     Icon(imageVector = Icons.Default.ExitToApp, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Se déconnecter", fontSize = 12.sp)
+                    Text(strings.logout, fontSize = 12.sp)
                 }
             }
         }
