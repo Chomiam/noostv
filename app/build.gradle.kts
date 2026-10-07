@@ -21,8 +21,8 @@ android {
         applicationId = "io.noostv"
         minSdk = 21
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.2.2"
+        versionCode = 9
+        versionName = "1.2.3"
 
         buildConfigField("String", "GITHUB_TOKEN", "\"$githubToken\"")
 

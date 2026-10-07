@@ -10,7 +10,7 @@
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-3DDC84?logo=android&logoColor=white)](https://developer.android.com/)
 [![Compose TV](https://img.shields.io/badge/Jetpack%20Compose-Android%20TV%20%26%20M3-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![Media3](https://img.shields.io/badge/Media3%20ExoPlayer-1.2.1-FF6F00?logo=youtube&logoColor=white)](https://developer.android.com/media/media3)
-[![GitHub Releases](https://img.shields.io/badge/Release-v1.2.1%20%2F%20v1.2.1--beta.1-00E5FF)](https://github.com/Chomiam/noostv/releases)
+[![GitHub Releases](https://img.shields.io/badge/Release-v1.2.3%20[Stable]-00E5FF)](https://github.com/Chomiam/noostv/releases)
 
 ---
 
@@ -22,37 +22,79 @@
 
 Développée en **Kotlin** avec **Jetpack Compose for TV** et **Material 3**, NoosTV intègre les standards visuels et ergonomiques les plus soignés :
 - **Design Glassy Frosted Blur** inspiré des interfaces Apple TV et Google TV (translucidité moderne, reflets lumineux et contraste dynamique),
-- **Gestion Multi-Profils** sur un compte unique (avatars colorés, favoris et filtres isolés par utilisateur),
-- **Onglet Favoris dédié** pour épingler chaînes en direct, films et séries préférés avec accès instantané,
-- **Filtres de Catégories personnalisables** pour masquer/afficher à la volée les bouquets VOD dans la barre supérieure,
-- Navigation D-Pad ultra-réactive avec halos lumineux néon,
-- Fiches de détails cinématographiques riches avec métadonnées complètes pour les films et séries,
-- Pagination intelligente pour explorer la totalité des catalogues de VOD volumineux (des dizaines de milliers de titres),
-- Moteur de lecture vidéo robuste basé sur **Media3 ExoPlayer** avec accélération matérielle HEVC/H.264 et bascule automatique de conteneur (.mp4 / .mkv),
-- Prévisualisation live sur 1/4 d'écran et zapping instantané,
-- Sécurité renforcée avec chiffrement matériel des identifiants (AES-256-GCM Keystore) et masquage à l'écran,
-- Système de mise à jour transparente **OTA (Over-The-Air)** directement depuis GitHub Releases.
+- **Sons de Navigation d'Interface (Style Apple TV)** : retours acoustiques feutrés (ticks de navigation, pops de validation, descente au retour) joués à latence zéro avec limitation de cadence (*rate limiting* anti-saturation),
+- **Lecteur Vidéo Optimisé pour Télécommande D-Pad** : options et réglages avancés (Infos, Vitesse, Qualité, Audio/Subs, Format) regroupés dans la barre inférieure pour un accès en un clic depuis Play/Pause,
+- **Détection Vidéo Intelligente (CinemaScope & Multi-Flux)** : reconnaissance fidèle des flux 1080p et 4K même pour les formats cinéma larges (1920×800) sans fausse classification en 720p,
+- **Écran de Connexion Rapide Multi-Comptes** : vue partagée avec historique des identifiants chiffrés localement via **AES-256-GCM Keystore matériel**,
+- **Split-View Direct TV 1/4 d'Écran** : liste de chaînes à gauche avec zapping instantané, prévisualisation vidéo allégée et guide TV chronologique en dessous à droite,
+- **Gestion Multi-Profils** sur un compte unique (avatars colorés style Netflix/Prime, favoris et filtres isolés par utilisateur),
+- **Support International 7 Langues** : Français, Anglais, Espagnol, Allemand, Italien, Arabe et Portugais,
+- **Système de Mise à Jour OTA Transparent** directement depuis GitHub Releases avec sélecteur de canal Stable et Testing.
 
 ---
 
 ## ✨ Fonctionnalités Clés
 
-### 📺 1. TV en Direct avec Marquee & Prévisualisation 1/4 d'Écran
-- **Grille de chaînes interactive** avec logos et jaquettes thématiques adaptées au programme en cours.
-- **Texte défilant automatique (*Marquee*)** : le titre du programme défile en continu sur la carte pour une lisibilité parfaite.
-- **Indicateurs de direct** : pastille `DIRECT`, résolution (`1080p`, `4K UHD`, `HDR`) et jauge de progression en temps réel.
-- **Split-View 1/4 d'écran** : prévisualisation vidéo instantanée du flux sans quitter la liste des chaînes, avec guide EPG détaillé de l'émission actuelle et des suivantes. Passage en plein écran d'un seul clic.
+### 📺 1. TV en Direct avec Split-View 1/4 d'Écran & Guide TV Intégré
+- **Disposition optimisée TV & Paysage** :
+  - **Colonne gauche** : liste interactive des chaînes avec indicateur du programme en cours et pastilles dynamiques.
+  - **Colonne droite** : lecteur de prévisualisation 1/4 d'écran avec zapping fluide, et **Guide TV chronologique** de la chaîne active juste en dessous.
+- **Décodage allégé en prévisualisation** : limitation automatique à 720p/2.5 Mbps pendant la navigation dans la liste pour supprimer toute saccade, puis déverrouillage intégral lors du passage en plein écran.
+- **Accès plein écran instantané** : validation sur le lecteur ou sur le bouton interactif `[Plein écran (OK)]`.
 
 <div align="center">
-  <img src="docs/screenshots/tv_channels_marquee.png" alt="Grille TV avec Marquee et Backdrops" width="48%" />
-  &nbsp;
-  <img src="docs/screenshots/tv_channel_preview_quadrant.png" alt="Prévisualisation 1/4 d'écran et Guide TV" width="48%" />
-  <p><em>Grille TV avec texte défilant et mode prévisualisation 1/4 d'écran avec EPG</em></p>
+  <img src="docs/screenshots/tv_split_view_guide.png" alt="Split-View Direct TV et Guide TV" width="85%" />
+  <p><em>Vue divisée Direct TV : liste des chaînes à gauche, prévisualisation vidéo et Guide TV à droite</em></p>
 </div>
 
 ---
 
-### 📚 2. Catalogues VOD Films & Séries avec Pagination Intégrale
+### 🔑 2. Connexion Rapide Multi-Comptes & Chiffrement Matériel AES-256
+- **Écran de connexion divisé (Split-Screen)** : formulaire d'authentification standard à gauche et liste des identifiants enregistrés à droite pour une reconnexion immédiate en un clic.
+- **Sécurité et confidentialité absolues** :
+  - Stockage exclusivement local, aucun serveur tiers.
+  - Chiffrement matériel **AES-256-GCM** via l'Android Keystore (`MasterKey`).
+  - Possibilité de supprimer individuellement chaque compte de l'historique d'un clic sur l'icône corbeille.
+
+<div align="center">
+  <img src="docs/screenshots/tv_login_quick_connect.png" alt="Écran de Connexion Rapide Multi-Comptes" width="85%" />
+  <p><em>Écran de connexion avec historique des comptes chiffrés pour une connexion instantanée</em></p>
+</div>
+
+---
+
+### ⚡ 3. Lecteur Vidéo Ergonomique & Contrôles Inférieurs
+- **Accès D-Pad simplifié** : tous les boutons d'options sont disposés dans la barre inférieure, directement sous les boutons de lecture (Play/Pause, Précédent, Suivant). Une seule pression vers le Bas sur la télécommande sélectionne la rangée de réglages.
+- **Options disponibles en un clic** :
+  - **Infos** : débit en direct, codec vidéo et audio, nombre de canaux, framerate et santé du tampon de lecture (*buffer health*).
+  - **Vitesse de lecture** : réglable de 0.5x à 2.0x avec synchronisation audio instantanée.
+  - **Qualité vidéo** : sélection manuelle du flux (4K, 1080p, 720p, SD) ou bascule en Automatique adaptatif.
+  - **Audio & Sous-titres** : sélecteur de pistes multilingues et sous-titres avec détection des formats (AC3, AAC, EAC3, DTS).
+  - **Format d'image** : bascule à la volée entre *Format Ajusté*, *Format 16:9 (Zoom)* et *Format Étiré*.
+- **Détection de résolution précise** : algorithme multi-critères prenant en compte la largeur, la hauteur et les métadonnées (compatibilité parfaite avec les films 1080p CinemaScope 1920×800).
+
+<div align="center">
+  <img src="docs/screenshots/tv_osd_movie.png" alt="Contrôles OSD Inférieurs du Lecteur" width="48%" />
+  &nbsp;
+  <img src="docs/screenshots/live_zapping_hud.png" alt="HUD de Zapping en Direct" width="48%" />
+  <p><em>Lecteur vidéo avec contrôles dans la barre inférieure et HUD de zapping interactif</em></p>
+</div>
+
+---
+
+### 🔊 4. Sons de Navigation d'Interface (Style Apple TV)
+- **Expérience sonore raffinée** : retours acoustiques subtils et discrets reproduisant fidèlement l'élégance de tvOS :
+  - **Déplacement de curseur (D-Pad)** : *tick* organique court (~24 ms) feutré façon marimba.
+  - **Validation (Bouton OK)** : *pop / tap* chaleureux (~42 ms) lors d'une sélection.
+  - **Retour (Bouton Back)** : descente douce et discrète (~55 ms).
+  - **Bordure de liste** : butée feutrée (*thud*).
+- **Zéro latence** : flux audio PCM 44.1 kHz 16-bit synthétisés et préchargés via `SoundPool`.
+- **Limiteur de cadence (*Rate Limiting*)** à 45 ms évitant toute saturation lors du défilement continu.
+- **Interrupteur dédié** dans les Paramètres sous la section **Expérience & Audio** pour activer ou désactiver les sons.
+
+---
+
+### 📚 5. Catalogues VOD Films & Séries avec Pagination Intégrale
 - **Navigation sans limite** : gestion paginée performante permettant de parcourir l'intégralité du catalogue VOD (plus de 39 000 films et 6 000 séries) avec une empreinte mémoire minimale et zéro latence.
 - **Barre de pagination interactive** : boutons Précédent / Suivant et indicateur de position (`Page 1 / 5 (98 films)`) optimisés à la fois pour la télécommande D-Pad sur TV et pour le tactile sur mobile.
 - **Filtres par catégories** : chips horizontaux défilants pour naviguer instantanément entre les genres et bouquets.
@@ -66,17 +108,10 @@ Développée en **Kotlin** avec **Jetpack Compose for TV** et **Material 3**, No
 
 ---
 
-### 🎬 3. Fiches de Métadonnées Cinématographiques Complètes
-- **Modale de Détails Films** :
-  - Affiche haute résolution au ratio cinéma 2:3 et bannière d'arrière-plan (*backdrop*) immersive avec dégradé subtil.
-  - Badges techniques complets : Définition (`1080p`, `4K UHD`), Codec vidéo (`HEVC`, `H264`), Codec audio (`AC3`, `AAC`), formats HDR.
-  - Année de production, durée précise, note IMDb avec étoile dorée, genres.
-  - Synopsis complet et bouton de lecture directe `[▶ Lancer le film]`.
-- **Modale de Détails Séries** :
-  - Sélecteur horizontal de saisons (`Saison 1`, `Saison 2`, etc.).
-  - Liste interactive des épisodes avec numérotation, titre, miniature et bouton de lecture unitaire.
-  - Bouton d'accès rapide au premier épisode (`▶ Regarder S1:E1`) avec repli automatique pour un lancement instantané sans attente réseau.
-  - Gestion des favoris avec bouton dédié.
+### 🎬 6. Fiches de Métadonnées Cinématographiques Riches
+- **Modale de Détails Films** : affiche haute résolution, backdrop cinéma, badges techniques (Définition, Codec vidéo/audio, HDR), durée, note IMDb, synopsis et bouton `[▶ Lancer le film]`.
+- **Modale de Détails Séries** : sélecteur horizontal de saisons, liste des épisodes avec titres, résumés et bouton d'accès direct `[▶ Regarder S1:E1]`.
+- **Navigation D-Pad fluide** : la croix de fermeture est directement accessible via la touche Haut de la télécommande depuis les épisodes ou les boutons d'action.
 
 <div align="center">
   <img src="docs/screenshots/vod_movie_details_modal.png" alt="Fiche Détail Film TV" width="48%" />
@@ -85,8 +120,10 @@ Développée en **Kotlin** avec **Jetpack Compose for TV** et **Material 3**, No
   <p><em>Fiches de métadonnées enrichies pour les Films et Séries sur grand écran Android TV</em></p>
 </div>
 
-### 👤 4. Multi-Profils Utilisateur & Avatars Style Netflix / Prime
-- **Bouton profil interactif dans l'en-tête** : pastille vitrée affichant le logo/avatar thématique et le nom du profil actif.
+---
+
+### 👤 7. Multi-Profils Utilisateur & Avatars Style Netflix / Prime
+- **Bouton profil interactif dans l'en-tête** : pastille vitrée affichant l'avatar thématique et le nom du profil actif.
 - **Gestion et personnalisation complète des profils** :
   - Renommage et édition en un clic avec suggestions rapides (*Salon, Famille, Enfants, Chambre, Invité, Cinéma*).
   - Sélecteur de logos / avatars style Netflix & Prime Video (10 icônes : Astronaute, Cinéphile, Gamer, Animaux, Flamme, Étoile, Enfant, Robot...).
@@ -94,8 +131,6 @@ Développée en **Kotlin** avec **Jetpack Compose for TV** et **Material 3**, No
   - Bascule instantanée entre profils sans rechargement de compte ni déconnexion.
   - Suppression sécurisée des profils secondaires.
 - **Isolation stricte des données** : chaque membre du foyer dispose de sa propre liste de favoris et de sa propre sélection de catégories VOD visibles.
-- **Bouton Se déconnecter sécurisé** : remplace l'ancien libellé technique dans le bandeau supérieur avec dialogue de confirmation pour éviter les déconnexions accidentelles.
-- **Esthétique Glassy Blur** : arrières-plans subtilement floutés, surfaces en verre dépoli, reflets lumineux et bordures translucides inspirés des dernières interfaces Apple TV et Google TV.
 
 <div align="center">
   <img src="docs/screenshots/tv_glassy_profiles.png" alt="Gestion Multi-Profils Android TV" width="48%" />
@@ -106,53 +141,19 @@ Développée en **Kotlin** avec **Jetpack Compose for TV** et **Material 3**, No
 
 ---
 
-### 🌟 5. Onglet Favoris & Programmes Épinglés
-- **Centralisation des préférences** : regroupe dans un onglet dédié toutes vos chaînes de télévision en direct, films et séries favoris.
-- **Navigation par onglets de filtrage** : *Tout*, *Chaînes TV*, *Films*, *Séries* avec compteurs d'éléments en temps réel.
-- **Épinglage / Désépinglage en un clic** : depuis les fiches de détails ou directement depuis les cartes.
-- **Zéro latence** : synchronisation instantanée avec le profil utilisateur actif.
+### 🌍 8. Support International 7 Langues & Paramètres Complets
+- **Sélecteur de langue d'interface avec drapeaux** : Français 🇫🇷, English 🇬🇧, Español 🇪🇸, Deutsch 🇩🇪, Italiano 🇮🇹, العربية 🇸🇦, Português 🇵🇹.
+- **Mises à jour transparentes OTA** : vérification et téléchargement direct des nouvelles versions depuis GitHub Releases (canaux Stable et Testing).
+- **Diagnostics système en direct** : informations détaillées sur l'appareil, mémoire cache Coil et statut de connexion.
 
 <div align="center">
-  <img src="docs/screenshots/tv_favorites_pinned.png" alt="Onglet Favoris et Contenus Épinglés" width="85%" />
-  <p><em>Écran des favoris avec filtres par type de média et accès immédiat aux programmes épinglés</em></p>
+  <img src="docs/screenshots/tv_settings_audio_lang.png" alt="Paramètres Langues et Expérience Audio" width="85%" />
+  <p><em>Menu Paramètres avec sélecteur de langue, contrôle des sons d'interface et mises à jour OTA</em></p>
 </div>
 
 ---
 
-### 🎛️ 6. Filtres Avancés de Catégories VOD
-- **Contrôle total du catalogue** : permet de masquer les bouquets ou langues non désirés parmi les centaines de catégories de films et séries.
-- **Boutons d'action globale** : *Tout afficher* ou *Tout masquer* pour une configuration rapide.
-- **Compteur dynamique** : affichage en direct du nombre de catégories actives (ex. `179 / 180 catégories visibles`).
-- **Impact immédiat** : les catégories masquées disparaissent instantanément de la barre de défilement horizontal des onglets Films et Séries.
-
-<div align="center">
-  <img src="docs/screenshots/tv_category_filters.png" alt="Filtres de Catégories VOD" width="85%" />
-  <p><em>Écran de filtrage des catégories VOD avec boutons d'activation et compteur dynamique</em></p>
-</div>
-
----
-
-### ⚡ 7. Moteur de Lecture Vidéo Avancé & Accélération Matérielle
-- **Media3 ExoPlayer haute performance** :
-  - Décodage matériel matériel optimisé pour flux **H.264, HEVC / H.265, AV1, VP9** jusqu'en 4K 60fps.
-  - Décodeur de secours automatique (`enableDecoderFallback = true`) pour garantir la lecture même sur les flux aux profils vidéo exotiques.
-  - Détection dynamique et repli automatique de conteneur : si un fichier VOD échoue en `.mp4`, le lecteur bascule automatiquement en flux `.mkv`.
-  - En-têtes HTTP et User-Agent compatibles pour contourner les restrictions fournisseurs et timeouts de passerelle.
-- **Contrôles OSD intuitifs** :
-  - Seekbar précise avec boutons de saut temporel (-10s / +30s).
-  - Bascule du ratio d'aspect vidéo : *Ajusté (16:9)*, *Zoom (Plein écran)*, *Étiré*.
-  - Mini-HUD de zapping en surimpression avec progression horaire et titre du programme suivant.
-
-<div align="center">
-  <img src="docs/screenshots/tv_osd_movie.png" alt="OSD Lecteur Vidéo Android TV" width="48%" />
-  &nbsp;
-  <img src="docs/screenshots/live_zapping_hud.png" alt="Mini-HUD de Zapping Live TV" width="48%" />
-  <p><em>Lecteur vidéo avec décodage matériel et mini-HUD de zapping interactif</em></p>
-</div>
-
----
-
-### 📱 8. Expérience Dédiée Android Mobile
+### 📱 9. Expérience Dédiée Android Mobile
 Une interface pensée pour les écrans tactiles verticaux et validée sur **Google Pixel 10 Pro** :
 - **Barre de navigation inférieure à 5 onglets** : Direct, Films, Séries, Guide TV, Paramètres.
 - **Fiches de détails VOD en bottom sheet tactile** avec backdrops dynamiques, badges techniques et lecture en 1 geste.
@@ -173,42 +174,19 @@ Une interface pensée pour les écrans tactiles verticaux et validée sur **Goog
 
 ---
 
-### 📅 9. Guide TV Électronique Interactif (EPG)
-- Grille tabulaire chronologique des programmes par tranche horaire et par chaîne.
-- **Bandeau de synopsis dynamique** : affiche en temps réel la description, le genre et les horaires exacts du programme sélectionné.
-- Clic direct sur n'importe quelle émission pour démarrer immédiatement la chaîne associée.
-
-<div align="center">
-  <img src="docs/screenshots/epg_interactive_synopsis.png" alt="Guide TV EPG Interactif" width="85%" />
-  <p><em>Guide TV interactif avec bandeau synopsis dynamique</em></p>
-</div>
-
----
-
-### 🔄 10. Mises à Jour OTA Automatiques (Stable & Testing)
-- **Gestionnaire OTA intégré** interrogeant directement GitHub Releases.
-- **Sélecteur de canal** : basculez d'un clic entre la branche **Stable** (production certifiée) et la branche **Testing** (nouvelles fonctionnalités et correctifs en avant-première).
-- Détection automatique des nouvelles versions, affichage des notes de mise à jour (*changelog*) et installation transparente de l'APK.
-
-<div align="center">
-  <img src="docs/screenshots/settings_ota_updates.png" alt="Paramètres et Mises à Jour OTA" width="80%" />
-  <p><em>Menu Paramètres avec sélecteur de canal OTA et vérification des mises à jour</em></p>
-</div>
-
----
-
 ## 🛠️ Stack Technique
 
 | Composant | Technologie | Rôle |
 |---|---|---|
-| **Langage** | [Kotlin 1.9.22](https://kotlinlang.org/) | Coroutines, StateFlow, code partagé TV / Mobile |
+| **Langage** | [Kotlin 1.9.22](https://kotlinlang.org/) | Coroutines, StateFlow, code unifié TV / Mobile |
 | **Interface TV** | [Compose for TV 1.0](https://developer.android.com/jetpack/compose) | Composables TV optimisés pour la télécommande D-Pad |
 | **Interface Mobile** | [Jetpack Compose Material 3](https://m3.material.io/) | Composables tactiles pour smartphones et tablettes |
 | **Design System** | Midnight Dark OLED | Palette sombre, accents cyan `#00E5FF` et ambre `#FFB300` |
+| **Moteur Audio UI** | [Android SoundPool](https://developer.android.com/reference/android/media/SoundPool) | Effets sonores de navigation style Apple TV à latence zéro |
 | **Lecteur Vidéo** | [AndroidX Media3 ExoPlayer 1.2.1](https://developer.android.com/media/media3) | Décodage matériel HEVC / H.264 / AV1, HLS, DASH, TS, MP4, MKV |
 | **Réseau & API** | [OkHttp 4.12](https://square.github.io/okhttp/) & [Gson](https://github.com/google/gson) | Client Xtream Codes résilient avec timeouts optimisés et extraction zéro-latence |
-| **Images** | [Coil 2.5](https://coil-kt.github.io/coil/) | Chargement asynchrone des posters, bannières et logos avec mise en cache mémoire/disque |
-| **Sécurité** | [EncryptedSharedPreferences](https://developer.android.com/reference/androidx/security/crypto/EncryptedSharedPreferences) | Stockage sécurisé des identifiants et tokens de session |
+| **Images** | [Coil 2.6](https://coil-kt.github.io/coil/) | Chargement asynchrone des posters, bannières et logos avec cache mémoire 100 Mo matériel |
+| **Sécurité** | [EncryptedSharedPreferences & Keystore](https://developer.android.com/reference/androidx/security/crypto/EncryptedSharedPreferences) | Chiffrement matériel AES-256-GCM des identifiants et comptes multiples |
 
 ---
 
@@ -216,8 +194,8 @@ Une interface pensée pour les écrans tactiles verticaux et validée sur **Goog
 
 ### Option 1 — Téléchargement des APKs
 Rendez-vous sur la page des [Releases GitHub](https://github.com/Chomiam/noostv/releases) pour télécharger l'APK correspondant à votre usage :
-- **Canal Stable** : `noostv-v1.1.0.apk` (Recommandé pour un usage quotidien)
-- **Canal Testing** : `noostv-v1.1.0-beta.3.apk` (Dernières nouveautés)
+- **Canal Stable** : `noostv-v1.2.3.apk` (Recommandé pour un usage quotidien)
+- **Canal Testing** : `noostv-v1.2.3-beta.1.apk` (Dernières nouveautés)
 
 ### Option 2 — Déploiement via ADB
 ```bash
@@ -225,7 +203,7 @@ Rendez-vous sur la page des [Releases GitHub](https://github.com/Chomiam/noostv/
 adb connect <ADRESSE_IP>:5555
 
 # 2. Installation de l'APK
-adb install -r noostv-v1.1.0.apk
+adb install -r noostv-v1.2.3.apk
 
 # 3. Lancement de l'application
 adb shell am start -n io.noostv/.MainActivity

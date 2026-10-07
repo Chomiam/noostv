@@ -1,5 +1,6 @@
 package io.noostv.ui.mobile
 
+import android.content.res.Configuration
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
@@ -7,12 +8,19 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
+import io.noostv.core.player.PlayerEngine
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,6 +55,10 @@ import io.noostv.data.model.EpgProgram
 import io.noostv.data.model.Series
 import io.noostv.data.model.VodMovie
 import io.noostv.ui.common.HdrBadge
+import io.noostv.core.localization.AppLanguage
+import io.noostv.core.localization.AppStrings
+import io.noostv.core.localization.LocalAppLanguage
+import io.noostv.core.localization.LocalStrings
 import io.noostv.data.model.UserProfile
 import io.noostv.ui.common.LiveIndicatorBadge
 import io.noostv.ui.common.NoosPaginationBar
@@ -58,7 +70,9 @@ import io.noostv.ui.tv.TvCategoryFiltersContent
 import io.noostv.ui.tv.TvFavoritesContent
 import io.noostv.ui.tv.TvProfileModal
 import io.noostv.ui.tv.TvProfileButton
+import io.noostv.ui.tv.TvLiveScheduleCard
 import kotlin.math.ceil
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 enum class MobileBottomTab(val label: String, val icon: ImageVector) {
@@ -68,9 +82,20 @@ enum class MobileBottomTab(val label: String, val icon: ImageVector) {
     FAVORITES("Favoris", Icons.Default.Star),
     FILTERS("Filtres", Icons.Default.Tune),
     EPG("Guide TV", Icons.Default.CalendarToday),
-    SETTINGS("Paramètres", Icons.Default.Settings)
+    SETTINGS("Paramètres", Icons.Default.Settings);
+
+    fun getLabel(strings: AppStrings): String = when (this) {
+        TV -> strings.navLiveTv
+        MOVIES -> strings.navMovies
+        SERIES -> strings.navSeries
+        FAVORITES -> strings.navFavorites
+        FILTERS -> strings.navFilters
+        EPG -> strings.navEpg
+        SETTINGS -> strings.navSettings
+    }
 }
 
+@OptIn(UnstableApi::class)
 @Composable
 fun MobileHomeScreen(
     channels: List<Channel>,
@@ -84,6 +109,7 @@ fun MobileHomeScreen(
     isSeriesLoading: Boolean = false,
     sessionManager: SessionManager,
     entitlementManager: EntitlementManager,
+    playerEngine: PlayerEngine? = null,
     onSelectChannel: (Channel) -> Unit,
     onSelectMovie: (VodMovie) -> Unit,
     onSelectSeries: (Series) -> Unit,
@@ -95,8 +121,14 @@ fun MobileHomeScreen(
     onLogout: () -> Unit,
     onSelectEpisode: ((Series, io.noostv.data.model.Episode) -> Unit)? = null,
     onFetchVodInfo: (suspend (String) -> VodMovie?)? = null,
-    onFetchSeriesInfo: (suspend (String) -> Series?)? = null
+    onFetchSeriesInfo: (suspend (String) -> Series?)? = null,
+    onLanguageChanged: (AppLanguage) -> Unit = {},
+    onLoadChannelEpg: ((Channel) -> Unit)? = null,
+    onLoadChannelsBatch: ((List<Channel>) -> Unit)? = null
 ) {
+    val strings = LocalStrings.current
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     var selectedTab by remember { mutableStateOf(MobileBottomTab.TV) }
     var selectedLiveCategory by remember { mutableStateOf("Toutes") }
     var selectedVodCategory by remember { mutableStateOf("Toutes") }
@@ -160,93 +192,202 @@ fun MobileHomeScreen(
         }
     }
 
+    // Chargement automatique de l'EPG pour les premières chaînes de la catégorie affichée
+    LaunchedEffect(filteredChannels, selectedLiveCategory) {
+        if (filteredChannels.isNotEmpty()) {
+            onLoadChannelsBatch?.invoke(filteredChannels.take(20))
+        }
+    }
+
     Scaffold(
         containerColor = DarkOledBackground,
         topBar = {
-            MobileTopBar(
-                isPremium = subscription.isPremium,
-                activeProfile = activeProfile,
-                onOpenProfiles = { isProfileModalOpen = true },
-                onOpenSearch = onOpenSearch,
-                onOpenUpgrade = onOpenUpgrade,
-                onOpenLogin = onOpenLogin
-            )
+            if (!isLandscape) {
+                MobileTopBar(
+                    isPremium = subscription.isPremium,
+                    activeProfile = activeProfile,
+                    onOpenProfiles = { isProfileModalOpen = true },
+                    onOpenSearch = onOpenSearch,
+                    onOpenUpgrade = onOpenUpgrade,
+                    onOpenLogin = onOpenLogin
+                )
+            }
         },
         bottomBar = {
-            NavigationBar(
-                containerColor = SurfaceDark,
-                contentColor = TextPrimary,
-                tonalElevation = 8.dp
-            ) {
-                MobileBottomTab.values().forEach { tab ->
-                    val isSelected = selectedTab == tab
-                    NavigationBarItem(
-                        selected = isSelected,
-                        onClick = { selectedTab = tab },
-                        alwaysShowLabel = false,
-                        icon = {
-                            Icon(
-                                imageVector = tab.icon,
-                                contentDescription = tab.label,
-                                modifier = Modifier.size(20.dp)
+            if (!isLandscape) {
+                NavigationBar(
+                    containerColor = SurfaceDark,
+                    contentColor = TextPrimary,
+                    tonalElevation = 8.dp
+                ) {
+                    MobileBottomTab.values().forEach { tab ->
+                        val isSelected = selectedTab == tab
+                        val tabLabel = tab.getLabel(strings)
+                        NavigationBarItem(
+                            selected = isSelected,
+                            onClick = { selectedTab = tab },
+                            alwaysShowLabel = false,
+                            icon = {
+                                Icon(
+                                    imageVector = tab.icon,
+                                    contentDescription = tabLabel,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = tabLabel,
+                                    fontSize = 10.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    maxLines = 1
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = NoosCyan,
+                                selectedTextColor = NoosCyan,
+                                unselectedIconColor = TextSecondary,
+                                unselectedTextColor = TextSecondary,
+                                indicatorColor = Color(0x2200E5FF)
                             )
-                        },
-                        label = {
-                            Text(
-                                text = tab.label,
-                                fontSize = 10.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                maxLines = 1
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = NoosCyan,
-                            selectedTextColor = NoosCyan,
-                            unselectedIconColor = TextSecondary,
-                            unselectedTextColor = TextSecondary,
-                            indicatorColor = Color(0x2200E5FF)
                         )
-                    )
+                    }
                 }
             }
         }
     ) { paddingValues ->
-        Box(
+        Row(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            when (selectedTab) {
-                // ==================== 1. TV DIRECT ====================
-                MobileBottomTab.TV -> {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        // Chips de filtrage horizontal
-                        MobileCategoryChips(
-                            categories = liveCategoryNames,
-                            selectedCategory = selectedLiveCategory,
-                            onSelect = { selectedLiveCategory = it }
-                        )
-
-                        if (filteredChannels.isEmpty()) {
-                            MobileEmptyState(message = "Aucune chaîne disponible dans cette catégorie")
-                        } else {
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
+            if (isLandscape) {
+                NavigationRail(
+                    modifier = Modifier.fillMaxHeight(),
+                    containerColor = SurfaceDark,
+                    contentColor = TextPrimary,
+                    header = {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                        ) {
+                            IconButton(
+                                onClick = { isProfileModalOpen = true },
+                                modifier = Modifier.size(32.dp)
                             ) {
-                                items(filteredChannels, key = { it.id }) { channel ->
-                                    val currentProg = EpgProvider.getCurrentProgram(channel, epgPrograms)
-                                    MobileChannelCard(
-                                        channel = channel,
-                                        currentProgram = currentProg,
-                                        onClick = { onSelectChannel(channel) }
+                                Icon(
+                                    imageVector = Icons.Default.AccountCircle,
+                                    contentDescription = "Profil",
+                                    tint = NoosCyan,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = onOpenSearch,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "Recherche",
+                                    tint = TextSecondary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        MobileBottomTab.values().forEach { tab ->
+                            val isSelected = selectedTab == tab
+                            val tabLabel = tab.getLabel(strings)
+                            NavigationRailItem(
+                                selected = isSelected,
+                                onClick = { selectedTab = tab },
+                                alwaysShowLabel = false,
+                                icon = {
+                                    Icon(
+                                        imageVector = tab.icon,
+                                        contentDescription = tabLabel,
+                                        modifier = Modifier.size(20.dp)
                                     )
+                                },
+                                label = {
+                                    Text(
+                                        text = tabLabel,
+                                        fontSize = 9.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        maxLines = 1
+                                    )
+                                },
+                                colors = NavigationRailItemDefaults.colors(
+                                    selectedIconColor = NoosCyan,
+                                    selectedTextColor = NoosCyan,
+                                    unselectedIconColor = TextSecondary,
+                                    unselectedTextColor = TextSecondary,
+                                    indicatorColor = Color(0x2200E5FF)
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            ) {
+                when (selectedTab) {
+                    // ==================== 1. TV DIRECT ====================
+                    MobileBottomTab.TV -> {
+                        if (isLandscape && playerEngine != null) {
+                            MobileLandscapeTvContent(
+                                channels = filteredChannels,
+                                categories = liveCategoryNames,
+                                selectedCategory = selectedLiveCategory,
+                                onSelectCategory = { selectedLiveCategory = it },
+                                epgPrograms = epgPrograms,
+                                playerEngine = playerEngine,
+                                sessionManager = sessionManager,
+                                onSelectChannel = onSelectChannel,
+                                onLoadChannelEpg = onLoadChannelEpg
+                            )
+                        } else {
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                // Chips de filtrage horizontal
+                                MobileCategoryChips(
+                                    categories = liveCategoryNames,
+                                    selectedCategory = selectedLiveCategory,
+                                    onSelect = { selectedLiveCategory = it }
+                                )
+
+                                if (filteredChannels.isEmpty()) {
+                                    MobileEmptyState(message = "Aucune chaîne disponible dans cette catégorie")
+                                } else {
+                                    LazyColumn(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        items(filteredChannels, key = { it.id }) { channel ->
+                                            val currentProg = EpgProvider.getCurrentProgram(channel, epgPrograms)
+                                            MobileChannelCard(
+                                                channel = channel,
+                                                currentProgram = currentProg,
+                                                onClick = { onSelectChannel(channel) }
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
                 // ==================== 2. FILMS (VOD) ====================
                 MobileBottomTab.MOVIES -> {
@@ -354,10 +495,11 @@ fun MobileHomeScreen(
                                     verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     items(pagedSeries, key = { it.id }) { ser ->
+                                        val seasonInfo = if (ser.seasons.isNotEmpty()) "${ser.seasons.size} Saison${if (ser.seasons.size > 1) "s" else ""} • " else ""
                                         MobileVodCard(
                                             title = ser.title,
                                             posterUrl = ser.posterUrl,
-                                            subtitle = "${ser.seasons.size} Saisons • ★ ${ser.rating}",
+                                            subtitle = "${seasonInfo}★ ${ser.rating}",
                                             badge = "SERIES",
                                             onClick = { activeDetailSeries = ser }
                                         )
@@ -420,12 +562,14 @@ fun MobileHomeScreen(
                     MobileSettingsView(
                         sessionManager = sessionManager,
                         onOpenLogin = onOpenLogin,
-                        onLogout = onLogout
+                        onLogout = onLogout,
+                        onLanguageChanged = onLanguageChanged
                     )
                 }
             }
         }
     }
+}
 
     activeDetailMovie?.let { movie ->
         MobileMovieDetailModal(
@@ -593,6 +737,9 @@ private fun MobileChannelCard(
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val backdropUrl = remember(channel.id, currentProgram.id) {
+        EpgProvider.getProgramBackdrop(channel, currentProgram)
+    }
 
     Box(
         modifier = Modifier
@@ -601,34 +748,67 @@ private fun MobileChannelCard(
             .background(SurfaceDark)
             .border(1.dp, CardBorderUnfocused, RoundedCornerShape(16.dp))
             .clickable { onClick() }
-            .padding(12.dp)
+            .padding(10.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Logo de la chaîne
+            // Miniature 16:9 du programme en cours avec macaron logo de chaîne
             Box(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(SurfaceDarkVariant),
+                    .size(width = 84.dp, height = 54.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFF131A26)),
                 contentAlignment = Alignment.Center
             ) {
+                SubcomposeAsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(backdropUrl)
+                        .crossfade(true)
+                        .allowHardware(false)
+                        .build(),
+                    contentDescription = currentProgram.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // Voile sombre subtil pour la lisibilité
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color(0x22000000), Color(0xAA080A0F))
+                            )
+                        )
+                )
+
+                // Macaron du logo de la chaîne en coin inférieur gauche
                 if (!channel.logoUrl.isNullOrBlank()) {
-                    SubcomposeAsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(channel.logoUrl)
-                            .crossfade(true)
-                            .allowHardware(false)
-                            .build(),
-                        contentDescription = channel.name,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize().padding(4.dp)
-                    )
-                } else {
-                    Icon(imageVector = Icons.Default.Tv, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(24.dp))
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(3.dp)
+                            .size(24.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xDD000000))
+                            .border(0.5.dp, Color(0x44FFFFFF), RoundedCornerShape(6.dp))
+                            .padding(2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        SubcomposeAsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(channel.logoUrl)
+                                .crossfade(true)
+                                .allowHardware(false)
+                                .build(),
+                            contentDescription = channel.name,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
 
@@ -645,9 +825,14 @@ private fun MobileChannelCard(
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         LiveIndicatorBadge()
                         if (channel.isHdr) HdrBadge() else ResolutionBadge(resolution = channel.resolution)
                     }
@@ -914,11 +1099,14 @@ private fun MobileEpgContent(
 private fun MobileSettingsView(
     sessionManager: SessionManager,
     onOpenLogin: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onLanguageChanged: (AppLanguage) -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val updateManager = remember { UpdateManager(context) }
+    val strings = LocalStrings.current
+    val currentLanguage = LocalAppLanguage.current
 
     var selectedChannel by remember { mutableStateOf(sessionManager.updateChannel) }
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
@@ -948,8 +1136,8 @@ private fun MobileSettingsView(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // En-tête
-        Text("Paramètres & Mises à Jour", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Text("Canaux GitHub Releases et diagnostic système", color = TextSecondary, fontSize = 12.sp)
+        Text(strings.settingsTitle, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text(strings.settingsSubtitle, color = TextSecondary, fontSize = 12.sp)
 
         // 1. Canal de mise à jour (Stable vs Testing)
         Card(
@@ -958,7 +1146,7 @@ private fun MobileSettingsView(
             colors = CardDefaults.cardColors(containerColor = SurfaceDark)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("CANAL DE DIFFUSION DES VERSIONS", color = NoosCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(strings.githubChannelTitle, color = NoosCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
 
                 // Option Stable
                 Row(
@@ -975,9 +1163,9 @@ private fun MobileSettingsView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
-                        Text("Branche Stable (Recommandé)", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("Versions testées et validées en production", color = TextSecondary, fontSize = 11.sp)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(strings.stableBranchTitle, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text(strings.stableBranchDesc, color = TextSecondary, fontSize = 11.sp)
                     }
                     RadioButton(
                         selected = selectedChannel == "stable",
@@ -1004,9 +1192,9 @@ private fun MobileSettingsView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
-                        Text("Branche Testing (Bêta)", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("Dernières fonctionnalités en avant-première", color = TextSecondary, fontSize = 11.sp)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(strings.testingBranchTitle, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text(strings.testingBranchDesc, color = TextSecondary, fontSize = 11.sp)
                     }
                     RadioButton(
                         selected = selectedChannel == "testing",
@@ -1027,7 +1215,7 @@ private fun MobileSettingsView(
                 ) {
                     Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Vérifier les mises à jour ($selectedChannel)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("${strings.checkUpdates} ($selectedChannel)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
 
                 // Statut de la vérification
@@ -1035,15 +1223,15 @@ private fun MobileSettingsView(
                     is UpdateState.Checking -> {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), color = NoosCyan, strokeWidth = 2.dp)
-                            Text("Recherche de nouvelles versions...", color = TextSecondary, fontSize = 12.sp)
+                            Text(strings.checkingUpdates, color = TextSecondary, fontSize = 12.sp)
                         }
                     }
                     is UpdateState.UpToDate -> {
-                        Text("✅ Votre application est à jour ($currentAppVersion)", color = Color(0xFF4CAF50), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("✅ ${strings.noUpdateAvailable}", color = Color(0xFF4CAF50), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                     is UpdateState.UpdateAvailable -> {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("🎉 Mise à jour disponible : v${state.release.version}", color = NoosCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text("🎉 ${strings.updateAvailable} ${state.release.title.ifBlank { state.release.tag }}", color = NoosCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             Button(
                                 onClick = {
                                     coroutineScope.launch {
@@ -1070,7 +1258,7 @@ private fun MobileSettingsView(
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00C853))
                             ) {
-                                Text("Installer la mise à jour (${state.release.apkSizeMb.toInt()} Mo)")
+                                Text("${strings.installUpdate} (${"%.1f".format(state.release.apkSizeMb)} Mo)")
                             }
                         }
                     }
@@ -1082,39 +1270,90 @@ private fun MobileSettingsView(
             }
         }
 
-        // 2. Compte & Serveur IPTV
+        // 2. Langue de l'interface avec drapeaux
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = SurfaceDark)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(strings.languageSectionTitle, color = NoosCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(strings.languageSectionSubtitle, color = TextSecondary, fontSize = 11.sp)
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AppLanguage.entries.forEach { lang ->
+                        val isSelected = currentLanguage == lang
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isSelected) NoosBlue.copy(alpha = 0.2f) else SurfaceDarkVariant)
+                                .border(1.dp, if (isSelected) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))
+                                .clickable { onLanguageChanged(lang) }
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0x22FFFFFF))
+                                        .border(1.dp, Color(0x33FFFFFF), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(lang.flagEmoji, fontSize = 18.sp)
+                                }
+                                Column {
+                                    Text(
+                                        text = lang.nativeName,
+                                        color = if (isSelected) Color.White else TextPrimary,
+                                        fontSize = 14.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = lang.displayName,
+                                        color = TextSecondary,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = { onLanguageChanged(lang) },
+                                colors = RadioButtonDefaults.colors(selectedColor = NoosCyan)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Compte & Serveur IPTV
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = SurfaceDark)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("SESSION IPTV XTREAM CODES", color = NoosCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(strings.subscriptionSectionTitle, color = NoosCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Serveur", color = TextSecondary, fontSize = 12.sp)
+                    Text(strings.server, color = TextSecondary, fontSize = 12.sp)
                     Text(sessionManager.getMaskedServerUrl(), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Utilisateur", color = TextSecondary, fontSize = 12.sp)
+                    Text(strings.username, color = TextSecondary, fontSize = 12.sp)
                     Text(sessionManager.getMaskedUsername(), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
-
-                OutlinedButton(
-                    onClick = onOpenLogin,
-                    modifier = Modifier.fillMaxWidth().height(42.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = NoosCyan)
-                ) {
-                    Icon(imageVector = Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Changer d'identifiants IPTV", fontSize = 12.sp)
-                }
-
-                Spacer(modifier = Modifier.height(2.dp))
 
                 OutlinedButton(
                     onClick = onLogout,
@@ -1124,7 +1363,7 @@ private fun MobileSettingsView(
                 ) {
                     Icon(imageVector = Icons.Default.ExitToApp, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Se déconnecter", fontSize = 12.sp)
+                    Text(strings.logout, fontSize = 12.sp)
                 }
             }
         }
@@ -1153,6 +1392,392 @@ private fun MobileLoadingState(message: String) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             CircularProgressIndicator(color = NoosCyan, modifier = Modifier.size(36.dp))
             Text(text = message, color = TextSecondary, fontSize = 14.sp)
+        }
+    }
+}
+
+/**
+ * Vue split optimisée pour smartphone en mode horizontal (paysage) :
+ * - Colonne gauche : Catégories et liste compacte des chaînes TV
+ * - Colonne droite : Lecteur vidéo 16:9 de prévisualisation (720p / 2.5 Mbps) + Guide TV complet sous le lecteur
+ */
+@OptIn(UnstableApi::class)
+@Composable
+private fun MobileLandscapeTvContent(
+    channels: List<Channel>,
+    categories: List<String>,
+    selectedCategory: String,
+    onSelectCategory: (String) -> Unit,
+    epgPrograms: List<EpgProgram>,
+    playerEngine: PlayerEngine,
+    sessionManager: SessionManager? = null,
+    onSelectChannel: (Channel) -> Unit,
+    onLoadChannelEpg: ((Channel) -> Unit)? = null
+) {
+    var previewChannel by remember(channels) {
+        mutableStateOf(channels.firstOrNull())
+    }
+
+    LaunchedEffect(channels) {
+        if (previewChannel == null || !channels.any { it.id == previewChannel?.id }) {
+            previewChannel = channels.firstOrNull()
+        }
+    }
+
+    // Debounce zapping de 250ms pour fluidité absolue et zéro freeze
+    LaunchedEffect(previewChannel?.id) {
+        val ch = previewChannel ?: return@LaunchedEffect
+        delay(250)
+        onLoadChannelEpg?.invoke(ch)
+        playerEngine.playStream(
+            url = ch.streamUrl,
+            title = ch.name,
+            isHdrStream = ch.isHdr,
+            is4K = ch.resolution.contains("4K"),
+            isPreview = true
+        )
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            playerEngine.stop()
+        }
+    }
+
+    val activeChannel = previewChannel
+
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // ========== COLONNE GAUCHE (LISTE DES CHAÎNES & CATÉGORIES) ==========
+        Column(
+            modifier = Modifier
+                .weight(0.42f)
+                .fillMaxHeight()
+        ) {
+            // Catégories compactes
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp, horizontal = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(categories) { cat ->
+                    val isSelected = cat == selectedCategory
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(if (isSelected) NoosBlue else SurfaceDarkVariant)
+                            .clickable { onSelectCategory(cat) }
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = cat,
+                            color = if (isSelected) Color.White else TextSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+            }
+
+            if (channels.isEmpty()) {
+                MobileEmptyState(message = "Aucune chaîne disponible")
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    contentPadding = PaddingValues(vertical = 4.dp, horizontal = 2.dp)
+                ) {
+                    items(channels, key = { it.id }) { channel ->
+                        val isSelected = channel.id == activeChannel?.id
+                        val currentProg = EpgProvider.getCurrentProgram(channel, epgPrograms)
+                        MobileLandscapeChannelListItem(
+                            channel = channel,
+                            currentProgram = currentProg,
+                            isSelected = isSelected,
+                            onClick = {
+                                if (isSelected) {
+                                    onSelectChannel(channel)
+                                } else {
+                                    previewChannel = channel
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // ========== COLONNE DROITE (PRÉVISUALISATION 16:9 + GUIDE TV EN DESSOUS) ==========
+        if (activeChannel != null) {
+            val channelSchedule = remember(activeChannel.id, epgPrograms) {
+                EpgProvider.getChannelSchedule(activeChannel, epgPrograms)
+            }
+            val currentLiveProgram = remember(activeChannel.id, epgPrograms) {
+                EpgProvider.getCurrentProgram(activeChannel, epgPrograms)
+            }
+
+            Column(
+                modifier = Modifier
+                    .weight(0.58f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // 1. Lecteur vidéo 16:9 de prévisualisation
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color.Black)
+                        .clickable { onSelectChannel(activeChannel) }
+                        .border(1.dp, CardBorderUnfocused, RoundedCornerShape(14.dp))
+                ) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { ctx ->
+                            PlayerView(ctx).apply {
+                                useController = false
+                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                player = playerEngine.exoPlayer
+                            }
+                        },
+                        update = { pv ->
+                            if (pv.player != playerEngine.exoPlayer) {
+                                pv.player = playerEngine.exoPlayer
+                            }
+                        }
+                    )
+
+                    // Superposition : Nom de la chaîne + Badges + Bouton Plein Écran
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color(0x99080A0F),
+                                        Color.Transparent,
+                                        Color(0xDD080A0F)
+                                    )
+                                )
+                            )
+                            .padding(8.dp)
+                    ) {
+                        // En-tête : Badge Live + Nom + Résolution
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                LiveIndicatorBadge()
+                                Text(
+                                    text = activeChannel.name,
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 160.dp)
+                                )
+                            }
+                            if (activeChannel.isHdr) HdrBadge() else ResolutionBadge(resolution = activeChannel.resolution)
+                        }
+
+                        // Bas : Bouton Plein écran cliquable
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .clip(RoundedCornerShape(50))
+                                .background(Color(0xAA000000))
+                                .border(1.dp, NoosCyan, RoundedCornerShape(50))
+                                .clickable { onSelectChannel(activeChannel) }
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Fullscreen,
+                                contentDescription = "Plein écran",
+                                tint = NoosCyan,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Plein écran",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                // 2. Guide TV de la chaîne en dessous de la prévisualisation
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(SurfaceDark)
+                        .border(1.dp, CardBorderUnfocused, RoundedCornerShape(14.dp))
+                        .padding(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CalendarToday,
+                                contentDescription = null,
+                                tint = NoosCyan,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = "GUIDE TV • ${activeChannel.name.uppercase()}",
+                                color = NoosCyan,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        item {
+                            TvLiveScheduleCard(
+                                program = currentLiveProgram,
+                                isLiveNow = true
+                            )
+                        }
+
+                        val upcoming = channelSchedule.filter { it.id != currentLiveProgram.id && it.startEpochMs >= currentLiveProgram.startEpochMs }
+                        itemsIndexed(upcoming) { _, prog ->
+                            TvLiveScheduleCard(
+                                program = prog,
+                                isLiveNow = false
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Élément de liste de chaîne compact pour smartphone en mode paysage
+ */
+@Composable
+private fun MobileLandscapeChannelListItem(
+    channel: Channel,
+    currentProgram: EpgProgram,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val context = LocalContext.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (isSelected) NoosBlue.copy(alpha = 0.3f) else SurfaceDarkVariant)
+            .border(
+                width = if (isSelected) 1.5.dp else 1.dp,
+                color = if (isSelected) NoosCyan else CardBorderUnfocused,
+                shape = RoundedCornerShape(10.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Logo de la chaîne
+        if (!channel.logoUrl.isNullOrBlank()) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(SurfaceDark),
+                contentAlignment = Alignment.Center
+            ) {
+                SubcomposeAsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(channel.logoUrl)
+                        .crossfade(true)
+                        .allowHardware(false)
+                        .build(),
+                    contentDescription = channel.name,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().padding(2.dp)
+                )
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(SurfaceDark),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Tv,
+                    contentDescription = null,
+                    tint = NoosCyan,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = channel.name,
+                    color = if (isSelected) Color.White else TextPrimary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (isSelected) {
+                    Text(
+                        text = "EN VUE",
+                        color = NoosCyan,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Text(
+                text = currentProgram.title,
+                color = if (isSelected) NoosCyan else TextSecondary,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

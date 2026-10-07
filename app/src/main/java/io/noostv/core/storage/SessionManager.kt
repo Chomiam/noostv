@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import io.noostv.core.security.CryptoManager
+import io.noostv.data.model.SavedAccount
 import io.noostv.data.model.UserProfile
 import java.util.UUID
 
@@ -27,13 +28,29 @@ class SessionManager(context: Context) {
         private const val KEY_PASSWORD = "password"
         private const val KEY_PLAYLIST_NAME = "playlist_name"
         private const val KEY_UPDATE_CHANNEL = "update_channel"
+        private const val KEY_APP_LANGUAGE = "app_language"
         private const val KEY_GITHUB_TOKEN = "github_token"
+        private const val KEY_SAVED_ACCOUNTS_ENCRYPTED = "saved_accounts_encrypted"
+        private const val KEY_SOUND_EFFECTS_ENABLED = "sound_effects_enabled"
+        private const val KEY_SOUND_EFFECTS_VOLUME = "sound_effects_volume"
         private val DEFAULT_TOKEN: String
             get() = runCatching { io.noostv.BuildConfig.GITHUB_TOKEN }.getOrDefault("")
 
         private const val KEY_PROFILES_JSON = "profiles_json"
         private const val KEY_ACTIVE_PROFILE_ID = "active_profile_id"
     }
+
+    var isSoundEffectsEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SOUND_EFFECTS_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_SOUND_EFFECTS_ENABLED, value).apply()
+
+    var soundEffectsVolume: Float
+        get() = prefs.getFloat(KEY_SOUND_EFFECTS_VOLUME, 0.35f)
+        set(value) = prefs.edit().putFloat(KEY_SOUND_EFFECTS_VOLUME, value).apply()
+
+    var appLanguage: String
+        get() = prefs.getString(KEY_APP_LANGUAGE, "fr") ?: "fr"
+        set(value) = prefs.edit().putString(KEY_APP_LANGUAGE, value).apply()
 
     var updateChannel: String
         get() = prefs.getString(KEY_UPDATE_CHANNEL, "stable") ?: "stable"
@@ -107,6 +124,9 @@ class SessionManager(context: Context) {
             .putString(KEY_PASSWORD, CryptoManager.encrypt(pass))
             .putString(KEY_PLAYLIST_NAME, name)
             .apply()
+
+        // Sauvegarde chiffrée automatique dans l'historique local pour connexion rapide
+        saveAccountToHistory(server, user, pass, name)
     }
 
     // ==================== GESTION MULTI-PROFILS ====================
@@ -346,7 +366,133 @@ class SessionManager(context: Context) {
         }
     }
 
+    // ==================== HISTORIQUE LOCAL CHIFFRÉ DES IDENTIFIANTS ====================
+
+    private data class StoredEncryptedAccount(
+        val id: String,
+        val encServerUrl: String,
+        val encUsername: String,
+        val encPassword: String,
+        val playlistName: String,
+        val lastUsedTimestamp: Long
+    )
+
+    fun getSavedAccounts(): List<SavedAccount> {
+        val encryptedBlob = prefs.getString(KEY_SAVED_ACCOUNTS_ENCRYPTED, null)
+        if (encryptedBlob.isNullOrBlank()) {
+            val s = serverUrl
+            val u = username
+            val p = password
+            if (s.isNotBlank() && u.isNotBlank() && p.isNotBlank()) {
+                val legacyAccount = SavedAccount(
+                    serverUrl = s,
+                    username = u,
+                    password = p,
+                    playlistName = playlistName
+                )
+                saveAccountsList(listOf(legacyAccount))
+                return listOf(legacyAccount)
+            }
+            return emptyList()
+        }
+
+        val rawJson = CryptoManager.decrypt(encryptedBlob)
+        if (rawJson.isBlank()) return emptyList()
+
+        return try {
+            val type = object : TypeToken<List<StoredEncryptedAccount>>() {}.type
+            val storedList: List<StoredEncryptedAccount> = gson.fromJson(rawJson, type) ?: emptyList()
+            storedList.map { stored ->
+                SavedAccount(
+                    id = stored.id,
+                    serverUrl = CryptoManager.decrypt(stored.encServerUrl),
+                    username = CryptoManager.decrypt(stored.encUsername),
+                    password = CryptoManager.decrypt(stored.encPassword),
+                    playlistName = stored.playlistName,
+                    lastUsedTimestamp = stored.lastUsedTimestamp
+                )
+            }.sortedByDescending { it.lastUsedTimestamp }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun saveAccountsList(list: List<SavedAccount>) {
+        val storedList = list.map { acc ->
+            StoredEncryptedAccount(
+                id = acc.id,
+                encServerUrl = CryptoManager.encrypt(acc.serverUrl),
+                encUsername = CryptoManager.encrypt(acc.username),
+                encPassword = CryptoManager.encrypt(acc.password),
+                playlistName = acc.playlistName,
+                lastUsedTimestamp = acc.lastUsedTimestamp
+            )
+        }
+        val rawJson = gson.toJson(storedList)
+        val encryptedBlob = CryptoManager.encrypt(rawJson)
+        prefs.edit().putString(KEY_SAVED_ACCOUNTS_ENCRYPTED, encryptedBlob).apply()
+    }
+
+    fun saveAccountToHistory(server: String, user: String, pass: String, name: String = "Mon Abonnement IPTV") {
+        val cleanServer = server.trim().trimEnd('/')
+        val cleanUser = user.trim()
+        val cleanPass = pass.trim()
+        if (cleanServer.isBlank() || cleanUser.isBlank() || cleanPass.isBlank()) return
+
+        val currentAccounts = getSavedAccounts().toMutableList()
+        val existingIndex = currentAccounts.indexOfFirst {
+            it.serverUrl.trim().trimEnd('/').equals(cleanServer, ignoreCase = true) &&
+            it.username.trim().equals(cleanUser, ignoreCase = true)
+        }
+
+        if (existingIndex != -1) {
+            val existing = currentAccounts[existingIndex]
+            currentAccounts[existingIndex] = existing.copy(
+                serverUrl = cleanServer,
+                username = cleanUser,
+                password = cleanPass,
+                playlistName = name.ifBlank { existing.playlistName },
+                lastUsedTimestamp = System.currentTimeMillis()
+            )
+        } else {
+            currentAccounts.add(
+                0,
+                SavedAccount(
+                    serverUrl = cleanServer,
+                    username = cleanUser,
+                    password = cleanPass,
+                    playlistName = name,
+                    lastUsedTimestamp = System.currentTimeMillis()
+                )
+            )
+        }
+
+        saveAccountsList(currentAccounts)
+    }
+
+    fun removeAccountFromHistory(accountId: String): Boolean {
+        val currentAccounts = getSavedAccounts().toMutableList()
+        val removed = currentAccounts.removeAll { it.id == accountId }
+        if (removed) {
+            saveAccountsList(currentAccounts)
+        }
+        return removed
+    }
+
+    fun clearSavedAccounts() {
+        prefs.edit().remove(KEY_SAVED_ACCOUNTS_ENCRYPTED).apply()
+    }
+
     fun logout() {
-        prefs.edit().clear().apply()
+        val savedAccounts = prefs.getString(KEY_SAVED_ACCOUNTS_ENCRYPTED, null)
+        val appLang = prefs.getString(KEY_APP_LANGUAGE, "fr")
+        val updateChan = prefs.getString(KEY_UPDATE_CHANNEL, "stable")
+        prefs.edit()
+            .clear()
+            .putBoolean(KEY_IS_LOGGED_IN, false)
+            .putString(KEY_SAVED_ACCOUNTS_ENCRYPTED, savedAccounts)
+            .putString(KEY_APP_LANGUAGE, appLang)
+            .putString(KEY_UPDATE_CHANNEL, updateChan)
+            .apply()
     }
 }

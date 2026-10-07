@@ -35,7 +35,9 @@ fun HdrBadge(modifier: Modifier = Modifier, text: String = "HDR") {
             text = text,
             color = Color(0xFFD8B4FE),
             fontSize = 9.sp,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            softWrap = false
         )
     }
 }
@@ -53,7 +55,9 @@ fun ResolutionBadge(modifier: Modifier = Modifier, resolution: String = "4K") {
             text = resolution,
             color = NoosCyan,
             fontSize = 9.sp,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            softWrap = false
         )
     }
 }
@@ -80,7 +84,9 @@ fun LiveIndicatorBadge(modifier: Modifier = Modifier) {
             color = Color(0xFFFF5252),
             fontSize = 9.sp,
             fontWeight = FontWeight.Black,
-            letterSpacing = 0.5.sp
+            letterSpacing = 0.5.sp,
+            maxLines = 1,
+            softWrap = false
         )
     }
 }

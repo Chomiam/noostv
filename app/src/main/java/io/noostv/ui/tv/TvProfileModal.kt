@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import io.noostv.core.localization.LocalStrings
 import io.noostv.core.storage.SessionManager
 import io.noostv.data.model.UserProfile
 import io.noostv.ui.theme.*
@@ -118,6 +119,7 @@ fun TvProfileModal(
     onDismiss: () -> Unit,
     onProfileChanged: (UserProfile) -> Unit
 ) {
+    val strings = LocalStrings.current
     BackHandler { onDismiss() }
 
     var profiles by remember { mutableStateOf(sessionManager.getProfiles()) }
@@ -207,9 +209,9 @@ fun TvProfileModal(
                             Column {
                                 Text(
                                     text = when {
-                                        editingProfile != null -> "Modifier le profil"
-                                        isFormOpen -> "Créer un nouveau profil"
-                                        else -> "Profils Utilisateur"
+                                        editingProfile != null -> strings.editProfile
+                                        isFormOpen -> strings.addProfile
+                                        else -> strings.profilesTitle
                                     },
                                     color = Color.White,
                                     fontSize = 20.sp,
@@ -227,27 +229,37 @@ fun TvProfileModal(
                             }
                         }
 
-                        IconButton(
-                            onClick = {
-                                if (isFormOpen) {
-                                    isFormOpen = false
-                                    editingProfile = null
-                                } else {
-                                    onDismiss()
-                                }
-                            },
+                        var isCloseIconFocused by remember { mutableStateOf(false) }
+                        Box(
                             modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
                                 .focusRequester(closeFocusRequester)
+                                .onFocusChanged { isCloseIconFocused = it.isFocused }
                                 .onPreviewKeyEvent { keyEvent ->
                                     if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.DirectionDown) {
                                         if (isFormOpen) nameFieldRequester.requestFocus() else firstCardRequester.requestFocus()
                                         true
                                     } else false
                                 }
-                                .clip(CircleShape)
-                                .background(GlassSurface)
+                                .focusable()
+                                .clickable {
+                                    if (isFormOpen) {
+                                        isFormOpen = false
+                                        editingProfile = null
+                                    } else {
+                                        onDismiss()
+                                    }
+                                }
+                                .background(if (isCloseIconFocused) Color(0xFFE50914) else GlassSurface)
+                                .border(
+                                    width = if (isCloseIconFocused) 2.5.dp else 1.dp,
+                                    color = if (isCloseIconFocused) Color.White else GlassBorder,
+                                    shape = CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.Close, contentDescription = "Fermer", tint = Color.White)
+                            Icon(Icons.Default.Close, contentDescription = "Fermer", tint = Color.White, modifier = Modifier.size(20.dp))
                         }
                     }
 
@@ -626,7 +638,7 @@ fun TvProfileModal(
                                                 shape = RoundedCornerShape(50)
                                             )
                                     ) {
-                                        Text("Annuler", color = if (isCancelFocused) Color.White else TextSecondary)
+                                        Text(strings.cancel, color = if (isCancelFocused) Color.White else TextSecondary)
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
                                     var isValFocused by remember { mutableStateOf(false) }
@@ -676,7 +688,7 @@ fun TvProfileModal(
                                         shape = RoundedCornerShape(50)
                                     ) {
                                         Text(
-                                            text = if (editingProfile != null) "Enregistrer" else "Valider et Activer",
+                                            text = strings.save,
                                             color = Color.White,
                                             fontWeight = FontWeight.Bold
                                         )

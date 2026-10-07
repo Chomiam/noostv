@@ -6,6 +6,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
+import androidx.compose.runtime.CompositionLocalProvider
+import io.noostv.core.audio.LocalSoundEffectManager
+import io.noostv.core.audio.SoundEffectManager
+import android.view.KeyEvent
+import io.noostv.core.localization.AppLanguage
+import io.noostv.core.localization.AppStrings
+import io.noostv.core.localization.LocalAppLanguage
+import io.noostv.core.localization.LocalStrings
+import io.noostv.core.localization.LocaleHelper
 import kotlinx.coroutines.launch
 import io.noostv.core.device.DeviceDetector
 import io.noostv.core.entitlement.EntitlementManager
@@ -40,12 +49,14 @@ class MainActivity : ComponentActivity() {
     private lateinit var repository: IptvRepository
     private lateinit var playerEngine: PlayerEngine
     private lateinit var sessionManager: SessionManager
+    private lateinit var soundEffectManager: SoundEffectManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         deviceDetector = DeviceDetector(this)
         sessionManager = SessionManager(this)
+        soundEffectManager = SoundEffectManager(this, sessionManager)
         val initialSub = if (sessionManager.isPremium) {
             io.noostv.core.entitlement.UserSubscription(
                 userId = "dev_user",
@@ -62,11 +73,24 @@ class MainActivity : ComponentActivity() {
         playerEngine = PlayerEngine(this, entitlementManager)
 
         setContent {
-            NoosTvTheme {
-                // Si l'utilisateur n'a pas encore configuré d'identifiants, on démarre sur LOGIN
-                var currentScreen by remember {
-                    mutableStateOf(if (sessionManager.isLoggedIn) CurrentScreen.HOME else CurrentScreen.LOGIN)
-                }
+            var currentLanguage by remember {
+                mutableStateOf(AppLanguage.fromCode(sessionManager.appLanguage))
+            }
+
+            LaunchedEffect(currentLanguage) {
+                LocaleHelper.setAppLocale(this@MainActivity, currentLanguage)
+            }
+
+            CompositionLocalProvider(
+                LocalAppLanguage provides currentLanguage,
+                LocalStrings provides AppStrings.get(currentLanguage),
+                LocalSoundEffectManager provides soundEffectManager
+            ) {
+                NoosTvTheme {
+                    // Si l'utilisateur n'a pas encore configuré d'identifiants, on démarre sur LOGIN
+                    var currentScreen by remember {
+                        mutableStateOf(if (sessionManager.isLoggedIn) CurrentScreen.HOME else CurrentScreen.LOGIN)
+                    }
                 var showUpgradeDialog by remember { mutableStateOf(false) }
 
                 val channels by repository.channels.collectAsState()
@@ -103,6 +127,12 @@ class MainActivity : ComponentActivity() {
                 var customStreamSubtitle by remember { mutableStateOf<String?>(null) }
 
                 fun performLogout() {
+                    val s = sessionManager.serverUrl
+                    val u = sessionManager.username
+                    val p = sessionManager.password
+                    if (s.isNotBlank() && u.isNotBlank() && p.isNotBlank()) {
+                        sessionManager.saveAccountToHistory(s, u, p, sessionManager.playlistName)
+                    }
                     playerEngine.stop()
                     repository.clear()
                     sessionManager.logout()
@@ -155,14 +185,14 @@ class MainActivity : ComponentActivity() {
                 fun startPlaySeries(ser: Series) {
                     coroutineScope.launch {
                         var targetSeries = ser
-                        if (targetSeries.seasons.isEmpty() && sessionManager.isLoggedIn) {
+                        if ((targetSeries.seasons.isEmpty() || targetSeries.seasons.all { it.episodes.size <= 1 }) && sessionManager.isLoggedIn) {
                             val fetched = repository.getOrFetchSeriesInfo(
                                 sessionManager.serverUrl,
                                 sessionManager.username,
                                 sessionManager.password,
                                 ser.id
                             )
-                            if (fetched != null) {
+                            if (fetched != null && fetched.seasons.isNotEmpty()) {
                                 targetSeries = fetched
                             }
                         }
@@ -213,6 +243,7 @@ class MainActivity : ComponentActivity() {
                 when (currentScreen) {
                     CurrentScreen.LOGIN -> {
                         LoginScreen(
+                            sessionManager = sessionManager,
                             onLoginSuccess = { server, user, pass ->
                                 sessionManager.saveCredentials(server, user, pass)
                                 sessionManager.isPremium = true
@@ -260,6 +291,16 @@ class MainActivity : ComponentActivity() {
                                         )
                                     }
                                 },
+                                onLoadChannelsBatch = { chs ->
+                                    coroutineScope.launch {
+                                        repository.loadEpgForChannels(
+                                            sessionManager.serverUrl,
+                                            sessionManager.username,
+                                            sessionManager.password,
+                                            chs
+                                        )
+                                    }
+                                },
                                 onSelectMovie = { startPlayMovie(it) },
                                 onSelectSeries = { startPlaySeries(it) },
                                 onSelectEpisode = { ser, ep -> startPlayEpisode(ser, ep) },
@@ -302,7 +343,11 @@ class MainActivity : ComponentActivity() {
                                 onOpenSearch = { currentScreen = CurrentScreen.SEARCH },
                                 onOpenUpgrade = { showUpgradeDialog = true },
                                 onOpenLogin = { currentScreen = CurrentScreen.LOGIN },
-                                onLogout = { performLogout() }
+                                onLogout = { performLogout() },
+                                onLanguageChanged = { newLang ->
+                                    currentLanguage = newLang
+                                    sessionManager.appLanguage = newLang.code
+                                }
                             )
                         } else {
                             MobileHomeScreen(
@@ -317,9 +362,30 @@ class MainActivity : ComponentActivity() {
                                 isSeriesLoading = isSeriesLoading,
                                 sessionManager = sessionManager,
                                 entitlementManager = entitlementManager,
+                                playerEngine = playerEngine,
                                 onSelectChannel = { startPlayChannel(it) },
                                 onSelectMovie = { startPlayMovie(it) },
                                 onSelectSeries = { startPlaySeries(it) },
+                                onLoadChannelEpg = { chan ->
+                                    coroutineScope.launch {
+                                        repository.loadChannelEpg(
+                                            sessionManager.serverUrl,
+                                            sessionManager.username,
+                                            sessionManager.password,
+                                            chan.id
+                                        )
+                                    }
+                                },
+                                onLoadChannelsBatch = { chs ->
+                                    coroutineScope.launch {
+                                        repository.loadEpgForChannels(
+                                            sessionManager.serverUrl,
+                                            sessionManager.username,
+                                            sessionManager.password,
+                                            chs
+                                        )
+                                    }
+                                },
                                 onSelectEpisode = { ser, ep -> startPlayEpisode(ser, ep) },
                                 onFetchVodInfo = { movieId ->
                                     repository.getOrFetchVodInfo(
@@ -360,7 +426,11 @@ class MainActivity : ComponentActivity() {
                                 onOpenSearch = { currentScreen = CurrentScreen.SEARCH },
                                 onOpenUpgrade = { showUpgradeDialog = true },
                                 onOpenLogin = { currentScreen = CurrentScreen.LOGIN },
-                                onLogout = { performLogout() }
+                                onLogout = { performLogout() },
+                                onLanguageChanged = { newLang ->
+                                    currentLanguage = newLang
+                                    sessionManager.appLanguage = newLang.code
+                                }
                             )
                         }
                     }
@@ -445,9 +515,33 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_UP,
+                KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_LEFT,
+                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    soundEffectManager.playFocus()
+                }
+                KeyEvent.KEYCODE_DPAD_CENTER,
+                KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                    soundEffectManager.playSelect()
+                }
+                KeyEvent.KEYCODE_BACK -> {
+                    soundEffectManager.playBack()
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
 
     override fun onDestroy() {
         super.onDestroy()
         playerEngine.release()
+        soundEffectManager.release()
     }
 }

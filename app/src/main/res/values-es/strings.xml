@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">NoosTV</string>
+    <string name="tagline">Reproductor IPTV y VOD de Nueva Generación</string>
+    <string name="live_tv">TV en Vivo</string>
+    <string name="vod_movies">Películas VOD</string>
+    <string name="vod_series">Series</string>
+    <string name="tv_guide">Guía TV (EPG)</string>
+    <string name="search">Buscar...</string>
+    <string name="favorites">Favoritos</string>
+    <string name="settings">Ajustes</string>
+    <string name="upgrade_premium">Pasar a NoosTV Premium</string>
+    <string name="premium_badge">PREMIUM VIP</string>
+    <string name="free_badge">ESTÁNDAR</string>
+</resources>

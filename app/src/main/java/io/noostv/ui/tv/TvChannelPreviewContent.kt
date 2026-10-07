@@ -63,27 +63,33 @@ fun TvChannelPreviewContent(
     playerEngine: PlayerEngine,
     sessionManager: SessionManager? = null,
     contentFocusRequester: FocusRequester? = null,
+    onNavigateUpFromFirstItem: (() -> Unit)? = null,
     onChannelChanged: (Channel) -> Unit,
     onOpenFullscreen: (Channel) -> Unit,
-    onClosePreview: () -> Unit,
+    onClosePreview: (() -> Unit)? = null,
     onNavigateLeftToSidebar: () -> Unit,
     onFavoriteToggled: (() -> Unit)? = null
 ) {
-    val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-
     // Focus requesters pour navigation D-Pad
     val playerFocusRequester = remember { FocusRequester() }
     val channelListFocusRequester = contentFocusRequester ?: remember { FocusRequester() }
 
-    // Démarre la lecture du flux dans le PlayerEngine lors de la sélection de la chaîne
+    // Démarre la lecture du flux dans le PlayerEngine en mode prévisualisation (720p, débit optimisé) avec debounce anti-saccade
     LaunchedEffect(selectedChannel.id) {
+        kotlinx.coroutines.delay(250) // Debounce zapping ultra-fluide
         playerEngine.playStream(
             url = selectedChannel.streamUrl,
             title = selectedChannel.name,
             isHdrStream = selectedChannel.isHdr,
-            is4K = selectedChannel.resolution.contains("4K")
+            is4K = selectedChannel.resolution.contains("4K"),
+            isPreview = true
         )
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            playerEngine.stop()
+        }
     }
 
     val channelSchedule = remember(selectedChannel.id, epgPrograms) {
@@ -105,7 +111,7 @@ fun TvChannelPreviewContent(
                 .weight(0.42f)
                 .fillMaxHeight()
         ) {
-            // En-tête avec bouton retour grille
+            // En-tête de la liste
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -121,17 +127,18 @@ fun TvChannelPreviewContent(
                     letterSpacing = 1.sp
                 )
 
-                // Bouton retour grille
-                Button(
-                    onClick = onClosePreview,
-                    shape = RoundedCornerShape(50),
-                    colors = ButtonDefaults.buttonColors(containerColor = SurfaceDarkVariant),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                    modifier = Modifier.height(28.dp)
-                ) {
-                    Icon(imageVector = Icons.Default.GridView, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(13.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Grille complète", color = TextPrimary, fontSize = 10.sp)
+                if (onClosePreview != null) {
+                    Button(
+                        onClick = onClosePreview,
+                        shape = RoundedCornerShape(50),
+                        colors = ButtonDefaults.buttonColors(containerColor = SurfaceDarkVariant),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.GridView, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Grille complète", color = TextPrimary, fontSize = 10.sp)
+                    }
                 }
             }
 
@@ -159,12 +166,14 @@ fun TvChannelPreviewContent(
                         focusRequester = if (isFirstItem) channelListFocusRequester else null,
                         onNavigateLeft = onNavigateLeftToSidebar,
                         onNavigateRight = { runCatching { playerFocusRequester.requestFocus() } },
-                        onClick = {
-                            if (!isCurrent) {
+                        onNavigateUp = if (isFirstItem) onNavigateUpFromFirstItem else null,
+                        onFocused = {
+                            if (ch.id != selectedChannel.id) {
                                 onChannelChanged(ch)
-                            } else {
-                                onOpenFullscreen(ch)
                             }
+                        },
+                        onClick = {
+                            onOpenFullscreen(ch)
                         }
                     )
                 }
@@ -407,6 +416,8 @@ fun TvChannelListItem(
     focusRequester: FocusRequester? = null,
     onNavigateLeft: (() -> Unit)? = null,
     onNavigateRight: (() -> Unit)? = null,
+    onNavigateUp: (() -> Unit)? = null,
+    onFocused: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -424,12 +435,23 @@ fun TvChannelListItem(
 
     Box(
         modifier = mod
-            .onFocusChanged { isFocused = it.isFocused }
+            .onFocusChanged {
+                isFocused = it.isFocused
+                if (it.isFocused) {
+                    onFocused?.invoke()
+                }
+            }
             .focusable()
             .clickable { onClick() }
             .onPreviewKeyEvent { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyDown) {
                     when (keyEvent.key) {
+                        Key.DirectionUp -> {
+                            if (onNavigateUp != null) {
+                                onNavigateUp()
+                                true
+                            } else false
+                        }
                         Key.DirectionLeft -> {
                             if (onNavigateLeft != null) {
                                 onNavigateLeft()

@@ -408,20 +408,6 @@ class XtreamCodesClient(
                 val backdrops = item["backdrop_path"] as? List<*>
                 val backdropUrl = backdrops?.firstOrNull()?.toString() ?: cover
 
-                val initialEpisodes = listOf(
-                    Episode(
-                        id = seriesId,
-                        seriesId = seriesId,
-                        seasonNumber = 1,
-                        episodeNumber = 1,
-                        title = "Épisode 1",
-                        streamUrl = buildSeriesStreamUrl(cleanServer, username, password, seriesId, "mp4"),
-                        containerExtension = "mp4",
-                        thumbnailUrl = cover,
-                        plot = plot
-                    )
-                )
-
                 Series(
                     id = seriesId,
                     title = name,
@@ -433,14 +419,7 @@ class XtreamCodesClient(
                     genres = genres,
                     cast = cast,
                     categoryId = catId,
-                    seasons = listOf(
-                        Season(
-                            seasonNumber = 1,
-                            name = "Saison 1",
-                            episodeCount = 1,
-                            episodes = initialEpisodes
-                        )
-                    )
+                    seasons = emptyList()
                 )
             }
 
@@ -471,10 +450,41 @@ class XtreamCodesClient(
 
             @Suppress("UNCHECKED_CAST")
             val info = jsonMap["info"] as? Map<String, Any> ?: emptyMap()
-            @Suppress("UNCHECKED_CAST")
-            val rawSeasons = jsonMap["seasons"] as? List<Map<String, Any>> ?: emptyList()
-            @Suppress("UNCHECKED_CAST")
-            val rawEpisodesMap = jsonMap["episodes"] as? Map<String, List<Map<String, Any>>> ?: emptyMap()
+
+            // 1. Parser les saisons tolérant (supporte List ou Map d'objets)
+            val rawSeasonsList: List<Map<String, Any>> = when (val s = jsonMap["seasons"]) {
+                is List<*> -> s.filterIsInstance<Map<String, Any>>()
+                is Map<*, *> -> s.values.filterIsInstance<Map<String, Any>>()
+                else -> emptyList()
+            }
+
+            // 2. Parser les épisodes tolérant (supporte Map<String, List>, Map<String, Map>, ou List à plat)
+            val episodesBySeasonKey = mutableMapOf<String, MutableList<Map<String, Any>>>()
+
+            when (val rawEpisodes = jsonMap["episodes"]) {
+                is Map<*, *> -> {
+                    for ((k, v) in rawEpisodes) {
+                        val keyStr = k?.toString() ?: continue
+                        val epList = when (v) {
+                            is List<*> -> v.filterIsInstance<Map<String, Any>>()
+                            is Map<*, *> -> v.values.filterIsInstance<Map<String, Any>>()
+                            else -> emptyList()
+                        }
+                        if (epList.isNotEmpty()) {
+                            episodesBySeasonKey.getOrPut(keyStr) { mutableListOf() }.addAll(epList)
+                        }
+                    }
+                }
+                is List<*> -> {
+                    for (item in rawEpisodes.filterIsInstance<Map<String, Any>>()) {
+                        val sNum = (item["season"] as? Number)?.toInt()
+                            ?: (item["season_num"] as? Number)?.toInt()
+                            ?: item["season"]?.toString()?.filter { it.isDigit() }?.toIntOrNull()
+                            ?: 1
+                        episodesBySeasonKey.getOrPut(sNum.toString()) { mutableListOf() }.add(item)
+                    }
+                }
+            }
 
             val title = info["name"]?.toString() ?: "Série $seriesId"
             val poster = info["cover"]?.toString()
@@ -491,33 +501,73 @@ class XtreamCodesClient(
             val backdrops = info["backdrop_path"] as? List<*>
             val backdropUrl = backdrops?.firstOrNull()?.toString() ?: poster
 
-            val seasons = mutableListOf<Season>()
-            val seasonNumbers = (rawSeasons.mapNotNull { (it["season_number"] as? Number)?.toInt() ?: it["season_number"]?.toString()?.toIntOrNull() } +
-                    rawEpisodesMap.keys.mapNotNull { it.toIntOrNull() }).distinct().sorted()
-
-            for (sNum in seasonNumbers) {
-                val sMeta = rawSeasons.firstOrNull {
-                    val num = (it["season_number"] as? Number)?.toInt() ?: it["season_number"]?.toString()?.toIntOrNull()
-                    num == sNum
+            // Map des métadonnées de saison indexée par numéro
+            val metaByNumber = mutableMapOf<Int, Map<String, Any>>()
+            for (sMeta in rawSeasonsList) {
+                val num = (sMeta["season_number"] as? Number)?.toInt()
+                    ?: sMeta["season_number"]?.toString()?.filter { it.isDigit() }?.toIntOrNull()
+                if (num != null) {
+                    metaByNumber[num] = sMeta
                 }
-                val sName = sMeta?.get("name")?.toString() ?: "Saison $sNum"
-                val epListRaw = rawEpisodesMap[sNum.toString()] ?: rawEpisodesMap["$sNum"] ?: emptyList()
+            }
+
+            // Normalisation des épisodes par numéro de saison
+            val episodesBySeasonNumber = mutableMapOf<Int, MutableList<Map<String, Any>>>()
+            for ((key, eps) in episodesBySeasonKey) {
+                val num = key.filter { it.isDigit() }.toIntOrNull()
+                    ?: (eps.firstOrNull()?.get("season") as? Number)?.toInt()
+                    ?: eps.firstOrNull()?.get("season")?.toString()?.filter { it.isDigit() }?.toIntOrNull()
+                    ?: 1
+                episodesBySeasonNumber.getOrPut(num) { mutableListOf() }.addAll(eps)
+            }
+
+            val allSeasonNumbers = (metaByNumber.keys + episodesBySeasonNumber.keys).distinct().sorted()
+            val finalSeasonNumbers = if (allSeasonNumbers.isEmpty() && episodesBySeasonKey.isNotEmpty()) listOf(1) else allSeasonNumbers
+
+            val seasons = mutableListOf<Season>()
+
+            for (sNum in finalSeasonNumbers) {
+                val sMeta = metaByNumber[sNum]
+                val rawName = sMeta?.get("name")?.toString()
+                val sName = if (!rawName.isNullOrBlank()) rawName else "Saison $sNum"
+
+                val epListRaw = episodesBySeasonNumber[sNum]
+                    ?: episodesBySeasonKey[sNum.toString()]
+                    ?: emptyList()
 
                 val episodes = epListRaw.mapNotNull { epItem ->
-                    val epId = epItem["id"]?.toString()?.substringBefore(".") ?: return@mapNotNull null
+                    val epId = (epItem["id"] ?: epItem["episode_id"] ?: epItem["stream_id"])
+                        ?.toString()?.substringBefore(".") ?: return@mapNotNull null
+
                     val epNum = (epItem["episode_num"] as? Number)?.toInt()
-                        ?: epItem["episode_num"]?.toString()?.toIntOrNull() ?: 1
-                    val epTitle = epItem["title"]?.toString()?.takeIf { it.isNotBlank() } ?: "Épisode $epNum"
-                    val ext = epItem["container_extension"]?.toString() ?: "mp4"
+                        ?: epItem["episode_num"]?.toString()?.filter { it.isDigit() }?.toIntOrNull()
+                        ?: (epItem["episode"] as? Number)?.toInt()
+                        ?: (epItem["episode"]?.toString()?.filter { it.isDigit() }?.toIntOrNull())
+                        ?: 1
 
                     @Suppress("UNCHECKED_CAST")
                     val epInfo = epItem["info"] as? Map<String, Any> ?: emptyMap()
-                    val epPlot = epInfo["plot"]?.toString()
-                    val epRating = (epInfo["rating"]?.toString()?.toFloatOrNull()) ?: 0f
+
+                    val rawTitle = epItem["title"]?.toString()?.takeIf { it.isNotBlank() }
+                        ?: epInfo["title"]?.toString()?.takeIf { it.isNotBlank() }
+                        ?: epItem["name"]?.toString()?.takeIf { it.isNotBlank() }
+                    val epTitle = rawTitle?.let { maybeDecodeBase64(it) } ?: "Épisode $epNum"
+
+                    val ext = (epItem["container_extension"] ?: epInfo["container_extension"] ?: "mp4")
+                        .toString().replace(".", "").ifBlank { "mp4" }
+
+                    val epPlot = (epInfo["plot"] ?: epItem["plot"])?.toString()
+                    val epRating = (epInfo["rating"]?.toString()?.toFloatOrNull())
+                        ?: (epItem["rating"]?.toString()?.toFloatOrNull())
+                        ?: 0f
+
                     val epDurationSecs = (epInfo["duration_secs"] as? Number)?.toInt()
                         ?: epInfo["duration_secs"]?.toString()?.toIntOrNull()
+                        ?: (epItem["duration_secs"] as? Number)?.toInt()
+                        ?: epItem["duration_secs"]?.toString()?.toIntOrNull()
                     val epDurationMins = if (epDurationSecs != null && epDurationSecs > 0) epDurationSecs / 60 else null
-                    val epThumb = epInfo["movie_image"]?.toString()
+
+                    val epThumb = (epInfo["movie_image"] ?: epItem["movie_image"] ?: epInfo["cover"] ?: epItem["cover"])?.toString()
 
                     val streamUrl = buildSeriesStreamUrl(cleanServer, username, password, epId, ext)
 
@@ -534,16 +584,18 @@ class XtreamCodesClient(
                         plot = epPlot,
                         rating = epRating
                     )
-                }.sortedBy { it.episodeNumber }
+                }.distinctBy { it.id }.sortedBy { it.episodeNumber }
 
-                seasons.add(
-                    Season(
-                        seasonNumber = sNum,
-                        name = sName,
-                        episodeCount = episodes.size,
-                        episodes = episodes
+                if (episodes.isNotEmpty() || sMeta != null) {
+                    seasons.add(
+                        Season(
+                            seasonNumber = sNum,
+                            name = sName,
+                            episodeCount = if (episodes.isNotEmpty()) episodes.size else (sMeta?.get("episode_count") as? Number)?.toInt() ?: 0,
+                            episodes = episodes
+                        )
                     )
-                )
+                }
             }
 
             val series = Series(
@@ -566,7 +618,7 @@ class XtreamCodesClient(
     }
 
     /**
-     * Récupère l'EPG court d'une chaîne avec décodage Base64
+     * Récupère l'EPG court d'une chaîne avec décodage Base64, support des dates et fallback get_simple_data_table
      */
     suspend fun getShortEpg(
         serverUrl: String,
@@ -575,25 +627,52 @@ class XtreamCodesClient(
         streamId: String
     ): Result<List<EpgProgram>> = withContext(Dispatchers.IO) {
         val cleanServer = serverUrl.trimEnd('/')
-        val url = "$cleanServer/player_api.php?username=$username&password=$password&action=get_short_epg&stream_id=$streamId"
+        // 1. Essai avec get_short_epg
+        val shortEpgResult = executeEpgRequest("$cleanServer/player_api.php?username=$username&password=$password&action=get_short_epg&stream_id=$streamId", streamId)
+        if (shortEpgResult.isSuccess && shortEpgResult.getOrNull()?.isNotEmpty() == true) {
+            return@withContext shortEpgResult
+        }
 
-        try {
+        // 2. Repli vers get_simple_data_table si get_short_epg est vide
+        val simpleTableResult = executeEpgRequest("$cleanServer/player_api.php?username=$username&password=$password&action=get_simple_data_table&stream_id=$streamId", streamId)
+        if (simpleTableResult.isSuccess && simpleTableResult.getOrNull()?.isNotEmpty() == true) {
+            return@withContext simpleTableResult
+        }
+
+        shortEpgResult
+    }
+
+    private fun executeEpgRequest(url: String, streamId: String): Result<List<EpgProgram>> {
+        return try {
             val request = Request.Builder().url(url).build()
             val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext Result.failure(Exception("Réponse vide"))
+            val body = response.body?.string() ?: return Result.failure(Exception("Réponse vide"))
             val type = object : TypeToken<Map<String, Any>>() {}.type
-            val jsonMap: Map<String, Any> = gson.fromJson(body, type)
+            val jsonMap: Map<String, Any> = runCatching { gson.fromJson<Map<String, Any>>(body, type) }.getOrNull()
+                ?: return Result.success(emptyList())
 
             @Suppress("UNCHECKED_CAST")
-            val listings = jsonMap["epg_listings"] as? List<Map<String, Any>> ?: return@withContext Result.success(emptyList())
+            val listings = jsonMap["epg_listings"] as? List<Map<String, Any>> ?: return Result.success(emptyList())
 
+            val now = System.currentTimeMillis()
             val programs = listings.mapNotNull { item ->
                 val rawTitle = item["title"]?.toString() ?: return@mapNotNull null
                 val rawDesc = item["description"]?.toString()
-                val startTs = (item["start_timestamp"]?.toString()?.toLongOrNull()) ?: 0L
-                val stopTs = (item["stop_timestamp"]?.toString()?.toLongOrNull()) ?: 0L
+                var startMs = parseEpgEpochMs(item, "start_timestamp", "start")
+                var stopMs = parseEpgEpochMs(item, "stop_timestamp", "end").takeIf { it > 0 }
+                    ?: parseEpgEpochMs(item, "stop_timestamp", "stop")
+                val isNowPlaying = (item["now_playing"] as? Number)?.toInt() == 1 || item["now_playing"]?.toString() == "1"
+
+                if (startMs == 0L && stopMs == 0L && isNowPlaying) {
+                    startMs = now - (15 * 60 * 1000L)
+                    stopMs = now + (45 * 60 * 1000L)
+                }
+
                 val hasArchive = (item["has_archive"] as? Number)?.toInt() ?: 0
-                val icon = item["icon"]?.toString() ?: item["image"]?.toString() ?: item["cover"]?.toString()
+                val icon = item["icon"]?.toString()
+                    ?: item["image"]?.toString()
+                    ?: item["cover"]?.toString()
+                    ?: item["poster"]?.toString()
 
                 val title = maybeDecodeBase64(rawTitle)
                 val desc = rawDesc?.let { maybeDecodeBase64(it) }
@@ -603,8 +682,8 @@ class XtreamCodesClient(
                     channelId = streamId,
                     title = title,
                     description = desc,
-                    startEpochMs = startTs * 1000,
-                    stopEpochMs = stopTs * 1000,
+                    startEpochMs = startMs,
+                    stopEpochMs = stopMs,
                     iconUrl = icon,
                     hasCatchup = hasArchive > 0
                 )
@@ -616,18 +695,42 @@ class XtreamCodesClient(
         }
     }
 
-    private fun maybeDecodeBase64(input: String): String {
-        return try {
-            val decodedBytes = java.util.Base64.getDecoder().decode(input.trim())
-            val decodedStr = String(decodedBytes, Charsets.UTF_8)
-            // Si le résultat est un texte lisible, on le conserve
-            if (decodedStr.all { it.isLetterOrDigit() || it.isWhitespace() || it in ".,;:!?'\"-()/@#" }) {
-                decodedStr
-            } else {
-                input
+    private fun parseEpgEpochMs(item: Map<String, Any>, tsKey: String, dateKey: String): Long {
+        val rawTs = item[tsKey]?.toString()?.trim()?.toLongOrNull()
+        if (rawTs != null && rawTs > 0) {
+            return if (rawTs > 10_000_000_000L) rawTs else rawTs * 1000L
+        }
+        val dateStr = item[dateKey]?.toString()?.trim()
+        if (!dateStr.isNullOrBlank()) {
+            val formats = listOf(
+                java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US),
+                java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US),
+                java.text.SimpleDateFormat("yyyyMMddHHmmss", java.util.Locale.US)
+            )
+            for (format in formats) {
+                try {
+                    val d = format.parse(dateStr)
+                    if (d != null) return d.time
+                } catch (_: Exception) {}
             }
-        } catch (e: Exception) {
-            input
+        }
+        return 0L
+    }
+
+    private fun maybeDecodeBase64(input: String): String {
+        val trimmed = input.trim()
+        if (trimmed.isBlank() || trimmed.contains(" ")) {
+            return trimmed
+        }
+        return try {
+            val decodedBytes = java.util.Base64.getDecoder().decode(trimmed)
+            val decodedStr = String(decodedBytes, Charsets.UTF_8).trim()
+            val isReadable = decodedStr.isNotEmpty() && decodedStr.none { 
+                Character.isISOControl(it) && it != '\n' && it != '\r' && it != '\t' 
+            }
+            if (isReadable) decodedStr else trimmed
+        } catch (_: Exception) {
+            trimmed
         }
     }
 
