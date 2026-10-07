@@ -44,6 +44,8 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import io.noostv.core.player.PlayerEngine
 import io.noostv.core.player.TrackInfo
+import io.noostv.core.player.VideoTrackInfo
+import io.noostv.core.player.PlaybackStats
 import io.noostv.data.model.Channel
 import io.noostv.data.model.EpgProgram
 import io.noostv.ui.common.HdrBadge
@@ -53,6 +55,16 @@ import io.noostv.ui.theme.*
 import io.noostv.ui.tv.EpgProvider
 import kotlinx.coroutines.delay
 import java.util.Locale
+
+/**
+ * Onglets disponibles dans le menu des réglages et informations de lecture
+ */
+enum class PlayerSettingsTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    AUDIO_SUBS("Audio & Subs", Icons.Default.Subtitles),
+    SPEED("Vitesse", Icons.Default.Speed),
+    QUALITY("Qualité", Icons.Default.HighQuality),
+    INFO("Infos de lecture", Icons.Default.Info)
+}
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -74,11 +86,13 @@ fun NoosPlayerScreen(
 ) {
     val context = LocalContext.current
     var isOsdVisible by remember { mutableStateOf(true) }
-    var showTrackDialog by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    var selectedSettingsTab by remember { mutableStateOf(PlayerSettingsTab.INFO) }
     var showZapHud by remember { mutableStateOf(isLive) }
     var seekFeedback by remember { mutableStateOf<String?>(null) }
     var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var resizeToastText by remember { mutableStateOf<String?>(null) }
+    var actionToastText by remember { mutableStateOf<String?>(null) }
 
     // Saisie numérique directe télécommande (ex: "1", "12")
     var numericBuffer by remember { mutableStateOf("") }
@@ -87,6 +101,9 @@ fun NoosPlayerScreen(
     val playerError by playerEngine.playerError.collectAsState()
     val audioTracks by playerEngine.availableAudioTracks.collectAsState()
     val subtitleTracks by playerEngine.availableSubtitleTracks.collectAsState()
+    val videoTracks by playerEngine.availableVideoTracks.collectAsState()
+    val playbackSpeed by playerEngine.playbackSpeed.collectAsState()
+    val playbackStats by playerEngine.playbackStats.collectAsState()
 
     // Focus Requester pour capturer les boutons télécommande TV
     val playerFocusRequester = remember { FocusRequester() }
@@ -111,8 +128,8 @@ fun NoosPlayerScreen(
 
     // Gestion de la touche Retour télécommande
     androidx.activity.compose.BackHandler(enabled = true) {
-        if (showTrackDialog) {
-            showTrackDialog = false
+        if (showSettingsDialog) {
+            showSettingsDialog = false
         } else if (isOsdVisible) {
             isOsdVisible = false
         } else {
@@ -173,6 +190,22 @@ fun NoosPlayerScreen(
         }
     }
 
+    // Auto-effacement du toast de confirmation d'action
+    LaunchedEffect(actionToastText) {
+        if (actionToastText != null) {
+            delay(2200)
+            actionToastText = null
+        }
+    }
+
+    // Mise à jour périodique des statistiques de lecture (toutes les secondes quand la vidéo joue ou le dialogue est ouvert)
+    LaunchedEffect(isPlaying, showSettingsDialog) {
+        while (true) {
+            playerEngine.updatePlaybackStats()
+            delay(1000)
+        }
+    }
+
     // Traitement du tampon numérique télécommande avec debounce de 1 seconde
     LaunchedEffect(numericBuffer) {
         if (numericBuffer.isNotEmpty()) {
@@ -218,7 +251,7 @@ fun NoosPlayerScreen(
                     when (keyEvent.key) {
                         // OK / Entrée : bascule visibilité OSD
                         Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
-                            if (!isOsdVisible && !showTrackDialog) {
+                            if (!isOsdVisible && !showSettingsDialog) {
                                 isOsdVisible = true
                                 true
                             } else {
@@ -291,10 +324,21 @@ fun NoosPlayerScreen(
                                 false
                             }
                         }
+                        // Touches télécommande TV spécialisées
+                        Key.Info, Key.Guide -> {
+                            selectedSettingsTab = PlayerSettingsTab.INFO
+                            showSettingsDialog = true
+                            true
+                        }
+                        Key.Captions -> {
+                            selectedSettingsTab = PlayerSettingsTab.AUDIO_SUBS
+                            showSettingsDialog = true
+                            true
+                        }
                         // Touche Retour
                         Key.Back, Key.Escape -> {
-                            if (showTrackDialog) {
-                                showTrackDialog = false
+                            if (showSettingsDialog) {
+                                showSettingsDialog = false
                                 true
                             } else if (isOsdVisible) {
                                 isOsdVisible = false
@@ -390,6 +434,26 @@ fun NoosPlayerScreen(
                         .clip(RoundedCornerShape(16.dp))
                         .background(Color(0xCC0A0E17))
                         .border(1.5.dp, NoosCyan, RoundedCornerShape(16.dp))
+                        .padding(horizontal = 24.dp, vertical = 14.dp)
+                ) {
+                    Text(text = text, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        // ------------------ 2.5. OVERLAY CONFIRMATION ACTION (VITESSE / AUDIO / QUALITÉ) ------------------
+        AnimatedVisibility(
+            visible = actionToastText != null,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            actionToastText?.let { text ->
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xEE0A0E17))
+                        .border(2.dp, NoosCyan, RoundedCornerShape(16.dp))
                         .padding(horizontal = 24.dp, vertical = 14.dp)
                 ) {
                     Text(text = text, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -704,53 +768,148 @@ fun NoosPlayerScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 if (isLive) LiveIndicatorBadge()
-                                if (isHdr) HdrBadge(text = "HDR10 / Dolby Vision")
-                                ResolutionBadge(resolution = resolution)
+                                if (isHdr || playbackStats.hdrInfo.contains("HDR", ignoreCase = true)) {
+                                    HdrBadge(text = if (playbackStats.hdrInfo.isNotBlank()) playbackStats.hdrInfo else "HDR10")
+                                }
+                                val displayRes = when {
+                                    playbackStats.height >= 2160 -> "4K"
+                                    playbackStats.height >= 1080 -> "1080p"
+                                    playbackStats.height >= 720 -> "720p"
+                                    playbackStats.height in 400..719 -> "SD"
+                                    else -> resolution
+                                }
+                                ResolutionBadge(resolution = displayRes)
+                                if (playbackSpeed != 1.0f) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(NoosCyan.copy(alpha = 0.2f))
+                                            .border(1.dp, NoosCyan, RoundedCornerShape(6.dp))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("${playbackSpeed}x", color = NoosCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
                             }
                             Text(
-                                text = "$subtitle • Codec: ${codec.uppercase()} (Matériel)",
+                                text = buildString {
+                                    if (subtitle.isNotBlank()) append("$subtitle • ")
+                                    append(playbackStats.videoCodec)
+                                    if (playbackStats.fps > 0) append(" @ ${playbackStats.fps.toInt()}fps")
+                                    if (playbackStats.videoBitrate > 0) append(" • ${String.format(Locale.getDefault(), "%.1f", playbackStats.videoBitrate / 1_000_000f)} Mbps")
+                                    append(" • Audio : ${playbackStats.activeAudioLabel}")
+                                },
                                 color = TextSecondary,
-                                fontSize = 12.sp
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
 
-                    // Boutons d'actions rapides : Format d'image & Audio/Sous-titres
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        // Bouton Format d'image (FIT / ZOOM / FILL)
+                    // Boutons d'actions rapides OSD
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 1. Bouton Infos de lecture
+                        var isInfoFocused by remember { mutableStateOf(false) }
+                        IconButton(
+                            onClick = {
+                                selectedSettingsTab = PlayerSettingsTab.INFO
+                                showSettingsDialog = true
+                            },
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isInfoFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f))
+                                .border(1.5.dp, if (isInfoFocused) NoosCyan else Color.Transparent, RoundedCornerShape(10.dp))
+                                .onFocusChanged { isInfoFocused = it.isFocused }
+                        ) {
+                            Icon(imageVector = Icons.Default.Info, contentDescription = "Infos", tint = NoosCyan, modifier = Modifier.size(20.dp))
+                        }
+
+                        // 2. Bouton Vitesse de lecture
+                        var isSpeedFocused by remember { mutableStateOf(false) }
+                        Button(
+                            onClick = {
+                                selectedSettingsTab = PlayerSettingsTab.SPEED
+                                showSettingsDialog = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isSpeedFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f)),
+                            border = if (isSpeedFocused) androidx.compose.foundation.BorderStroke(1.5.dp, NoosCyan) else null,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.onFocusChanged { isSpeedFocused = it.isFocused }
+                        ) {
+                            Icon(imageVector = Icons.Default.Speed, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(text = "${playbackSpeed}x", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        // 3. Bouton Qualité vidéo
+                        var isQualityFocused by remember { mutableStateOf(false) }
+                        Button(
+                            onClick = {
+                                selectedSettingsTab = PlayerSettingsTab.QUALITY
+                                showSettingsDialog = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isQualityFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f)),
+                            border = if (isQualityFocused) androidx.compose.foundation.BorderStroke(1.5.dp, NoosCyan) else null,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.onFocusChanged { isQualityFocused = it.isFocused }
+                        ) {
+                            Icon(imageVector = Icons.Default.HighQuality, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            val qText = when {
+                                playbackStats.height >= 2160 -> "4K"
+                                playbackStats.height >= 1080 -> "1080p"
+                                playbackStats.height >= 720 -> "720p"
+                                playbackStats.height > 0 -> "${playbackStats.height}p"
+                                else -> "Auto"
+                            }
+                            Text(text = qText, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        // 4. Bouton Audio & Sous-titres
+                        var isTrackBtnFocused by remember { mutableStateOf(false) }
+                        Button(
+                            onClick = {
+                                selectedSettingsTab = PlayerSettingsTab.AUDIO_SUBS
+                                showSettingsDialog = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isTrackBtnFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f)),
+                            border = if (isTrackBtnFocused) androidx.compose.foundation.BorderStroke(1.5.dp, NoosCyan) else null,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.onFocusChanged { isTrackBtnFocused = it.isFocused }
+                        ) {
+                            Icon(imageVector = Icons.Default.Subtitles, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Audio/Subs", color = TextPrimary, fontSize = 12.sp)
+                        }
+
+                        // 5. Bouton Format d'image (FIT / ZOOM / FILL)
                         var isAspectFocused by remember { mutableStateOf(false) }
                         Button(
                             onClick = { cycleAspectRatio() },
                             colors = ButtonDefaults.buttonColors(containerColor = if (isAspectFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f)),
                             border = if (isAspectFocused) androidx.compose.foundation.BorderStroke(1.5.dp, NoosCyan) else null,
                             shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                             modifier = Modifier.onFocusChanged { isAspectFocused = it.isFocused }
                         ) {
                             Icon(imageVector = Icons.Default.AspectRatio, contentDescription = "Format", tint = NoosCyan, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = when (resizeMode) {
-                                    AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> "Zoom 16:9"
+                                    AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> "16:9"
                                     AspectRatioFrameLayout.RESIZE_MODE_FILL -> "Étiré"
                                     else -> "Ajusté"
                                 },
                                 color = TextPrimary,
                                 fontSize = 12.sp
                             )
-                        }
-
-                        // Bouton Pistes Audio / Sous-titres
-                        var isTrackBtnFocused by remember { mutableStateOf(false) }
-                        Button(
-                            onClick = { showTrackDialog = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isTrackBtnFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f)),
-                            border = if (isTrackBtnFocused) androidx.compose.foundation.BorderStroke(1.5.dp, NoosCyan) else null,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.onFocusChanged { isTrackBtnFocused = it.isFocused }
-                        ) {
-                            Icon(imageVector = Icons.Default.Subtitles, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Audio & Sous-titres", color = TextPrimary, fontSize = 12.sp)
                         }
                     }
                 }
@@ -906,140 +1065,489 @@ fun NoosPlayerScreen(
             }
         }
 
-        // ------------------ 7. DIALOGUE AUDIO & SOUS-TITRES D-PAD READY ------------------
-        if (showTrackDialog) {
-            TrackSelectionDialog(
+        // ------------------ 7. DIALOGUE RÉGLAGES & INFORMATIONS (AUDIO, SUBS, VITESSE, QUALITÉ, STATS) ------------------
+        if (showSettingsDialog) {
+            PlayerSettingsDialog(
+                initialTab = selectedSettingsTab,
                 audioTracks = audioTracks,
                 subtitleTracks = subtitleTracks,
-                onSelectAudio = {
-                    playerEngine.selectAudioTrack(it)
-                    showTrackDialog = false
+                videoTracks = videoTracks,
+                playbackSpeed = playbackSpeed,
+                playbackStats = playbackStats,
+                onSelectSpeed = { newSpeed ->
+                    playerEngine.setPlaybackSpeed(newSpeed)
+                    actionToastText = "Vitesse : ${newSpeed}x"
                 },
-                onSelectSubtitle = {
-                    playerEngine.selectSubtitleTrack(it)
-                    showTrackDialog = false
+                onSelectVideoTrack = { vTrack ->
+                    playerEngine.selectVideoTrack(vTrack)
+                    actionToastText = if (vTrack == null) "Qualité : Automatique" else "Qualité : ${vTrack.label}"
                 },
-                onDismiss = { showTrackDialog = false }
+                onSelectAudio = { aTrack ->
+                    playerEngine.selectAudioTrack(aTrack)
+                    actionToastText = "Audio : ${aTrack.label}"
+                },
+                onSelectSubtitle = { sTrack ->
+                    playerEngine.selectSubtitleTrack(sTrack)
+                    actionToastText = if (sTrack == null) "Sous-titres : Désactivés" else "Sous-titres : ${sTrack.label}"
+                },
+                onDismiss = { showSettingsDialog = false }
             )
         }
     }
 }
 
 /**
- * Dialogue de sélection des pistes audio et sous-titres avec support D-Pad Android TV
+ * Dialogue modulaire de réglages et d'informations de lecture (Audio, Sous-titres, Vitesse, Qualité, Stats techniques)
+ * Entièrement compatible D-Pad Android TV et tactile Mobile.
  */
 @Composable
-fun TrackSelectionDialog(
+fun PlayerSettingsDialog(
+    initialTab: PlayerSettingsTab,
     audioTracks: List<TrackInfo>,
     subtitleTracks: List<TrackInfo>,
+    videoTracks: List<VideoTrackInfo>,
+    playbackSpeed: Float,
+    playbackStats: PlaybackStats,
+    onSelectSpeed: (Float) -> Unit,
+    onSelectVideoTrack: (VideoTrackInfo?) -> Unit,
     onSelectAudio: (TrackInfo) -> Unit,
     onSelectSubtitle: (TrackInfo?) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var currentTab by remember { mutableStateOf(initialTab) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = SurfaceDark,
         shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.widthIn(min = 520.dp, max = 680.dp),
         title = {
-            Text("Pistes Audio & Sous-titres", color = TextPrimary, fontWeight = FontWeight.Bold)
-        },
-        text = {
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 380.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                // Section Audio
-                item {
-                    Text("Pistes Audio Disponibles :", color = NoosCyan, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Options & Informations de lecture",
+                        color = TextPrimary,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                        Icon(imageVector = Icons.Default.Close, contentDescription = "Fermer", tint = TextSecondary, modifier = Modifier.size(20.dp))
+                    }
                 }
 
-                if (audioTracks.isEmpty()) {
-                    item {
-                        Text("Piste audio principale active", color = TextSecondary, fontSize = 12.sp)
-                    }
-                } else {
-                    items(audioTracks) { track ->
-                        var isItemFocused by remember { mutableStateOf(false) }
-                        Row(
+                // Barre de navigation entre onglets
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(SurfaceDarkVariant)
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    PlayerSettingsTab.values().forEach { tab ->
+                        val isSelected = currentTab == tab
+                        var isFocused by remember { mutableStateOf(false) }
+
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (isItemFocused) SurfaceDarkVariant else Color.Transparent)
-                                .border(1.dp, if (isItemFocused) NoosCyan else Color.Transparent, RoundedCornerShape(10.dp))
-                                .onFocusChanged { isItemFocused = it.isFocused }
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    when {
+                                        isSelected -> NoosCyan.copy(alpha = 0.25f)
+                                        isFocused -> FocusGlow
+                                        else -> Color.Transparent
+                                    }
+                                )
+                                .border(
+                                    1.dp,
+                                    when {
+                                        isFocused -> NoosCyan
+                                        isSelected -> NoosCyan.copy(alpha = 0.6f)
+                                        else -> Color.Transparent
+                                    },
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .onFocusChanged { isFocused = it.isFocused }
                                 .focusable()
-                                .clickable { onSelectAudio(track) }
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                                .clickable { currentTab = tab }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text(track.label, color = TextPrimary, fontSize = 13.sp, fontWeight = if (track.isSelected) FontWeight.Bold else FontWeight.Normal)
-                            if (track.isSelected) {
-                                Text("✓ Active", color = NoosCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = tab.icon,
+                                    contentDescription = tab.label,
+                                    tint = if (isSelected || isFocused) NoosCyan else TextSecondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = tab.label,
+                                    color = if (isSelected || isFocused) TextPrimary else TextSecondary,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    maxLines = 1
+                                )
                             }
                         }
                     }
                 }
-
-                // Section Sous-titres
-                item {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Sous-titres :", color = NoosCyan, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                }
-
-                item {
-                    var isNoneFocused by remember { mutableStateOf(false) }
-                    val isNoneSelected = subtitleTracks.none { it.isSelected }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (isNoneFocused) SurfaceDarkVariant else Color.Transparent)
-                            .border(1.dp, if (isNoneFocused) NoosCyan else Color.Transparent, RoundedCornerShape(10.dp))
-                            .onFocusChanged { isNoneFocused = it.isFocused }
-                            .focusable()
-                            .clickable { onSelectSubtitle(null) }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Désactivés", color = TextSecondary, fontSize = 13.sp)
-                        if (isNoneSelected) {
-                            Text("✓ Actif", color = NoosCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
+            }
+        },
+        text = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 280.dp, max = 380.dp)
+            ) {
+                when (currentTab) {
+                    PlayerSettingsTab.AUDIO_SUBS -> {
+                        AudioSubsTabContent(
+                            audioTracks = audioTracks,
+                            subtitleTracks = subtitleTracks,
+                            onSelectAudio = onSelectAudio,
+                            onSelectSubtitle = onSelectSubtitle
+                        )
                     }
-                }
-
-                items(subtitleTracks) { track ->
-                    var isSubFocused by remember { mutableStateOf(false) }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (isSubFocused) SurfaceDarkVariant else Color.Transparent)
-                            .border(1.dp, if (isSubFocused) NoosCyan else Color.Transparent, RoundedCornerShape(10.dp))
-                            .onFocusChanged { isSubFocused = it.isFocused }
-                            .focusable()
-                            .clickable { onSelectSubtitle(track) }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(track.label, color = TextPrimary, fontSize = 13.sp, fontWeight = if (track.isSelected) FontWeight.Bold else FontWeight.Normal)
-                        if (track.isSelected) {
-                            Text("✓ Actif", color = NoosCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
+                    PlayerSettingsTab.SPEED -> {
+                        SpeedTabContent(
+                            currentSpeed = playbackSpeed,
+                            onSelectSpeed = onSelectSpeed
+                        )
+                    }
+                    PlayerSettingsTab.QUALITY -> {
+                        QualityTabContent(
+                            videoTracks = videoTracks,
+                            playbackStats = playbackStats,
+                            onSelectVideoTrack = onSelectVideoTrack
+                        )
+                    }
+                    PlayerSettingsTab.INFO -> {
+                        PlaybackInfoTabContent(
+                            stats = playbackStats
+                        )
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Fermer", color = NoosCyan)
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = NoosCyan),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("Fermer", color = Color.Black, fontWeight = FontWeight.Bold)
             }
         }
     )
 }
+
+/**
+ * Contenu de l'onglet Audio et Sous-titres
+ */
+@Composable
+private fun AudioSubsTabContent(
+    audioTracks: List<TrackInfo>,
+    subtitleTracks: List<TrackInfo>,
+    onSelectAudio: (TrackInfo) -> Unit,
+    onSelectSubtitle: (TrackInfo?) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // Section Audio
+        item {
+            Text("Pistes Audio :", color = NoosCyan, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        }
+
+        if (audioTracks.isEmpty()) {
+            item {
+                Text("Piste audio principale par défaut (intégrée au flux)", color = TextSecondary, fontSize = 12.sp)
+            }
+        } else {
+            items(audioTracks) { track ->
+                var isItemFocused by remember { mutableStateOf(false) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isItemFocused) FocusGlow else if (track.isSelected) SurfaceDarkVariant else Color(0x33222B3D))
+                        .border(1.dp, if (isItemFocused) NoosCyan else if (track.isSelected) NoosCyan.copy(alpha = 0.5f) else Color.Transparent, RoundedCornerShape(8.dp))
+                        .onFocusChanged { isItemFocused = it.isFocused }
+                        .focusable()
+                        .clickable { onSelectAudio(track) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(track.label, color = TextPrimary, fontSize = 13.sp, fontWeight = if (track.isSelected) FontWeight.Bold else FontWeight.Normal)
+                        val audioDetails = listOfNotNull(track.codec?.takeIf { it.isNotBlank() }, track.channels?.takeIf { it.isNotBlank() }).joinToString(" • ")
+                        if (audioDetails.isNotBlank()) {
+                            Text(audioDetails, color = TextSecondary, fontSize = 11.sp)
+                        }
+                    }
+                    if (track.isSelected) {
+                        Text("✓ Active", color = NoosCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+
+        // Section Sous-titres
+        item {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text("Sous-titres :", color = NoosCyan, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        }
+
+        val isNoneSelected = subtitleTracks.none { it.isSelected }
+        item {
+            var isNoneFocused by remember { mutableStateOf(false) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isNoneFocused) FocusGlow else if (isNoneSelected) SurfaceDarkVariant else Color(0x33222B3D))
+                    .border(1.dp, if (isNoneFocused) NoosCyan else if (isNoneSelected) NoosCyan.copy(alpha = 0.5f) else Color.Transparent, RoundedCornerShape(8.dp))
+                    .onFocusChanged { isNoneFocused = it.isFocused }
+                    .focusable()
+                    .clickable { onSelectSubtitle(null) }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Désactivés", color = TextSecondary, fontSize = 13.sp)
+                if (isNoneSelected) {
+                    Text("✓ Actif", color = NoosCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+        }
+
+        items(subtitleTracks) { track ->
+            var isSubFocused by remember { mutableStateOf(false) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isSubFocused) FocusGlow else if (track.isSelected) SurfaceDarkVariant else Color(0x33222B3D))
+                    .border(1.dp, if (isSubFocused) NoosCyan else if (track.isSelected) NoosCyan.copy(alpha = 0.5f) else Color.Transparent, RoundedCornerShape(8.dp))
+                .onFocusChanged { isSubFocused = it.isFocused }
+                .focusable()
+                .clickable { onSelectSubtitle(track) }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(track.label, color = TextPrimary, fontSize = 13.sp, fontWeight = if (track.isSelected) FontWeight.Bold else FontWeight.Normal)
+                if (track.isSelected) {
+                    Text("✓ Actif", color = NoosCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Contenu de l'onglet Vitesse de lecture
+ */
+@Composable
+private fun SpeedTabContent(
+    currentSpeed: Float,
+    onSelectSpeed: (Float) -> Unit
+) {
+    val speeds = listOf(
+        0.5f to "0.5x (Ralenti x2)",
+        0.75f to "0.75x (Ralenti)",
+        1.0f to "1.0x (Vitesse normale)",
+        1.25f to "1.25x (Légèrement accéléré)",
+        1.5f to "1.5x (Accéléré)",
+        2.0f to "2.0x (Rapide x2)"
+    )
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(speeds) { (speed, label) ->
+            val isSelected = kotlin.math.abs(currentSpeed - speed) < 0.05f
+            var isFocused by remember { mutableStateOf(false) }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isFocused) FocusGlow else if (isSelected) SurfaceDarkVariant else Color(0x33222B3D))
+                    .border(1.dp, if (isFocused) NoosCyan else if (isSelected) NoosCyan.copy(alpha = 0.5f) else Color.Transparent, RoundedCornerShape(8.dp))
+                    .onFocusChanged { isFocused = it.isFocused }
+                    .focusable()
+                    .clickable { onSelectSpeed(speed) }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = label, color = TextPrimary, fontSize = 13.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                if (isSelected) {
+                    Text("✓ Actif", color = NoosCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Contenu de l'onglet Qualité vidéo
+ */
+@Composable
+private fun QualityTabContent(
+    videoTracks: List<VideoTrackInfo>,
+    playbackStats: PlaybackStats,
+    onSelectVideoTrack: (VideoTrackInfo?) -> Unit
+) {
+    val isAutoSelected = videoTracks.none { it.isSelected }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        item {
+            Text(
+                text = "Sélection de la qualité du flux vidéo :",
+                color = NoosCyan,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp
+            )
+        }
+
+        // Option Automatique
+        item {
+            var isAutoFocused by remember { mutableStateOf(false) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isAutoFocused) FocusGlow else if (isAutoSelected) SurfaceDarkVariant else Color(0x33222B3D))
+                    .border(1.dp, if (isAutoFocused) NoosCyan else if (isAutoSelected) NoosCyan.copy(alpha = 0.5f) else Color.Transparent, RoundedCornerShape(8.dp))
+                    .onFocusChanged { isAutoFocused = it.isFocused }
+                    .focusable()
+                    .clickable { onSelectVideoTrack(null) }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("Automatique (Recommandé)", color = TextPrimary, fontSize = 13.sp, fontWeight = if (isAutoSelected) FontWeight.Bold else FontWeight.Normal)
+                    Text("Sélectionne automatiquement le profil optimal selon la connexion", color = TextSecondary, fontSize = 11.sp)
+                }
+                if (isAutoSelected) {
+                    Text("✓ Actif", color = NoosCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+        }
+
+        if (videoTracks.isNotEmpty()) {
+            items(videoTracks) { vTrack ->
+                var isTrackFocused by remember { mutableStateOf(false) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isTrackFocused) FocusGlow else if (vTrack.isSelected) SurfaceDarkVariant else Color(0x33222B3D))
+                        .border(1.dp, if (isTrackFocused) NoosCyan else if (vTrack.isSelected) NoosCyan.copy(alpha = 0.5f) else Color.Transparent, RoundedCornerShape(8.dp))
+                        .onFocusChanged { isTrackFocused = it.isFocused }
+                        .focusable()
+                        .clickable { onSelectVideoTrack(vTrack) }
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(vTrack.label, color = TextPrimary, fontSize = 13.sp, fontWeight = if (vTrack.isSelected) FontWeight.Bold else FontWeight.Normal)
+                        val brInfo = if (vTrack.bitrate > 0) String.format(Locale.getDefault(), "%.1f Mbps", vTrack.bitrate / 1_000_000f) else "Direct"
+                        Text("${vTrack.width}x${vTrack.height} • $brInfo", color = TextSecondary, fontSize = 11.sp)
+                    }
+                    if (vTrack.isSelected) {
+                        Text("✓ Sélectionné", color = NoosCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+            }
+        } else {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0x22FFFFFF))
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = "Flux natif unique : ${if (playbackStats.width > 0) "${playbackStats.width}x${playbackStats.height}" else "Détection en cours"}${if (playbackStats.fps > 0) " @ ${playbackStats.fps.toInt()}fps" else ""} (${playbackStats.videoCodec})\nLe lecteur utilise automatiquement la résolution maximale disponible du serveur.",
+                        color = TextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Contenu de l'onglet Informations de lecture en temps réel (Stats for nerds)
+ */
+@Composable
+private fun PlaybackInfoTabContent(
+    stats: PlaybackStats
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        val aspectRatio = if (stats.height > 0 && stats.width > 0) {
+            val gcd = gcd(stats.width, stats.height)
+            if (gcd > 0) "${stats.width / gcd}:${stats.height / gcd}" else "16:9"
+        } else "16:9"
+
+        val items = listOf(
+            "Résolution vidéo" to "${if (stats.width > 0) "${stats.width} × ${stats.height}" else "Détection en cours"} ($aspectRatio)",
+            "Fréquence d'images (FPS)" to if (stats.fps > 0) String.format(Locale.getDefault(), "%.1f ips", stats.fps) else "Variable",
+            "Débit vidéo (Bitrate)" to if (stats.videoBitrate > 0) String.format(Locale.getDefault(), "%.2f Mbps", stats.videoBitrate / 1_000_000f) else "Direct",
+            "Codec vidéo" to "${stats.videoCodec} (Décodage matériel)",
+            "Gamme dynamique (HDR)" to stats.hdrInfo,
+            "Piste audio active" to stats.activeAudioLabel,
+            "Codec & Canaux audio" to "${stats.audioCodec} • ${stats.audioChannels}${if (stats.audioSampleRate > 0) " • ${stats.audioSampleRate / 1000} kHz" else ""}",
+            "Débit audio" to if (stats.audioBitrate > 0) "${stats.audioBitrate / 1000} kbps" else "Standard",
+            "Sous-titres" to stats.activeSubtitleLabel,
+            "Vitesse de lecture" to "${stats.speed}x",
+            "Santé du tampon (Buffer)" to "${String.format(Locale.getDefault(), "%.1f s", stats.bufferHealthSeconds)} en avance",
+            "Moteur de rendu" to "Media3 ExoPlayer v1.3.1"
+        )
+
+        items(items) { (label, value) ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0x221B2333))
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = label, color = TextSecondary, fontSize = 12.sp)
+                Text(text = value, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+private fun gcd(a: Int, b: Int): Int = if (b == 0) a else gcd(b, a % b)
 
 /**
  * Formatage millisecondes en chaîne HH:MM:SS ou MM:SS
