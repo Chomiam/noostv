@@ -244,8 +244,10 @@ class PlayerEngine(
         } else {
             builder
                 .clearVideoSizeConstraints()
+                .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
                 .setMaxVideoBitrate(Int.MAX_VALUE)
                 .setForceHighestSupportedBitrate(true)
+                .setExceedVideoConstraintsIfNecessary(true)
         }
         trackSelector.setParameters(builder)
     }
@@ -340,21 +342,28 @@ class PlayerEngine(
      * Sélectionne une qualité vidéo spécifique ou repasse en Automatique si null
      */
     fun selectVideoTrack(trackInfo: VideoTrackInfo?) {
+        val builder = trackSelector.buildUponParameters()
+            .clearVideoSizeConstraints()
+            .setMaxVideoBitrate(Int.MAX_VALUE)
+            .setForceHighestSupportedBitrate(trackInfo == null)
+            .setExceedVideoConstraintsIfNecessary(true)
+
         if (trackInfo == null) {
-            trackSelector.setParameters(
-                trackSelector.buildUponParameters().clearOverridesOfType(C.TRACK_TYPE_VIDEO)
-            )
+            builder.clearOverridesOfType(C.TRACK_TYPE_VIDEO)
         } else {
             val currentTracks = exoPlayer.currentTracks
-            for (group in currentTracks.groups) {
-                if (group.type == C.TRACK_TYPE_VIDEO && group.mediaTrackGroup.length > trackInfo.trackIndex) {
-                    val override = TrackSelectionOverride(group.mediaTrackGroup, trackInfo.trackIndex)
-                    trackSelector.setParameters(
-                        trackSelector.buildUponParameters().setOverrideForType(override)
-                    )
-                    break
-                }
+            val group = currentTracks.groups.getOrNull(trackInfo.groupIndex)
+                ?: currentTracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO }
+            if (group != null && trackInfo.trackIndex < group.mediaTrackGroup.length) {
+                val override = TrackSelectionOverride(group.mediaTrackGroup, trackInfo.trackIndex)
+                builder.setOverrideForType(override)
             }
+        }
+        trackSelector.setParameters(builder)
+
+        // Met à jour la sélection locale immédiatement pour synchroniser l'UI
+        _availableVideoTracks.value = _availableVideoTracks.value.map {
+            it.copy(isSelected = (trackInfo != null && it.id == trackInfo.id))
         }
         updatePlaybackStats()
     }
@@ -364,14 +373,16 @@ class PlayerEngine(
      */
     fun selectAudioTrack(trackInfo: TrackInfo) {
         val currentTracks = exoPlayer.currentTracks
-        for (group in currentTracks.groups) {
-            if (group.type == C.TRACK_TYPE_AUDIO) {
-                val override = TrackSelectionOverride(group.mediaTrackGroup, trackInfo.trackIndex)
-                trackSelector.setParameters(
-                    trackSelector.buildUponParameters().setOverrideForType(override)
-                )
-                break
-            }
+        val group = currentTracks.groups.getOrNull(trackInfo.groupIndex)
+            ?: currentTracks.groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO }
+        if (group != null && trackInfo.trackIndex < group.mediaTrackGroup.length) {
+            val override = TrackSelectionOverride(group.mediaTrackGroup, trackInfo.trackIndex)
+            trackSelector.setParameters(
+                trackSelector.buildUponParameters().setOverrideForType(override)
+            )
+        }
+        _availableAudioTracks.value = _availableAudioTracks.value.map {
+            it.copy(isSelected = (it.id == trackInfo.id))
         }
         updatePlaybackStats()
     }
@@ -382,21 +393,23 @@ class PlayerEngine(
     fun selectSubtitleTrack(trackInfo: TrackInfo?) {
         if (trackInfo == null) {
             trackSelector.setParameters(
-                trackSelector.buildUponParameters().setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                trackSelector.buildUponParameters()
+                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                    .setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT)
             )
-            updatePlaybackStats()
-            return
-        }
-
-        val currentTracks = exoPlayer.currentTracks
-        for (group in currentTracks.groups) {
-            if (group.type == C.TRACK_TYPE_TEXT) {
+        } else {
+            val currentTracks = exoPlayer.currentTracks
+            val group = currentTracks.groups.getOrNull(trackInfo.groupIndex)
+                ?: currentTracks.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT }
+            if (group != null && trackInfo.trackIndex < group.mediaTrackGroup.length) {
                 val override = TrackSelectionOverride(group.mediaTrackGroup, trackInfo.trackIndex)
                 trackSelector.setParameters(
                     trackSelector.buildUponParameters().setOverrideForType(override)
                 )
-                break
             }
+        }
+        _availableSubtitleTracks.value = _availableSubtitleTracks.value.map {
+            it.copy(isSelected = (trackInfo != null && it.id == trackInfo.id))
         }
         updatePlaybackStats()
     }
@@ -507,10 +520,20 @@ class PlayerEngine(
         val speed = exoPlayer.playbackParameters.speed
         val bufferSec = (exoPlayer.totalBufferedDuration.coerceAtLeast(0L) / 1000f)
 
-        val vWidth = vFmt?.width?.takeIf { it > 0 } ?: exoPlayer.videoSize.width
-        val vHeight = vFmt?.height?.takeIf { it > 0 } ?: exoPlayer.videoSize.height
-        val fps = vFmt?.frameRate?.takeIf { it > 0 } ?: 0f
-        val vBitrate = vFmt?.bitrate?.toLong()?.coerceAtLeast(0L) ?: 0L
+        val selectedVideoTrack = _availableVideoTracks.value.firstOrNull { it.isSelected }
+
+        val vWidth = selectedVideoTrack?.width?.takeIf { it > 0 }
+            ?: vFmt?.width?.takeIf { it > 0 }
+            ?: exoPlayer.videoSize.width
+        val vHeight = selectedVideoTrack?.height?.takeIf { it > 0 }
+            ?: vFmt?.height?.takeIf { it > 0 }
+            ?: exoPlayer.videoSize.height
+        val fps = selectedVideoTrack?.frameRate?.takeIf { it > 0 }
+            ?: vFmt?.frameRate?.takeIf { it > 0 }
+            ?: 0f
+        val vBitrate = selectedVideoTrack?.bitrate?.takeIf { it > 0 }
+            ?: vFmt?.bitrate?.toLong()?.coerceAtLeast(0L)
+            ?: 0L
 
         val vCodec = formatCodecName(vFmt?.sampleMimeType, vFmt?.codecs)
         val hdr = formatHdr(vFmt)

@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -137,8 +138,9 @@ fun NoosPlayerScreen(
         }
     }
 
-    // Auto-focus sur le lecteur au chargement pour la télécommande TV
+    // Déverrouille les contraintes de prévisualisation (720p) et active l'auto-focus télécommande
     LaunchedEffect(Unit) {
+        playerEngine.setPreviewMode(false)
         delay(150)
         runCatching { playerFocusRequester.requestFocus() }
     }
@@ -154,14 +156,16 @@ fun NoosPlayerScreen(
         }
     }
 
-    // Masquage automatique de l'OSD après 4.5 secondes
-    LaunchedEffect(isOsdVisible) {
-        if (isOsdVisible) {
+    // Masquage automatique de l'OSD après 4.5 secondes (si le dialogue n'est pas ouvert)
+    LaunchedEffect(isOsdVisible, showSettingsDialog) {
+        if (isOsdVisible && !showSettingsDialog) {
             delay(100)
             runCatching { playPauseFocusRequester.requestFocus() }
             delay(4400)
-            isOsdVisible = false
-        } else {
+            if (!showSettingsDialog) {
+                isOsdVisible = false
+            }
+        } else if (!isOsdVisible) {
             runCatching { playerFocusRequester.requestFocus() }
         }
     }
@@ -733,7 +737,23 @@ fun NoosPlayerScreen(
                     )
                     .padding(24.dp)
             ) {
-                // ==================== BARRE SUPÉRIEURE OSD ====================
+                // ==================== BARRE SUPÉRIEURE (TITRE, BADGES & HEURE) ====================
+                val selectedVideoTrack = videoTracks.firstOrNull { it.isSelected }
+                val effectiveHeight = selectedVideoTrack?.height?.takeIf { it > 0 }
+                    ?: playbackStats.height.takeIf { it > 0 }
+
+                val displayRes = when {
+                    effectiveHeight != null && effectiveHeight >= 2160 -> "4K"
+                    effectiveHeight != null && effectiveHeight >= 1080 -> "1080p"
+                    effectiveHeight != null && effectiveHeight >= 720 -> "720p"
+                    effectiveHeight != null && effectiveHeight in 400..719 -> "SD"
+                    resolution.contains("4K", ignoreCase = true) -> "4K"
+                    resolution.contains("1080", ignoreCase = true) || resolution.contains("FHD", ignoreCase = true) -> "1080p"
+                    resolution.contains("720", ignoreCase = true) || resolution.contains("HD", ignoreCase = true) -> "720p"
+                    resolution.isNotBlank() -> resolution
+                    else -> "HD"
+                }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -743,7 +763,8 @@ fun NoosPlayerScreen(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.weight(1f)
                     ) {
                         var isBackFocused by remember { mutableStateOf(false) }
                         IconButton(
@@ -754,7 +775,7 @@ fun NoosPlayerScreen(
                                 .border(1.5.dp, if (isBackFocused) NoosCyan else Color.Transparent, RoundedCornerShape(10.dp))
                                 .onFocusChanged { isBackFocused = it.isFocused }
                         ) {
-                            Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Retour", tint = TextPrimary)
+                            Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour", tint = TextPrimary)
                         }
 
                         Column {
@@ -770,13 +791,6 @@ fun NoosPlayerScreen(
                                 if (isLive) LiveIndicatorBadge()
                                 if (isHdr || playbackStats.hdrInfo.contains("HDR", ignoreCase = true)) {
                                     HdrBadge(text = if (playbackStats.hdrInfo.isNotBlank()) playbackStats.hdrInfo else "HDR10")
-                                }
-                                val displayRes = when {
-                                    playbackStats.height >= 2160 -> "4K"
-                                    playbackStats.height >= 1080 -> "1080p"
-                                    playbackStats.height >= 720 -> "720p"
-                                    playbackStats.height in 400..719 -> "SD"
-                                    else -> resolution
                                 }
                                 ResolutionBadge(resolution = displayRes)
                                 if (playbackSpeed != 1.0f) {
@@ -807,118 +821,36 @@ fun NoosPlayerScreen(
                         }
                     }
 
-                    // Boutons d'actions rapides OSD
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // 1. Bouton Infos de lecture
-                        var isInfoFocused by remember { mutableStateOf(false) }
-                        IconButton(
-                            onClick = {
-                                selectedSettingsTab = PlayerSettingsTab.INFO
-                                showSettingsDialog = true
-                            },
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (isInfoFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f))
-                                .border(1.5.dp, if (isInfoFocused) NoosCyan else Color.Transparent, RoundedCornerShape(10.dp))
-                                .onFocusChanged { isInfoFocused = it.isFocused }
-                        ) {
-                            Icon(imageVector = Icons.Default.Info, contentDescription = "Infos", tint = NoosCyan, modifier = Modifier.size(20.dp))
-                        }
-
-                        // 2. Bouton Vitesse de lecture
-                        var isSpeedFocused by remember { mutableStateOf(false) }
-                        Button(
-                            onClick = {
-                                selectedSettingsTab = PlayerSettingsTab.SPEED
-                                showSettingsDialog = true
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isSpeedFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f)),
-                            border = if (isSpeedFocused) androidx.compose.foundation.BorderStroke(1.5.dp, NoosCyan) else null,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                            modifier = Modifier.onFocusChanged { isSpeedFocused = it.isFocused }
-                        ) {
-                            Icon(imageVector = Icons.Default.Speed, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(text = "${playbackSpeed}x", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        // 3. Bouton Qualité vidéo
-                        var isQualityFocused by remember { mutableStateOf(false) }
-                        Button(
-                            onClick = {
-                                selectedSettingsTab = PlayerSettingsTab.QUALITY
-                                showSettingsDialog = true
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isQualityFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f)),
-                            border = if (isQualityFocused) androidx.compose.foundation.BorderStroke(1.5.dp, NoosCyan) else null,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                            modifier = Modifier.onFocusChanged { isQualityFocused = it.isFocused }
-                        ) {
-                            Icon(imageVector = Icons.Default.HighQuality, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            val qText = when {
-                                playbackStats.height >= 2160 -> "4K"
-                                playbackStats.height >= 1080 -> "1080p"
-                                playbackStats.height >= 720 -> "720p"
-                                playbackStats.height > 0 -> "${playbackStats.height}p"
-                                else -> "Auto"
-                            }
-                            Text(text = qText, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        // 4. Bouton Audio & Sous-titres
-                        var isTrackBtnFocused by remember { mutableStateOf(false) }
-                        Button(
-                            onClick = {
-                                selectedSettingsTab = PlayerSettingsTab.AUDIO_SUBS
-                                showSettingsDialog = true
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isTrackBtnFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f)),
-                            border = if (isTrackBtnFocused) androidx.compose.foundation.BorderStroke(1.5.dp, NoosCyan) else null,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                            modifier = Modifier.onFocusChanged { isTrackBtnFocused = it.isFocused }
-                        ) {
-                            Icon(imageVector = Icons.Default.Subtitles, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Audio/Subs", color = TextPrimary, fontSize = 12.sp)
-                        }
-
-                        // 5. Bouton Format d'image (FIT / ZOOM / FILL)
-                        var isAspectFocused by remember { mutableStateOf(false) }
-                        Button(
-                            onClick = { cycleAspectRatio() },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isAspectFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f)),
-                            border = if (isAspectFocused) androidx.compose.foundation.BorderStroke(1.5.dp, NoosCyan) else null,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                            modifier = Modifier.onFocusChanged { isAspectFocused = it.isFocused }
-                        ) {
-                            Icon(imageVector = Icons.Default.AspectRatio, contentDescription = "Format", tint = NoosCyan, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = when (resizeMode) {
-                                    AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> "16:9"
-                                    AspectRatioFrameLayout.RESIZE_MODE_FILL -> "Étiré"
-                                    else -> "Ajusté"
-                                },
-                                color = TextPrimary,
-                                fontSize = 12.sp
-                            )
+                    // Heure locale en haut à droite
+                    val currentTimeString = remember {
+                        val sdf = java.text.SimpleDateFormat("HH:mm", Locale.getDefault())
+                        mutableStateOf(sdf.format(java.util.Date()))
+                    }
+                    LaunchedEffect(Unit) {
+                        while (true) {
+                            val sdf = java.text.SimpleDateFormat("HH:mm", Locale.getDefault())
+                            currentTimeString.value = sdf.format(java.util.Date())
+                            delay(30_000)
                         }
                     }
+                    Text(
+                        text = currentTimeString.value,
+                        color = TextSecondary,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SurfaceDark.copy(alpha = 0.8f))
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
                 }
 
-                // ==================== BARRE INFÉRIEURE CONTRÔLES OSD ====================
+                // ==================== BARRE INFÉRIEURE CONTRÔLES & OPTIONS OSD ====================
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .align(Alignment.BottomCenter),
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
@@ -968,7 +900,7 @@ fun NoosPlayerScreen(
                         }
                     }
 
-                    // Boutons de contrôle de lecture
+                    // Boutons de contrôle de lecture principaux (Play/Pause, Précédent, Suivant)
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(24.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -1059,6 +991,123 @@ fun NoosPlayerScreen(
                             ) {
                                 Icon(imageVector = Icons.Default.Forward30, contentDescription = "Avance 30s", tint = TextPrimary, modifier = Modifier.size(34.dp))
                             }
+                        }
+                    }
+
+                    // ==================== OPTIONS DU LECTEUR EN BAS ====================
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 1. Bouton Infos de lecture
+                        var isInfoFocused by remember { mutableStateOf(false) }
+                        Button(
+                            onClick = {
+                                selectedSettingsTab = PlayerSettingsTab.INFO
+                                showSettingsDialog = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isInfoFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f)),
+                            border = if (isInfoFocused) androidx.compose.foundation.BorderStroke(1.5.dp, NoosCyan) else null,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.onFocusChanged { isInfoFocused = it.isFocused }
+                        ) {
+                            Icon(imageVector = Icons.Default.Info, contentDescription = "Infos", tint = NoosCyan, modifier = Modifier.size(17.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Infos", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        // 2. Bouton Vitesse de lecture
+                        var isSpeedFocused by remember { mutableStateOf(false) }
+                        Button(
+                            onClick = {
+                                selectedSettingsTab = PlayerSettingsTab.SPEED
+                                showSettingsDialog = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isSpeedFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f)),
+                            border = if (isSpeedFocused) androidx.compose.foundation.BorderStroke(1.5.dp, NoosCyan) else null,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.onFocusChanged { isSpeedFocused = it.isFocused }
+                        ) {
+                            Icon(imageVector = Icons.Default.Speed, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(17.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = "Vitesse (${playbackSpeed}x)", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        // 3. Bouton Qualité vidéo
+                        var isQualityFocused by remember { mutableStateOf(false) }
+                        val qualityBtnLabel = when {
+                            selectedVideoTrack != null -> when {
+                                selectedVideoTrack.height >= 2160 -> "4K"
+                                selectedVideoTrack.height >= 1080 -> "1080p"
+                                selectedVideoTrack.height >= 720 -> "720p"
+                                selectedVideoTrack.height > 0 -> "${selectedVideoTrack.height}p"
+                                else -> selectedVideoTrack.label
+                            }
+                            playbackStats.height >= 2160 -> "Auto (4K)"
+                            playbackStats.height >= 1080 -> "Auto (1080p)"
+                            playbackStats.height >= 720 -> "Auto (720p)"
+                            playbackStats.height > 0 -> "Auto (${playbackStats.height}p)"
+                            displayRes != "HD" -> "Auto ($displayRes)"
+                            else -> "Qualité Auto"
+                        }
+                        Button(
+                            onClick = {
+                                selectedSettingsTab = PlayerSettingsTab.QUALITY
+                                showSettingsDialog = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isQualityFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f)),
+                            border = if (isQualityFocused) androidx.compose.foundation.BorderStroke(1.5.dp, NoosCyan) else null,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.onFocusChanged { isQualityFocused = it.isFocused }
+                        ) {
+                            Icon(imageVector = Icons.Default.HighQuality, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(17.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = "Qualité : $qualityBtnLabel", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        // 4. Bouton Audio & Sous-titres
+                        var isTrackBtnFocused by remember { mutableStateOf(false) }
+                        Button(
+                            onClick = {
+                                selectedSettingsTab = PlayerSettingsTab.AUDIO_SUBS
+                                showSettingsDialog = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isTrackBtnFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f)),
+                            border = if (isTrackBtnFocused) androidx.compose.foundation.BorderStroke(1.5.dp, NoosCyan) else null,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.onFocusChanged { isTrackBtnFocused = it.isFocused }
+                        ) {
+                            Icon(imageVector = Icons.Default.Subtitles, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(17.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Audio & Subs", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        // 5. Bouton Format d'image (FIT / ZOOM / FILL)
+                        var isAspectFocused by remember { mutableStateOf(false) }
+                        Button(
+                            onClick = { cycleAspectRatio() },
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isAspectFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f)),
+                            border = if (isAspectFocused) androidx.compose.foundation.BorderStroke(1.5.dp, NoosCyan) else null,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.onFocusChanged { isAspectFocused = it.isFocused }
+                        ) {
+                            Icon(imageVector = Icons.Default.AspectRatio, contentDescription = "Format", tint = NoosCyan, modifier = Modifier.size(17.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = when (resizeMode) {
+                                    AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> "Format 16:9"
+                                    AspectRatioFrameLayout.RESIZE_MODE_FILL -> "Format Étiré"
+                                    else -> "Format Ajusté"
+                                },
+                                color = TextPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                     }
                 }
