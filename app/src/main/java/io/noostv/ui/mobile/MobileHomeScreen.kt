@@ -65,6 +65,7 @@ import io.noostv.ui.common.NoosPaginationBar
 import io.noostv.ui.common.PremiumVipBadge
 import io.noostv.ui.common.ResolutionBadge
 import io.noostv.ui.theme.*
+import io.noostv.ui.common.GithubTokenField
 import io.noostv.ui.tv.EpgProvider
 import io.noostv.ui.tv.TvCategoryFiltersContent
 import io.noostv.ui.tv.TvFavoritesContent
@@ -1217,6 +1218,9 @@ private fun MobileSettingsView(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("${strings.checkUpdates} ($selectedChannel)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
+
+                GithubTokenField(sessionManager = sessionManager)
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // Statut de la vérification
                 when (val state = updateState) {

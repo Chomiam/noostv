@@ -38,6 +38,7 @@ import io.noostv.core.update.UpdateManager
 import io.noostv.core.update.UpdateState
 import io.noostv.ui.common.PremiumVipBadge
 import io.noostv.ui.theme.*
+import io.noostv.ui.common.GithubTokenField
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -180,6 +181,7 @@ fun TvSettingsContent(
             )
         }
 
+        GithubTokenField(sessionManager = sessionManager)
         Spacer(modifier = Modifier.height(20.dp))
 
         // ==================== SECTION 2 : ÉTAT DES MISES À JOUR ====================
