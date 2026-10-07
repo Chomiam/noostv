@@ -47,9 +47,9 @@ fun LoginScreen(
     val coroutineScope = rememberCoroutineScope()
     val xtreamClient = remember { XtreamCodesClient() }
 
-    var serverUrl by remember { mutableStateOf("https://t.mowlabs.ovh") }
-    var username by remember { mutableStateOf("chomiam") }
-    var password by remember { mutableStateOf("choco") }
+    var serverUrl by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
 
     var isLoading by remember { mutableStateOf(false) }
@@ -62,11 +62,11 @@ fun LoginScreen(
     val submitFocus = remember { FocusRequester() }
     val demoFocus = remember { FocusRequester() }
 
-    // Auto-focus sur le bouton de connexion pour validation immédiate à la télécommande
+    // Auto-focus sur le premier champ pour saisie immédiate
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(200)
         try {
-            submitFocus.requestFocus()
+            serverFocus.requestFocus()
         } catch (e: Exception) {
             // Ignorer si pas encore attaché
         }

@@ -2,9 +2,11 @@ package io.noostv.core.storage
 
 import android.content.Context
 import android.content.SharedPreferences
+import io.noostv.core.security.CryptoManager
 
 /**
- * Gestionnaire de persistance des identifiants IPTV (Xtream Codes API) et de session utilisateur.
+ * Gestionnaire de persistance sécurisée des identifiants IPTV (Xtream Codes API) et de session utilisateur.
+ * Tous les identifiants sensibles sont chiffrés avec AES-256-GCM via l'Android KeyStore.
  */
 class SessionManager(context: Context) {
 
@@ -20,7 +22,7 @@ class SessionManager(context: Context) {
         private const val KEY_PLAYLIST_NAME = "playlist_name"
         private const val KEY_UPDATE_CHANNEL = "update_channel"
         private const val KEY_GITHUB_TOKEN = "github_token"
-        private const val DEFAULT_TOKEN = "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"
+        private const val DEFAULT_TOKEN = ""
     }
 
     var updateChannel: String
@@ -28,8 +30,14 @@ class SessionManager(context: Context) {
         set(value) = prefs.edit().putString(KEY_UPDATE_CHANNEL, value).apply()
 
     var githubToken: String
-        get() = prefs.getString(KEY_GITHUB_TOKEN, DEFAULT_TOKEN) ?: DEFAULT_TOKEN
-        set(value) = prefs.edit().putString(KEY_GITHUB_TOKEN, value).apply()
+        get() {
+            val raw = prefs.getString(KEY_GITHUB_TOKEN, DEFAULT_TOKEN) ?: DEFAULT_TOKEN
+            return CryptoManager.decrypt(raw)
+        }
+        set(value) {
+            val enc = CryptoManager.encrypt(value)
+            prefs.edit().putString(KEY_GITHUB_TOKEN, enc).apply()
+        }
 
     var isPremium: Boolean
         get() = prefs.getBoolean(KEY_IS_PREMIUM, false)
@@ -40,16 +48,38 @@ class SessionManager(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_IS_LOGGED_IN, value).apply()
 
     var serverUrl: String
-        get() = prefs.getString(KEY_SERVER_URL, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_SERVER_URL, value).apply()
+        get() {
+            val raw = prefs.getString(KEY_SERVER_URL, "") ?: ""
+            return CryptoManager.decrypt(raw)
+        }
+        set(value) {
+            val enc = CryptoManager.encrypt(value)
+            prefs.edit().putString(KEY_SERVER_URL, enc).apply()
+        }
 
     var username: String
-        get() = prefs.getString(KEY_USERNAME, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_USERNAME, value).apply()
+        get() {
+            val raw = prefs.getString(KEY_USERNAME, "") ?: ""
+            return CryptoManager.decrypt(raw)
+        }
+        set(value) {
+            val enc = CryptoManager.encrypt(value)
+            prefs.edit().putString(KEY_USERNAME, enc).apply()
+        }
 
     var password: String
-        get() = prefs.getString(KEY_PASSWORD, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_PASSWORD, value).apply()
+        get() {
+            val raw = prefs.getString(KEY_PASSWORD, "") ?: ""
+            return CryptoManager.decrypt(raw)
+        }
+        set(value) {
+            val enc = CryptoManager.encrypt(value)
+            prefs.edit().putString(KEY_PASSWORD, enc).apply()
+        }
+
+    fun getMaskedServerUrl(): String = CryptoManager.maskUrl(serverUrl)
+
+    fun getMaskedUsername(): String = CryptoManager.maskIdentifier(username)
 
     var playlistName: String
         get() = prefs.getString(KEY_PLAYLIST_NAME, "Mon Abonnement IPTV") ?: "Mon Abonnement IPTV"
@@ -58,9 +88,9 @@ class SessionManager(context: Context) {
     fun saveCredentials(server: String, user: String, pass: String, name: String = "Mon Abonnement IPTV") {
         prefs.edit()
             .putBoolean(KEY_IS_LOGGED_IN, true)
-            .putString(KEY_SERVER_URL, server)
-            .putString(KEY_USERNAME, user)
-            .putString(KEY_PASSWORD, pass)
+            .putString(KEY_SERVER_URL, CryptoManager.encrypt(server))
+            .putString(KEY_USERNAME, CryptoManager.encrypt(user))
+            .putString(KEY_PASSWORD, CryptoManager.encrypt(pass))
             .putString(KEY_PLAYLIST_NAME, name)
             .apply()
     }

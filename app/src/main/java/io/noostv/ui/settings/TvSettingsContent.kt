@@ -442,8 +442,8 @@ fun TvSettingsContent(
                         Text("Session IPTV", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         PremiumVipBadge()
                     }
-                    Text("Serveur : ${sessionManager.serverUrl.takeIf { it.isNotBlank() } ?: "Non connecté"}", color = TextSecondary, fontSize = 11.sp)
-                    Text("Identifiant : ${sessionManager.username.takeIf { it.isNotBlank() } ?: "-"}", color = TextSecondary, fontSize = 11.sp)
+                    Text("Serveur : ${sessionManager.getMaskedServerUrl()}", color = TextSecondary, fontSize = 11.sp)
+                    Text("Identifiant : ${sessionManager.getMaskedUsername()}", color = TextSecondary, fontSize = 11.sp)
 
                     Spacer(modifier = Modifier.height(4.dp))
                     Button(

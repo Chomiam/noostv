@@ -143,7 +143,7 @@ class PlayerEngine(
                     }
                     if (fallbackUrl != null) {
                         hasAttemptedFallback = true
-                        Log.i("NoosPlayer", "Tentative de repli vers : $fallbackUrl")
+                        Log.i("NoosPlayer", "Tentative de repli vers : ${io.noostv.core.security.CryptoManager.sanitizeUrl(fallbackUrl)}")
                         playStream(fallbackUrl, currentStreamTitle, _isHdrActive.value, false)
                         return
                     }
@@ -178,7 +178,7 @@ class PlayerEngine(
         hasAttemptedFallback = false
         _isHdrActive.value = isHdrStream
 
-        Log.i("NoosPlayer", "playStream: '$title' -> $url")
+        Log.i("NoosPlayer", "playStream: '$title' -> ${io.noostv.core.security.CryptoManager.sanitizeUrl(url)}")
 
         val mediaItem = MediaItem.Builder()
             .setUri(Uri.parse(url))

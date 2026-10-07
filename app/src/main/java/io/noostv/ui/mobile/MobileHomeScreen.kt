@@ -1011,12 +1011,12 @@ private fun MobileSettingsView(
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Serveur", color = TextSecondary, fontSize = 12.sp)
-                    Text(sessionManager.serverUrl.ifBlank { "Mode Démo" }, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(sessionManager.getMaskedServerUrl(), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Utilisateur", color = TextSecondary, fontSize = 12.sp)
-                    Text(sessionManager.username.ifBlank { "Invité" }, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(sessionManager.getMaskedUsername(), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
