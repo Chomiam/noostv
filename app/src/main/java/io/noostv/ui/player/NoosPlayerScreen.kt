@@ -911,19 +911,21 @@ fun NoosPlayerScreen(
                                     }
                                 }
                             }
-                            Text(
-                                text = buildString {
-                                    if (subtitle.isNotBlank()) append("$subtitle • ")
-                                    append(playbackStats.videoCodec)
-                                    if (playbackStats.fps > 0) append(" @ ${playbackStats.fps.toInt()}fps")
-                                    if (playbackStats.videoBitrate > 0) append(" • ${String.format(Locale.getDefault(), "%.1f", playbackStats.videoBitrate / 1_000_000f)} Mbps")
-                                    append(" • Audio : ${playbackStats.activeAudioLabel}")
-                                },
-                                color = TextSecondary,
-                                fontSize = 12.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            if (!isPortraitMobile) {
+                                Text(
+                                    text = buildString {
+                                        if (subtitle.isNotBlank()) append("$subtitle • ")
+                                        append(playbackStats.videoCodec)
+                                        if (playbackStats.fps > 0) append(" @ ${playbackStats.fps.toInt()}fps")
+                                        if (playbackStats.videoBitrate > 0) append(" • ${String.format(Locale.getDefault(), "%.1f", playbackStats.videoBitrate / 1_000_000f)} Mbps")
+                                        append(" • Audio : ${playbackStats.activeAudioLabel}")
+                                    },
+                                    color = TextSecondary,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
 
@@ -939,16 +941,19 @@ fun NoosPlayerScreen(
                             delay(30_000)
                         }
                     }
-                    Text(
-                        text = currentTimeString.value,
-                        color = TextSecondary,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceDark.copy(alpha = 0.8f))
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    )
+                    // En portrait (mobile), l'horloge de la barre d'état Android est déjà visible : on évite le doublon
+                    if (!isPortraitMobile) {
+                        Text(
+                            text = currentTimeString.value,
+                            color = TextSecondary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(SurfaceDark.copy(alpha = 0.8f))
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                    }
                 }
 
                 // ==================== BARRE INFÉRIEURE CONTRÔLES & OPTIONS OSD ====================
@@ -1101,9 +1106,11 @@ fun NoosPlayerScreen(
                     }
 
                     // ==================== OPTIONS DU LECTEUR EN BAS ====================
-                    Row(
+                    // FlowRow : sur écran étroit (portrait), les boutons se replient sur une 2e ligne
+                    // au lieu de déborder et de se chevaucher.
+                    FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         // 1. Bouton Infos de lecture
                         var isInfoFocused by remember { mutableStateOf(false) }
