@@ -61,6 +61,33 @@ class MainActivity : ComponentActivity() {
     private lateinit var sessionManager: SessionManager
     private lateinit var soundEffectManager: SoundEffectManager
 
+    // Auto-PiP au bouton Home depuis le lecteur (mobile, API 26+) : vrai quand l'écran
+    // lecteur est visible. onUserLeaveHint est le seul point fiable pour déclencher le PiP
+    // quand l'utilisateur presse Home (Android ne le fait jamais automatiquement).
+    @Volatile
+    private var autoPipOnLeave = false
+
+    private fun requestPip() {
+        if (Build.VERSION.SDK_INT >= 26) {
+            try {
+                enterPictureInPictureMode(
+                    PictureInPictureParams.Builder()
+                        .setAspectRatio(Rational(16, 9))
+                        .build()
+                )
+            } catch (_: Exception) {
+                // PiP indisponible (ROM/écran incompatible) : on ignore silencieusement.
+            }
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (autoPipOnLeave) {
+            requestPip()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -118,20 +145,10 @@ class MainActivity : ComponentActivity() {
                 var currentMovie by remember { mutableStateOf<VodMovie?>(null) }
                 var isMiniPlayerActive by remember { mutableStateOf(false) }
 
-                // Mode PiP (Android 8+/API 26+) : mini-fenêtre flottante au-dessus des autres apps.
-                fun enterPip() {
-                    val activity = this@MainActivity
-                    if (Build.VERSION.SDK_INT >= 26) {
-                        try {
-                            activity.enterPictureInPictureMode(
-                                PictureInPictureParams.Builder()
-                                    .setAspectRatio(Rational(16, 9))
-                                    .build()
-                            )
-                        } catch (_: Exception) {
-                            // PiP non disponible (écran/ROM incompatible) : on ignore silencieusement.
-                        }
-                    }
+                // Mobile : dès qu'on est dans le lecteur, presser Home met automatiquement la
+                // lecture en mini-fenêtre PiP (déclenché par onUserLeaveHint → requestPip).
+                LaunchedEffect(currentScreen) {
+                    autoPipOnLeave = !deviceDetector.isTv && currentScreen == CurrentScreen.PLAYER
                 }
 
                 fun startPlayChannel(channel: Channel) {
@@ -517,10 +534,17 @@ class MainActivity : ComponentActivity() {
                             channels = channels,
                             epgPrograms = epgPrograms,
                             onBack = {
-                                if (currentChannel == null) {
-                                    playerEngine.stop()
+                                if (!deviceDetector.isTv) {
+                                    // Mobile : retour depuis le lecteur → bandeau mini-lecteur,
+                                    // la lecture continue en arrière-plan de l'accueil.
+                                    isMiniPlayerActive = true
+                                    currentScreen = CurrentScreen.HOME
+                                } else {
+                                    if (currentChannel == null) {
+                                        playerEngine.stop()
+                                    }
+                                    currentScreen = CurrentScreen.HOME
                                 }
-                                currentScreen = CurrentScreen.HOME
                             },
                             onNextChannel = if (isLive && channels.isNotEmpty()) {
                                 {
@@ -537,7 +561,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             } else null,
                             onSelectChannel = { startPlayChannel(it) },
-                            onEnterPip = if (!deviceDetector.isTv && Build.VERSION.SDK_INT >= 26) { { enterPip() } } else null,
+                            onEnterPip = if (!deviceDetector.isTv && Build.VERSION.SDK_INT >= 26) { { requestPip() } } else null,
                             isPipMode = false
                         )
                     }
