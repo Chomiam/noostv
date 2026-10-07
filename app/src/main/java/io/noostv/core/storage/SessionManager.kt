@@ -33,8 +33,7 @@ class SessionManager(context: Context) {
         private const val KEY_SAVED_ACCOUNTS_ENCRYPTED = "saved_accounts_encrypted"
         private const val KEY_SOUND_EFFECTS_ENABLED = "sound_effects_enabled"
         private const val KEY_SOUND_EFFECTS_VOLUME = "sound_effects_volume"
-        private val DEFAULT_TOKEN: String
-            get() = runCatching { io.noostv.BuildConfig.GITHUB_TOKEN }.getOrDefault("")
+        private const val DEFAULT_TOKEN: String = ""
 
         private const val KEY_PROFILES_JSON = "profiles_json"
         private const val KEY_ACTIVE_PROFILE_ID = "active_profile_id"

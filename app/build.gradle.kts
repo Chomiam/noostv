@@ -1,17 +1,7 @@
-import java.util.Properties
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
-
-val localProperties = Properties().apply {
-    val localPropertiesFile = rootProject.file("local.properties")
-    if (localPropertiesFile.exists()) {
-        localPropertiesFile.inputStream().use { this.load(it) }
-    }
-}
-val githubToken: String = localProperties.getProperty("github.token") ?: System.getenv("GITHUB_TOKEN") ?: ""
 
 android {
     namespace = "io.noostv"
@@ -21,10 +11,8 @@ android {
         applicationId = "io.noostv"
         minSdk = 21
         targetSdk = 34
-        versionCode = 10
-        versionName = "1.2.4"
-
-        buildConfigField("String", "GITHUB_TOKEN", "\"$githubToken\"")
+        versionCode = 11
+        versionName = "1.2.5-beta.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -53,7 +41,8 @@ android {
         freeCompilerArgs += listOf(
             "-opt-in=androidx.tv.material3.ExperimentalTvMaterial3Api",
             "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
-            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi"
+            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
+            "-opt-in=androidx.compose.foundation.layout.ExperimentalLayoutApi"
         )
     }
 

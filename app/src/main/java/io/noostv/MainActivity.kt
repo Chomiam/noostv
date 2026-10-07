@@ -1,15 +1,24 @@
 package io.noostv
 
+import android.app.PictureInPictureParams
+import android.os.Build
 import android.os.Bundle
+import android.util.Rational
+import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.*
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import io.noostv.core.audio.LocalSoundEffectManager
 import io.noostv.core.audio.SoundEffectManager
-import android.view.KeyEvent
 import io.noostv.core.localization.AppLanguage
 import io.noostv.core.localization.AppStrings
 import io.noostv.core.localization.LocalAppLanguage
@@ -29,6 +38,7 @@ import io.noostv.ui.common.SearchScreen
 import io.noostv.ui.common.UpgradeDialog
 import io.noostv.ui.login.LoginScreen
 import io.noostv.ui.mobile.MobileHomeScreen
+import io.noostv.ui.player.MiniPlayerBar
 import io.noostv.ui.player.NoosPlayerScreen
 import io.noostv.ui.theme.NoosTvTheme
 import io.noostv.ui.tv.TvEpgScreen
@@ -50,6 +60,33 @@ class MainActivity : ComponentActivity() {
     private lateinit var playerEngine: PlayerEngine
     private lateinit var sessionManager: SessionManager
     private lateinit var soundEffectManager: SoundEffectManager
+
+    // Auto-PiP au bouton Home depuis le lecteur (mobile, API 26+) : vrai quand l'écran
+    // lecteur est visible. onUserLeaveHint est le seul point fiable pour déclencher le PiP
+    // quand l'utilisateur presse Home (Android ne le fait jamais automatiquement).
+    @Volatile
+    private var autoPipOnLeave = false
+
+    private fun requestPip() {
+        if (Build.VERSION.SDK_INT >= 26) {
+            try {
+                enterPictureInPictureMode(
+                    PictureInPictureParams.Builder()
+                        .setAspectRatio(Rational(16, 9))
+                        .build()
+                )
+            } catch (_: Exception) {
+                // PiP indisponible (ROM/écran incompatible) : on ignore silencieusement.
+            }
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (autoPipOnLeave) {
+            requestPip()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -106,6 +143,13 @@ class MainActivity : ComponentActivity() {
 
                 var currentChannel by remember { mutableStateOf<Channel?>(null) }
                 var currentMovie by remember { mutableStateOf<VodMovie?>(null) }
+                var isMiniPlayerActive by remember { mutableStateOf(false) }
+
+                // Mobile : dès qu'on est dans le lecteur, presser Home met automatiquement la
+                // lecture en mini-fenêtre PiP (déclenché par onUserLeaveHint → requestPip).
+                LaunchedEffect(currentScreen) {
+                    autoPipOnLeave = !deviceDetector.isTv && currentScreen == CurrentScreen.PLAYER
+                }
 
                 fun startPlayChannel(channel: Channel) {
                     val success = playerEngine.playStream(
@@ -117,6 +161,7 @@ class MainActivity : ComponentActivity() {
                     if (success) {
                         currentChannel = channel
                         currentMovie = null
+                        isMiniPlayerActive = false
                         currentScreen = CurrentScreen.PLAYER
                     } else {
                         showUpgradeDialog = true
@@ -140,6 +185,7 @@ class MainActivity : ComponentActivity() {
                     currentMovie = null
                     customStreamTitle = null
                     customStreamSubtitle = null
+                    isMiniPlayerActive = false
                     currentScreen = CurrentScreen.LOGIN
                 }
 
@@ -155,6 +201,7 @@ class MainActivity : ComponentActivity() {
                         currentChannel = null
                         customStreamTitle = null
                         customStreamSubtitle = null
+                        isMiniPlayerActive = false
                         currentScreen = CurrentScreen.PLAYER
                     } else {
                         showUpgradeDialog = true
@@ -176,6 +223,7 @@ class MainActivity : ComponentActivity() {
                         currentChannel = null
                         customStreamTitle = ser.title
                         customStreamSubtitle = epSubtitle
+                        isMiniPlayerActive = false
                         currentScreen = CurrentScreen.PLAYER
                     } else {
                         showUpgradeDialog = true
@@ -213,6 +261,7 @@ class MainActivity : ComponentActivity() {
                                 currentChannel = null
                                 customStreamTitle = targetSeries.title
                                 customStreamSubtitle = "Série"
+                                isMiniPlayerActive = false
                                 currentScreen = CurrentScreen.PLAYER
                             } else {
                                 showUpgradeDialog = true
@@ -232,14 +281,21 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Gestion du bouton Retour de la télécommande TV pour revenir au menu principal
+                // Bouton Retour : sur mobile, revenir du lecteur affiche le bandeau mini-lecteur
+                // (lecture continue) au lieu de fermer ; sur TV, retour classique vers l'accueil.
                 BackHandler(enabled = currentScreen != CurrentScreen.HOME) {
+                    if (!deviceDetector.isTv && currentScreen == CurrentScreen.PLAYER) {
+                        isMiniPlayerActive = true
+                        currentScreen = CurrentScreen.HOME
+                        return@BackHandler
+                    }
                     if (currentScreen == CurrentScreen.PLAYER && currentChannel == null) {
                         playerEngine.stop()
                     }
                     currentScreen = CurrentScreen.HOME
                 }
 
+                Box(modifier = Modifier.fillMaxSize()) {
                 when (currentScreen) {
                     CurrentScreen.LOGIN -> {
                         LoginScreen(
@@ -473,14 +529,22 @@ class MainActivity : ComponentActivity() {
                             isHdr = isHdr,
                             resolution = resolution,
                             codec = codec,
+                            isMobile = !deviceDetector.isTv,
                             channel = currentChannel,
                             channels = channels,
                             epgPrograms = epgPrograms,
                             onBack = {
-                                if (currentChannel == null) {
-                                    playerEngine.stop()
+                                if (!deviceDetector.isTv) {
+                                    // Mobile : retour depuis le lecteur → bandeau mini-lecteur,
+                                    // la lecture continue en arrière-plan de l'accueil.
+                                    isMiniPlayerActive = true
+                                    currentScreen = CurrentScreen.HOME
+                                } else {
+                                    if (currentChannel == null) {
+                                        playerEngine.stop()
+                                    }
+                                    currentScreen = CurrentScreen.HOME
                                 }
-                                currentScreen = CurrentScreen.HOME
                             },
                             onNextChannel = if (isLive && channels.isNotEmpty()) {
                                 {
@@ -496,9 +560,32 @@ class MainActivity : ComponentActivity() {
                                     startPlayChannel(prev)
                                 }
                             } else null,
-                            onSelectChannel = { startPlayChannel(it) }
+                            onSelectChannel = { startPlayChannel(it) },
+                            onEnterPip = if (!deviceDetector.isTv && Build.VERSION.SDK_INT >= 26) { { requestPip() } } else null,
+                            isPipMode = false
                         )
                     }
+                }
+
+                // Bandeau mini-lecteur (mobile uniquement) : s'affiche en bas de l'accueil au retour
+                // du lecteur via le bouton Retour, sans gêner la navigation (overlay aligné en bas).
+                if (!deviceDetector.isTv && isMiniPlayerActive) {
+                    MiniPlayerBar(
+                        playerEngine = playerEngine,
+                        title = currentChannel?.name ?: currentMovie?.title ?: customStreamTitle ?: "NoosTV Stream",
+                        subtitle = currentChannel?.categoryName ?: currentMovie?.genres?.joinToString(", ") ?: customStreamSubtitle ?: "",
+                        onExpand = { currentScreen = CurrentScreen.PLAYER },
+                        onClose = {
+                            playerEngine.stop()
+                            currentChannel = null
+                            currentMovie = null
+                            customStreamTitle = null
+                            customStreamSubtitle = null
+                            isMiniPlayerActive = false
+                        },
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp)
+                    )
+                }
                 }
 
                 if (showUpgradeDialog) {

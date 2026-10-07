@@ -1,5 +1,7 @@
 package io.noostv.ui.player
 
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
@@ -32,12 +34,17 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -77,13 +84,16 @@ fun NoosPlayerScreen(
     isHdr: Boolean,
     resolution: String,
     codec: String,
+    isMobile: Boolean = false,
     channel: Channel? = null,
     channels: List<Channel> = emptyList(),
     epgPrograms: List<EpgProgram> = emptyList(),
     onBack: () -> Unit,
     onNextChannel: (() -> Unit)? = null,
     onPreviousChannel: (() -> Unit)? = null,
-    onSelectChannel: ((Channel) -> Unit)? = null
+    onSelectChannel: ((Channel) -> Unit)? = null,
+    onEnterPip: (() -> Unit)? = null,
+    isPipMode: Boolean = false
 ) {
     val context = LocalContext.current
     var isOsdVisible by remember { mutableStateOf(true) }
@@ -244,9 +254,79 @@ fun NoosPlayerScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
+    // ------------------------------------------------------------------
+    // ORIENTATION (mobile uniquement)
+    //  - Téléphone retourné (paysage) : lecteur plein écran immersif
+    //    (barres système masquées) + gestes tactiles actifs.
+    //  - Téléphone vertical (portrait) : lecteur en haut (16:9) et
+    //    Guide TV par chaîne en bas.
+    // ------------------------------------------------------------------
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isPortraitMobile = isMobile && !isLandscape
+
+    val view = LocalView.current
+    val activity = view.context as? android.app.Activity
+
+    // Immersion : aucune barre système en paysage mobile, restaurées sinon
+    DisposableEffect(isMobile, isLandscape, view) {
+        val window = activity?.window
+        if (window == null) {
+            onDispose { }
+        } else {
+            if (isMobile && isLandscape) {
+                WindowCompat.setDecorFitsSystemWindows(window, false)
+                WindowInsetsControllerCompat(window, view).apply {
+                    systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    hide(WindowInsetsCompat.Type.systemBars())
+                }
+            } else if (isMobile) {
+                WindowCompat.setDecorFitsSystemWindows(window, true)
+                WindowInsetsControllerCompat(window, view).show(WindowInsetsCompat.Type.systemBars())
+            }
+            onDispose {
+                if (isMobile) {
+                    WindowCompat.setDecorFitsSystemWindows(window, true)
+                    WindowInsetsControllerCompat(window, view).show(WindowInsetsCompat.Type.systemBars())
+                }
+            }
+        }
+    }
+
+    // L'écran suit le capteur de rotation pendant la lecture mobile : c'est ce qui
+    // permet de détecter le « flip » du téléphone et d'activer gestes + plein écran.
+    DisposableEffect(isMobile, activity) {
+        if (isMobile && activity != null) {
+            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
+        }
+        onDispose {
+            if (isMobile && activity != null) {
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                activity.window.attributes = activity.window.attributes.apply { screenBrightness = -1f }
+            }
+        }
+    }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        // Hauteur de la bande vidéo 16:9 en portrait : le guide commence en dessous,
+        // ainsi son en-tête et ses groupes/catégories restent visibles (et non cachés par la vidéo).
+        val playerHeightDp = if (isPortraitMobile) maxWidth * 9f / 16f else 0.dp
+        // Guide TV : occupe tout ce qui se trouve SOUS la bande vidéo en portrait.
+        if (isPortraitMobile && isLive && onSelectChannel != null && !isPipMode) {
+            MobileTvGuidePanel(
+                channels = channels,
+                epgPrograms = epgPrograms,
+                activeChannel = channel,
+                onSelectChannel = { selected -> onSelectChannel.invoke(selected) },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .fillMaxHeight(1f)
+                    .padding(top = playerHeightDp)
+            )
+        }
+        Box(
+        modifier = (if (isPortraitMobile) Modifier.align(Alignment.TopCenter).fillMaxWidth().aspectRatio(16f / 9f) else Modifier.fillMaxSize())
             .background(Color.Black)
             .focusRequester(playerFocusRequester)
             .focusable()
@@ -424,6 +504,30 @@ fun NoosPlayerScreen(
                 playerView.resizeMode = resizeMode
             }
         )
+
+        // ------------------ 1.5. COUCHE GESTES TACTILES (MOBILE) ------------------
+        // Tap = afficher/masquer l'OSD • Double-tap gauche/droite = ±10 s
+        // Glissement vertical = volume/luminosité • horizontal = avance/recul
+        if (isMobile && !isPipMode) {
+            PlayerTouchGestureLayer(
+                enabled = !showSettingsDialog,
+                isLive = isLive,
+                onToggleOsd = { isOsdVisible = !isOsdVisible },
+                onTogglePlayPause = {
+                    if (isPlaying) playerEngine.pause() else playerEngine.resume()
+                },
+                onSeekRelative = { deltaMs -> playerEngine.seekBy(deltaMs) },
+                onNextChannel = if (isLive) onNextChannel else null,
+                onPreviousChannel = if (isLive) onPreviousChannel else null,
+                modifier = if (isPortraitMobile) {
+                    // La couche de gestes ne couvre que la bande vidéo : le guide du bas
+                    // garde ses propres scrolls (listes, groupes) sans être intercepté.
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth().aspectRatio(16f / 9f)
+                } else {
+                    Modifier.fillMaxSize()
+                }
+            )
+        }
 
         // ------------------ 2. OVERLAY FORMAT D'IMAGE CHANGER ------------------
         AnimatedVisibility(
@@ -718,7 +822,7 @@ fun NoosPlayerScreen(
 
         // ------------------ 6. OVERLAY OSD COMPLET ------------------
         AnimatedVisibility(
-            visible = isOsdVisible,
+            visible = isOsdVisible && !isPipMode,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.fillMaxSize()
@@ -735,7 +839,7 @@ fun NoosPlayerScreen(
                             )
                         )
                     )
-                    .padding(24.dp)
+                    .padding(if (isPortraitMobile) 12.dp else 24.dp)
             ) {
                 // ==================== BARRE SUPÉRIEURE (TITRE, BADGES & HEURE) ====================
                 val selectedVideoTrack = videoTracks.firstOrNull { it.isSelected }
@@ -796,7 +900,7 @@ fun NoosPlayerScreen(
                                 Text(
                                     text = title,
                                     color = TextPrimary,
-                                    fontSize = 18.sp,
+                                    fontSize = if (isPortraitMobile) 16.sp else 18.sp,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -818,19 +922,21 @@ fun NoosPlayerScreen(
                                     }
                                 }
                             }
-                            Text(
-                                text = buildString {
-                                    if (subtitle.isNotBlank()) append("$subtitle • ")
-                                    append(playbackStats.videoCodec)
-                                    if (playbackStats.fps > 0) append(" @ ${playbackStats.fps.toInt()}fps")
-                                    if (playbackStats.videoBitrate > 0) append(" • ${String.format(Locale.getDefault(), "%.1f", playbackStats.videoBitrate / 1_000_000f)} Mbps")
-                                    append(" • Audio : ${playbackStats.activeAudioLabel}")
-                                },
-                                color = TextSecondary,
-                                fontSize = 12.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            if (!isPortraitMobile) {
+                                Text(
+                                    text = buildString {
+                                        if (subtitle.isNotBlank()) append("$subtitle • ")
+                                        append(playbackStats.videoCodec)
+                                        if (playbackStats.fps > 0) append(" @ ${playbackStats.fps.toInt()}fps")
+                                        if (playbackStats.videoBitrate > 0) append(" • ${String.format(Locale.getDefault(), "%.1f", playbackStats.videoBitrate / 1_000_000f)} Mbps")
+                                        append(" • Audio : ${playbackStats.activeAudioLabel}")
+                                    },
+                                    color = TextSecondary,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
 
@@ -846,16 +952,19 @@ fun NoosPlayerScreen(
                             delay(30_000)
                         }
                     }
-                    Text(
-                        text = currentTimeString.value,
-                        color = TextSecondary,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceDark.copy(alpha = 0.8f))
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    )
+                    // En portrait (mobile), l'horloge de la barre d'état Android est déjà visible : on évite le doublon
+                    if (!isPortraitMobile) {
+                        Text(
+                            text = currentTimeString.value,
+                            color = TextSecondary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(SurfaceDark.copy(alpha = 0.8f))
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                    }
                 }
 
                 // ==================== BARRE INFÉRIEURE CONTRÔLES & OPTIONS OSD ====================
@@ -915,7 +1024,7 @@ fun NoosPlayerScreen(
 
                     // Boutons de contrôle de lecture principaux (Play/Pause, Précédent, Suivant)
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(24.dp),
+                        horizontalArrangement = Arrangement.spacedBy(if (isPortraitMobile) 16.dp else 24.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (isLive && onPreviousChannel != null) {
@@ -931,7 +1040,7 @@ fun NoosPlayerScreen(
                                     .border(1.5.dp, if (isPrevFocused) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))
                                     .onFocusChanged { isPrevFocused = it.isFocused }
                             ) {
-                                Icon(imageVector = Icons.Default.SkipPrevious, contentDescription = "Chaîne précédente", tint = TextPrimary, modifier = Modifier.size(34.dp))
+                                Icon(imageVector = Icons.Default.SkipPrevious, contentDescription = "Chaîne précédente", tint = TextPrimary, modifier = Modifier.size(if (isPortraitMobile) 28.dp else 34.dp))
                             }
                         } else if (!isLive) {
                             var isReplayFocused by remember { mutableStateOf(false) }
@@ -947,7 +1056,7 @@ fun NoosPlayerScreen(
                                     .border(1.5.dp, if (isReplayFocused) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))
                                     .onFocusChanged { isReplayFocused = it.isFocused }
                             ) {
-                                Icon(imageVector = Icons.Default.Replay10, contentDescription = "Recul 10s", tint = TextPrimary, modifier = Modifier.size(34.dp))
+                                Icon(imageVector = Icons.Default.Replay10, contentDescription = "Recul 10s", tint = TextPrimary, modifier = Modifier.size(if (isPortraitMobile) 28.dp else 34.dp))
                             }
                         }
 
@@ -958,7 +1067,7 @@ fun NoosPlayerScreen(
                                 if (isPlaying) playerEngine.pause() else playerEngine.resume()
                             },
                             modifier = Modifier
-                                .size(56.dp)
+                                .size(if (isPortraitMobile) 48.dp else 56.dp)
                                 .clip(RoundedCornerShape(28.dp))
                                 .background(NoosCyan)
                                 .focusRequester(playPauseFocusRequester)
@@ -969,7 +1078,7 @@ fun NoosPlayerScreen(
                                 imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                 contentDescription = if (isPlaying) "Pause" else "Lecture",
                                 tint = Color.Black,
-                                modifier = Modifier.size(34.dp)
+                                modifier = Modifier.size(if (isPortraitMobile) 28.dp else 34.dp)
                             )
                         }
 
@@ -986,7 +1095,7 @@ fun NoosPlayerScreen(
                                     .border(1.5.dp, if (isNextFocused) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))
                                     .onFocusChanged { isNextFocused = it.isFocused }
                             ) {
-                                Icon(imageVector = Icons.Default.SkipNext, contentDescription = "Chaîne suivante", tint = TextPrimary, modifier = Modifier.size(34.dp))
+                                Icon(imageVector = Icons.Default.SkipNext, contentDescription = "Chaîne suivante", tint = TextPrimary, modifier = Modifier.size(if (isPortraitMobile) 28.dp else 34.dp))
                             }
                         } else if (!isLive) {
                             var isForwardFocused by remember { mutableStateOf(false) }
@@ -1002,16 +1111,68 @@ fun NoosPlayerScreen(
                                     .border(1.5.dp, if (isForwardFocused) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))
                                     .onFocusChanged { isForwardFocused = it.isFocused }
                             ) {
-                                Icon(imageVector = Icons.Default.Forward30, contentDescription = "Avance 30s", tint = TextPrimary, modifier = Modifier.size(34.dp))
+                                Icon(imageVector = Icons.Default.Forward30, contentDescription = "Avance 30s", tint = TextPrimary, modifier = Modifier.size(if (isPortraitMobile) 28.dp else 34.dp))
                             }
                         }
                     }
 
                     // ==================== OPTIONS DU LECTEUR EN BAS ====================
-                    Row(
+                    // En portrait (mobile), l'OSD 16:9 est trop court pour aligner 5 boutons avec le
+                    // transport : on les range dans le dialogue Réglages et on n'affiche qu'un bouton
+                    // "Paramètres" compact, pour garantir un placement propre de play/précédent/suivant.
+                    if (isPortraitMobile) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (onEnterPip != null) {
+                                var isPipFocused by remember { mutableStateOf(false) }
+                                IconButton(
+                                    onClick = { onEnterPip() },
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (isPipFocused) SurfaceDarkVariant else SurfaceDark.copy(alpha = 0.85f))
+                                        .border(1.5.dp, if (isPipFocused) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))
+                                        .onFocusChanged { isPipFocused = it.isFocused }
+                                ) {
+                                    Icon(imageVector = Icons.Default.PictureInPicture, contentDescription = "Mode PiP", tint = NoosCyan, modifier = Modifier.size(20.dp))
+                                }
+                            }
+                            var isSettingsFocused by remember { mutableStateOf(false) }
+                            Button(
+                                onClick = { showSettingsDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = SurfaceDark.copy(alpha = 0.85f)),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                                modifier = Modifier
+                                    .onFocusChanged { isSettingsFocused = it.isFocused }
+                                    .border(1.5.dp, if (isSettingsFocused) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))
+                            ) {
+                                Icon(imageVector = Icons.Default.Settings, contentDescription = "Réglages", tint = NoosCyan, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Réglages", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    } else {
+                        // FlowRow : sur écran étroit, les boutons se replient proprement
+                        FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // 0. Bouton Mode PiP (mobile uniquement, via le lecteur plein écran)
+                        if (isMobile && onEnterPip != null) {
+                            var isPipFocused by remember { mutableStateOf(false) }
+                            Button(
+                                onClick = { onEnterPip() },
+                                colors = ButtonDefaults.buttonColors(containerColor = if (isPipFocused) FocusGlow else SurfaceDark.copy(alpha = 0.85f)),
+                                border = if (isPipFocused) androidx.compose.foundation.BorderStroke(1.5.dp, NoosCyan) else null,
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.onFocusChanged { isPipFocused = it.isFocused }
+                            ) {
+                                Icon(imageVector = Icons.Default.PictureInPicture, contentDescription = "Mode PiP", tint = NoosCyan, modifier = Modifier.size(17.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("PiP", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+
                         // 1. Bouton Infos de lecture
                         var isInfoFocused by remember { mutableStateOf(false) }
                         Button(
@@ -1129,11 +1290,12 @@ fun NoosPlayerScreen(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
+                            }
                         }
+                    }
                     }
                 }
             }
-        }
 
         // ------------------ 7. DIALOGUE RÉGLAGES & INFORMATIONS (AUDIO, SUBS, VITESSE, QUALITÉ, STATS) ------------------
         if (showSettingsDialog) {
@@ -1163,7 +1325,8 @@ fun NoosPlayerScreen(
                 onDismiss = { showSettingsDialog = false }
             )
         }
-    }
+        } // fin Box lecteur
+    } // fin Box racine
 }
 
 /**

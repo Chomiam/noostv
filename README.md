@@ -214,7 +214,7 @@ adb shell am start -n io.noostv/.MainActivity
 ## 🔨 Compilation depuis les Sources
 
 ### Prérequis
-- **JDK 17** configuré (`JAVA_HOME`)
+- **JDK 21** configuré (`JAVA_HOME`)
 - **Android SDK** avec Build-Tools `34.0.0` et Platform `android-34`
 - **Gradle 8.2+** (géré via `./gradlew`)
 

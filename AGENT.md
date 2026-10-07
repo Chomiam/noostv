@@ -33,22 +33,22 @@ Ce document définit les règles impératives, les consignes d'architecture et l
 
 ## 🛠️ Environnement & Commandes de Build
 
-L'environnement de développement nécessite le **JDK 17** pour compiler correctement le projet Gradle / Kotlin.
+L'environnement de développement nécessite le **JDK 21** pour compiler correctement le projet Gradle / Kotlin.
 
 ### 1. Variables d'environnement requises
-Toujours exporter `JAVA_HOME` vers JDK 17 avant toute commande Gradle :
+Toujours exporter `JAVA_HOME` vers JDK 21 avant toute commande Gradle :
 ```bash
-export JAVA_HOME=/home/chomiam/.local/share/jdk-17 && export PATH=$JAVA_HOME/bin:$PATH
+export JAVA_HOME=/home/chomiam/.local/share/jdk-21 && export PATH=$JAVA_HOME/bin:$PATH
 ```
 
 ### 2. Compilation & Assemblage
 * **Compilation Kotlin (rapide pour valider la syntaxe et les types)** :
   ```bash
-  export JAVA_HOME=/home/chomiam/.local/share/jdk-17 && export PATH=$JAVA_HOME/bin:$PATH && ./gradlew compileDebugKotlin
+  export JAVA_HOME=/home/chomiam/.local/share/jdk-21 && export PATH=$JAVA_HOME/bin:$PATH && ./gradlew compileDebugKotlin
   ```
 * **Génération complète de l'APK Debug** :
   ```bash
-  export JAVA_HOME=/home/chomiam/.local/share/jdk-17 && export PATH=$JAVA_HOME/bin:$PATH && ./gradlew assembleDebug
+  export JAVA_HOME=/home/chomiam/.local/share/jdk-21 && export PATH=$JAVA_HOME/bin:$PATH && ./gradlew assembleDebug
   ```
   L'APK généré se situe dans : `app/build/outputs/apk/debug/app-debug.apk`
 
@@ -90,6 +90,33 @@ L'utilisateur dispose d'une Android TV connectée en Wi-Fi / ADB sur le réseau 
 ```bash
 adb -s 192.168.1.16:5555 logcat -d -s PlayerEngine,NoosPlayer,SoundEffectManager,AndroidRuntime | tail -n 50
 ```
+
+---
+
+## 🔐 SÉCURITÉ : AUCUN SECRET DANS L'APK
+
+> [!WARNING]
+> **Il est FORMELLEMENT INTERDIT d'embarquer un identifiant ou un secret dans l'APK compilé.**
+> Cela inclut les identifiants IPTV / Xtream Codes (serveur, `username`, `password`) ET tout token GitHub / PAT.
+
+### Règles impératives
+1. **Aucun `buildConfigField` ni `resValue` pour un secret** dans `app/build.gradle.kts`. Ne jamais injecter de token depuis `local.properties`, une variable d'environnement ou une ressource embarquée.
+2. **Aucun secret en dur** dans `gradle.properties`, `local.properties` versionné, `app/src/main/assets` ou `app/src/main/res`.
+3. **Ne jamais commiter de fichier contenant un secret** (`local.properties`, `.env`, keystores, PAT). Vérifier avant tout commit :
+   ```bash
+   git ls-files | grep -iE 'secret|token|pass|cred|\.env|keystore|\.jks'
+   ```
+4. **Les identifiants IPTV / Xtream sont chiffrés au runtime** (AES-256-GCM, Android Keystore via `CryptoManager` / `SessionManager`). Ils ne doivent jamais exister en clair dans le code ni dans l'APK.
+5. **Le jeton GitHub (OTA dépôts privés) est saisi par l'utilisateur dans les Réglages** (composable `GithubTokenField`, champ « JETON GITHUB (DÉPÔT PRIVÉ) » sur mobile et TV) et stocké chiffré via `SessionManager.githubToken`. L'OTA lit uniquement `sessionManager.githubToken`, jamais `BuildConfig`.
+
+### Vérification post-build
+Après chaque `assembleDebug`, contrôler l'absence de secrets dans l'APK :
+```bash
+cd /tmp && rm -rf apkx && mkdir apkx && cd apkx
+unzip -o /root/noostv/app/build/outputs/apk/debug/app-debug.apk 'classes*.dex'
+strings -n 6 classes*.dex | grep -iE 'ghp_|github_pat_|player_api|username=|password='
+```
+Le résultat ne doit contenir que des **formats d'URL** (`player_api`, `username=`, `password=`), **aucun** vrai secret ni host:port Xtream.
 
 ---
 
