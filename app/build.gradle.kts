@@ -1,7 +1,17 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use { this.load(it) }
+    }
+}
+val githubToken: String = localProperties.getProperty("github.token") ?: System.getenv("GITHUB_TOKEN") ?: ""
 
 android {
     namespace = "io.noostv"
@@ -13,6 +23,8 @@ android {
         targetSdk = 34
         versionCode = 7
         versionName = "1.2.1"
+
+        buildConfigField("String", "GITHUB_TOKEN", "\"$githubToken\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -49,7 +51,7 @@ fun TvCategoryFiltersContent(
     seriesCategories: List<Category>,
     sessionManager: SessionManager,
     focusRequester: FocusRequester? = null,
-    onNavigateLeftToSidebar: () -> Unit,
+    onNavigateLeftToSidebar: (() -> Unit)? = null,
     onFiltersUpdated: () -> Unit
 ) {
     var selectedType by remember { mutableStateOf(FilterCategoryType.MOVIES) }
@@ -78,7 +80,7 @@ fun TvCategoryFiltersContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -97,14 +99,19 @@ fun TvCategoryFiltersContent(
                     )
                 }
                 Text(
-                    text = "Sélectionnez les catégories à afficher dans la barre du haut (Profil : ${sessionManager.getActiveProfile().name})",
+                    text = "Profil actif : ${sessionManager.getActiveProfile().name}",
                     color = TextSecondary,
                     fontSize = 12.sp
                 )
             }
 
+            Spacer(modifier = Modifier.width(8.dp))
+
             // Boutons d'action globale
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Button(
                     onClick = {
                         if (selectedType == FilterCategoryType.MOVIES) {
@@ -119,11 +126,11 @@ fun TvCategoryFiltersContent(
                     colors = ButtonDefaults.buttonColors(containerColor = GlassSurfaceElevated),
                     shape = RoundedCornerShape(50),
                     border = androidx.compose.foundation.BorderStroke(1.dp, GlassBorder),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                 ) {
-                    Icon(Icons.Default.Visibility, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Tout afficher", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Icon(Icons.Default.Visibility, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(13.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Tout", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
 
                 Button(
@@ -140,18 +147,20 @@ fun TvCategoryFiltersContent(
                     colors = ButtonDefaults.buttonColors(containerColor = GlassSurfaceElevated),
                     shape = RoundedCornerShape(50),
                     border = androidx.compose.foundation.BorderStroke(1.dp, GlassBorder),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                 ) {
-                    Icon(Icons.Default.VisibilityOff, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Tout masquer", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Icon(Icons.Default.VisibilityOff, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(13.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Aucun", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
 
         // Sélecteur de type : Films VOD vs Séries VOD
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -204,7 +213,7 @@ fun TvCategoryFiltersContent(
             }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
+                columns = GridCells.Adaptive(minSize = 140.dp),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),

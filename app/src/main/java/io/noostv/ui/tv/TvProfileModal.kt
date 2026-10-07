@@ -6,6 +6,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -160,11 +163,13 @@ fun TvProfileModal(
         ) {
             Box(
                 modifier = Modifier
-                    .width(840.dp)
+                    .fillMaxWidth(0.94f)
+                    .widthIn(max = 840.dp)
                     .clip(RoundedCornerShape(28.dp))
                     .background(GlassCardGradient)
                     .border(1.5.dp, GlassBorderGradient, RoundedCornerShape(28.dp))
-                    .padding(28.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp)
             ) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -251,7 +256,9 @@ fun TvProfileModal(
                     if (!isFormOpen) {
                         // Grille horizontale des profils existants
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -260,7 +267,7 @@ fun TvProfileModal(
                                 var cardFocused by remember { mutableStateOf(false) }
 
                                 val cardModifier = Modifier
-                                    .weight(1f)
+                                    .widthIn(min = 180.dp, max = 360.dp)
                                     .then(if (index == 0) Modifier.focusRequester(firstCardRequester) else Modifier)
                                     .clip(RoundedCornerShape(20.dp))
                                     .background(
@@ -499,6 +506,9 @@ fun TvProfileModal(
 
                                 // Suggestions rapides de noms
                                 Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
@@ -527,6 +537,9 @@ fun TvProfileModal(
 
                                 // Sélecteur de logos / icônes de profil (style Netflix / Prime)
                                 Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
@@ -567,6 +580,9 @@ fun TvProfileModal(
 
                                 // Sélecteur de couleur
                                 Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {

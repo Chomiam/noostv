@@ -28,7 +28,8 @@ class SessionManager(context: Context) {
         private const val KEY_PLAYLIST_NAME = "playlist_name"
         private const val KEY_UPDATE_CHANNEL = "update_channel"
         private const val KEY_GITHUB_TOKEN = "github_token"
-        private const val DEFAULT_TOKEN = ""
+        private val DEFAULT_TOKEN: String
+            get() = runCatching { io.noostv.BuildConfig.GITHUB_TOKEN }.getOrDefault("")
 
         private const val KEY_PROFILES_JSON = "profiles_json"
         private const val KEY_ACTIVE_PROFILE_ID = "active_profile_id"
@@ -40,8 +41,12 @@ class SessionManager(context: Context) {
 
     var githubToken: String
         get() {
-            val raw = prefs.getString(KEY_GITHUB_TOKEN, DEFAULT_TOKEN) ?: DEFAULT_TOKEN
-            return CryptoManager.decrypt(raw)
+            val raw = prefs.getString(KEY_GITHUB_TOKEN, null)
+            if (raw != null) {
+                val decrypted = CryptoManager.decrypt(raw)
+                if (decrypted.isNotBlank()) return decrypted
+            }
+            return DEFAULT_TOKEN
         }
         set(value) {
             val enc = CryptoManager.encrypt(value)
