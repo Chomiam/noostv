@@ -169,6 +169,23 @@ class SessionManager(context: Context) {
         return newProfile
     }
 
+    fun updateProfile(id: String, name: String, colorHex: Long, icon: String): UserProfile? {
+        val current = getProfiles().toMutableList()
+        val index = current.indexOfFirst { it.id == id }
+        if (index != -1) {
+            val old = current[index]
+            val updated = old.copy(
+                name = name.ifBlank { old.name },
+                avatarColorHex = colorHex,
+                avatarIcon = icon
+            )
+            current[index] = updated
+            saveProfilesList(current)
+            return updated
+        }
+        return null
+    }
+
     fun deleteProfile(id: String): Boolean {
         val current = getProfiles().toMutableList()
         if (current.size <= 1) return false // Ne pas supprimer le dernier profil

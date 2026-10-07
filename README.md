@@ -10,7 +10,7 @@
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-3DDC84?logo=android&logoColor=white)](https://developer.android.com/)
 [![Compose TV](https://img.shields.io/badge/Jetpack%20Compose-Android%20TV%20%26%20M3-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![Media3](https://img.shields.io/badge/Media3%20ExoPlayer-1.2.1-FF6F00?logo=youtube&logoColor=white)](https://developer.android.com/media/media3)
-[![GitHub Releases](https://img.shields.io/badge/Release-v1.2.0%20%2F%20v1.2.0--beta.1-00E5FF)](https://github.com/Chomiam/noostv/releases)
+[![GitHub Releases](https://img.shields.io/badge/Release-v1.2.1%20%2F%20v1.2.1--beta.1-00E5FF)](https://github.com/Chomiam/noostv/releases)
 
 ---
 
@@ -85,21 +85,23 @@ Développée en **Kotlin** avec **Jetpack Compose for TV** et **Material 3**, No
   <p><em>Fiches de métadonnées enrichies pour les Films et Séries sur grand écran Android TV</em></p>
 </div>
 
-### 👤 4. Multi-Profils Utilisateur & Design Glassy Frosted Blur
-- **Bouton profil interactif dans l'en-tête** : pastille vitrée affichant l'avatar coloré et le nom du profil actif.
-- **Gestion complète multi-comptes** :
-  - Création de profils avec nom personnalisé et suggestions rapides (*Salon, Famille, Enfants, Chambre, Invité*).
-  - Palette d'avatars avec couleurs distinctives (Bleu, Cyan, Violet, Émeraude, Ambre, Rose, Corail).
-  - Bascule instantanée entre profils sans rechargement de compte.
+### 👤 4. Multi-Profils Utilisateur & Avatars Style Netflix / Prime
+- **Bouton profil interactif dans l'en-tête** : pastille vitrée affichant le logo/avatar thématique et le nom du profil actif.
+- **Gestion et personnalisation complète des profils** :
+  - Renommage et édition en un clic avec suggestions rapides (*Salon, Famille, Enfants, Chambre, Invité, Cinéma*).
+  - Sélecteur de logos / avatars style Netflix & Prime Video (10 icônes : Astronaute, Cinéphile, Gamer, Animaux, Flamme, Étoile, Enfant, Robot...).
+  - Palette de couleurs vives (Bleu, Cyan, Violet, Émeraude, Ambre, Rose, Corail).
+  - Bascule instantanée entre profils sans rechargement de compte ni déconnexion.
   - Suppression sécurisée des profils secondaires.
 - **Isolation stricte des données** : chaque membre du foyer dispose de sa propre liste de favoris et de sa propre sélection de catégories VOD visibles.
+- **Bouton Se déconnecter sécurisé** : remplace l'ancien libellé technique dans le bandeau supérieur avec dialogue de confirmation pour éviter les déconnexions accidentelles.
 - **Esthétique Glassy Blur** : arrières-plans subtilement floutés, surfaces en verre dépoli, reflets lumineux et bordures translucides inspirés des dernières interfaces Apple TV et Google TV.
 
 <div align="center">
   <img src="docs/screenshots/tv_glassy_profiles.png" alt="Gestion Multi-Profils Android TV" width="48%" />
   &nbsp;
-  <img src="docs/screenshots/tv_glassy_home.png" alt="Interface Glassy Blur Android TV" width="48%" />
-  <p><em>Modale de gestion multi-profils et interface au design Glassy Frosted Blur</em></p>
+  <img src="docs/screenshots/tv_profile_edit.png" alt="Édition et Logos de profils style Netflix / Prime" width="48%" />
+  <p><em>Modale de profils et personnalisation avancée des avatars et couleurs sur Android TV</em></p>
 </div>
 
 ---

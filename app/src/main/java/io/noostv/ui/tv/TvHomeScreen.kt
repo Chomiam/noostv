@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import io.noostv.R
@@ -222,7 +223,7 @@ fun TvHomeScreen(
                 onOpenProfileModal = { isProfileModalOpen = true },
                 onOpenSearch = onOpenSearch,
                 onOpenUpgrade = onOpenUpgrade,
-                onOpenLogin = onOpenLogin
+                onLogout = onLogout
             )
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -691,15 +692,18 @@ fun TvHeader(
     onOpenProfileModal: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenUpgrade: () -> Unit,
-    onOpenLogin: () -> Unit
+    onLogout: () -> Unit
 ) {
+    var showLogoutConfirm by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Logo Officiel NOOS + Badge Gradient TV
+        // Logo Officiel NOOS + Badge Gradient TV (décalé à droite pour ne pas coller au volet latéral)
         Row(
+            modifier = Modifier.padding(start = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -744,37 +748,71 @@ fun TvHeader(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             // Bouton Recherche Pilule Glassy
+            var isSearchFocused by remember { mutableStateOf(false) }
             Button(
                 onClick = onOpenSearch,
-                colors = ButtonDefaults.buttonColors(containerColor = GlassSurfaceElevated),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isSearchFocused) Color(0xFF283652) else GlassSurfaceElevated
+                ),
                 shape = RoundedCornerShape(50),
-                border = androidx.compose.foundation.BorderStroke(1.dp, GlassBorder),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                border = androidx.compose.foundation.BorderStroke(
+                    width = if (isSearchFocused) 2.dp else 1.dp,
+                    color = if (isSearchFocused) NoosCyan else GlassBorder
+                ),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                modifier = Modifier.onFocusChanged { isSearchFocused = it.isFocused }
             ) {
                 Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(15.dp))
                 Spacer(modifier = Modifier.width(6.dp))
                 Text("Recherche", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
 
-            // Bouton Identifiants IPTV Pilule Glassy
+            // Bouton Se déconnecter Pilule Glassy (remplace Identifiants IPTV)
+            var isLogoutFocused by remember { mutableStateOf(false) }
             Button(
-                onClick = onOpenLogin,
-                colors = ButtonDefaults.buttonColors(containerColor = GlassSurfaceElevated),
+                onClick = { showLogoutConfirm = true },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isLogoutFocused) RedLive.copy(alpha = 0.25f) else GlassSurfaceElevated
+                ),
                 shape = RoundedCornerShape(50),
-                border = androidx.compose.foundation.BorderStroke(1.dp, GlassBorder),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                border = androidx.compose.foundation.BorderStroke(
+                    width = if (isLogoutFocused) 2.dp else 1.dp,
+                    color = if (isLogoutFocused) RedLive else GlassBorder
+                ),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                modifier = Modifier.onFocusChanged { isLogoutFocused = it.isFocused }
             ) {
-                Icon(imageVector = Icons.Default.Dns, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(15.dp))
+                Icon(
+                    imageVector = Icons.Default.ExitToApp,
+                    contentDescription = null,
+                    tint = if (isLogoutFocused) RedLive else TextSecondary,
+                    modifier = Modifier.size(15.dp)
+                )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Identifiants IPTV", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = "Se déconnecter",
+                    color = if (isLogoutFocused) Color.White else TextPrimary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
 
-            // Bouton Profil multi-utilisateurs (remplace la pastille 4K HDR)
+            // Bouton Profil multi-utilisateurs
             TvProfileButton(
                 profile = activeProfile,
                 onClick = onOpenProfileModal
             )
         }
+    }
+
+    if (showLogoutConfirm) {
+        TvLogoutConfirmModal(
+            onConfirm = {
+                showLogoutConfirm = false
+                onLogout()
+            },
+            onDismiss = { showLogoutConfirm = false }
+        )
     }
 }
 
@@ -2336,3 +2374,94 @@ fun TvSeriesDetailModal(
         }
     }
 }
+
+/**
+ * Modale de confirmation de déconnexion au style Glassy Frosted Blur
+ */
+@Composable
+fun TvLogoutConfirmModal(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val confirmBtnRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        runCatching { confirmBtnRequester.requestFocus() }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Box(
+            modifier = Modifier
+                .width(420.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(GlassCardGradient)
+                .border(1.5.dp, GlassBorder, RoundedCornerShape(24.dp))
+                .padding(24.dp)
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .clip(CircleShape)
+                        .background(RedLive.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ExitToApp,
+                        contentDescription = null,
+                        tint = RedLive,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+
+                Text(
+                    text = "Se déconnecter ?",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = "Êtes-vous sûr de vouloir vous déconnecter de votre compte IPTV ?",
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    var cancelFocused by remember { mutableStateOf(false) }
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .weight(1f)
+                            .onFocusChanged { cancelFocused = it.isFocused }
+                            .border(if (cancelFocused) 1.5.dp else 0.dp, NoosCyan, RoundedCornerShape(50))
+                    ) {
+                        Text("Annuler", color = if (cancelFocused) Color.White else TextSecondary)
+                    }
+
+                    var confirmFocused by remember { mutableStateOf(false) }
+                    Button(
+                        onClick = onConfirm,
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(confirmBtnRequester)
+                            .onFocusChanged { confirmFocused = it.isFocused },
+                        colors = ButtonDefaults.buttonColors(containerColor = RedLive),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Text("Déconnexion", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+

@@ -7,10 +7,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -22,7 +22,6 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -39,7 +38,8 @@ import io.noostv.data.model.UserProfile
 import io.noostv.ui.theme.*
 
 /**
- * Bouton Profil moderne glassy pour le header supérieur (remplace la pastille 4K HDR).
+ * Bouton Profil moderne glassy pour le header supérieur (remplace l'ancienne pastille 4K HDR).
+ * Affiche l'icône de profil Netflix/Prime et la couleur personnalisée.
  */
 @Composable
 fun TvProfileButton(
@@ -72,19 +72,19 @@ fun TvProfileButton(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Pastille Avatar avec couleur du profil
+            // Pastille Avatar avec couleur et icône du profil (style Netflix / Prime)
             Box(
                 modifier = Modifier
-                    .size(22.dp)
+                    .size(24.dp)
                     .clip(CircleShape)
                     .background(Color(profile.avatarColorHex)),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = profile.name.take(1).uppercase(),
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
+                Icon(
+                    imageVector = UserProfile.getAvatarIconVector(profile.avatarIcon),
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(15.dp)
                 )
             }
 
@@ -106,7 +106,8 @@ fun TvProfileButton(
 }
 
 /**
- * Modale de gestion multi-profils au design Glassy Frosted Blur (style Apple / Google TV).
+ * Modale de gestion multi-profils au design Glassy Frosted Blur (style Apple / Google TV / Netflix).
+ * Permet de basculer, créer, renommer et personnaliser les profils avec couleurs et logos.
  */
 @Composable
 fun TvProfileModal(
@@ -119,9 +120,13 @@ fun TvProfileModal(
     var profiles by remember { mutableStateOf(sessionManager.getProfiles()) }
     var activeProfileId by remember { mutableStateOf(sessionManager.getActiveProfileId()) }
 
-    var isCreatingProfile by remember { mutableStateOf(false) }
-    var newProfileName by remember { mutableStateOf("") }
+    // Mode formulaire : null = liste de profils, non-null = création ou édition
+    var isFormOpen by remember { mutableStateOf(false) }
+    var editingProfile by remember { mutableStateOf<UserProfile?>(null) }
+
+    var profileNameInput by remember { mutableStateOf("") }
     var selectedColorHex by remember { mutableStateOf(UserProfile.AVATAR_COLORS.first()) }
+    var selectedIconId by remember { mutableStateOf("Person") }
 
     val closeFocusRequester = remember { FocusRequester() }
     val firstCardRequester = remember { FocusRequester() }
@@ -132,8 +137,8 @@ fun TvProfileModal(
         runCatching { firstCardRequester.requestFocus() }
     }
 
-    LaunchedEffect(isCreatingProfile) {
-        if (isCreatingProfile) {
+    LaunchedEffect(isFormOpen) {
+        if (isFormOpen) {
             runCatching { nameFieldRequester.requestFocus() }
         } else {
             runCatching { createBtnRequester.requestFocus() }
@@ -142,7 +147,10 @@ fun TvProfileModal(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnClickOutside = false
+        )
     ) {
         Box(
             modifier = Modifier
@@ -152,7 +160,7 @@ fun TvProfileModal(
         ) {
             Box(
                 modifier = Modifier
-                    .width(760.dp)
+                    .width(840.dp)
                     .clip(RoundedCornerShape(28.dp))
                     .background(GlassCardGradient)
                     .border(1.5.dp, GlassBorderGradient, RoundedCornerShape(28.dp))
@@ -161,7 +169,7 @@ fun TvProfileModal(
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     // Header Modale
                     Row(
@@ -175,13 +183,17 @@ fun TvProfileModal(
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(38.dp)
                                     .clip(CircleShape)
                                     .background(NoosGradient),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    imageVector = if (isCreatingProfile) Icons.Default.PersonAdd else Icons.Default.Group,
+                                    imageVector = when {
+                                        editingProfile != null -> Icons.Default.Edit
+                                        isFormOpen -> Icons.Default.PersonAdd
+                                        else -> Icons.Default.Group
+                                    },
                                     contentDescription = null,
                                     tint = Color.White,
                                     modifier = Modifier.size(20.dp)
@@ -189,13 +201,21 @@ fun TvProfileModal(
                             }
                             Column {
                                 Text(
-                                    text = if (isCreatingProfile) "Créer un nouveau profil" else "Profils Utilisateur",
+                                    text = when {
+                                        editingProfile != null -> "Modifier le profil"
+                                        isFormOpen -> "Créer un nouveau profil"
+                                        else -> "Profils Utilisateur"
+                                    },
                                     color = Color.White,
                                     fontSize = 20.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = if (isCreatingProfile) "Configurez le nom et la couleur pour ce profil" else "Chaque profil conserve ses propres favoris et filtres de catégories",
+                                    text = when {
+                                        editingProfile != null -> "Renommez le profil et personnalisez son logo & couleur"
+                                        isFormOpen -> "Configurez le nom, la couleur et le logo style Netflix / Prime"
+                                        else -> "Chaque profil conserve ses propres favoris et filtres de catégories"
+                                    },
                                     color = TextSecondary,
                                     fontSize = 12.sp
                                 )
@@ -204,13 +224,18 @@ fun TvProfileModal(
 
                         IconButton(
                             onClick = {
-                                if (isCreatingProfile) isCreatingProfile = false else onDismiss()
+                                if (isFormOpen) {
+                                    isFormOpen = false
+                                    editingProfile = null
+                                } else {
+                                    onDismiss()
+                                }
                             },
                             modifier = Modifier
                                 .focusRequester(closeFocusRequester)
                                 .onPreviewKeyEvent { keyEvent ->
                                     if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.DirectionDown) {
-                                        if (isCreatingProfile) nameFieldRequester.requestFocus() else firstCardRequester.requestFocus()
+                                        if (isFormOpen) nameFieldRequester.requestFocus() else firstCardRequester.requestFocus()
                                         true
                                     } else false
                                 }
@@ -223,7 +248,7 @@ fun TvProfileModal(
 
                     HorizontalDivider(color = GlassBorder, thickness = 1.dp)
 
-                    if (!isCreatingProfile) {
+                    if (!isFormOpen) {
                         // Grille horizontale des profils existants
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -234,7 +259,7 @@ fun TvProfileModal(
                                 val isActive = profile.id == activeProfileId
                                 var cardFocused by remember { mutableStateOf(false) }
 
-                                var cardMod = Modifier
+                                val cardModifier = Modifier
                                     .weight(1f)
                                     .then(if (index == 0) Modifier.focusRequester(firstCardRequester) else Modifier)
                                     .clip(RoundedCornerShape(20.dp))
@@ -267,83 +292,136 @@ fun TvProfileModal(
                                     }
                                     .onFocusChanged { cardFocused = it.isFocused }
                                     .focusable()
-                                    .clickable {
-                                        sessionManager.setActiveProfileId(profile.id)
-                                        activeProfileId = profile.id
-                                        onProfileChanged(profile)
-                                        onDismiss()
-                                    }
                                     .padding(16.dp)
 
                                 Box(
-                                    modifier = cardMod,
+                                    modifier = cardModifier,
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
-                                        // Avatar
-                                        Box(
+                                        // Section Clic pour Basculer sur le profil
+                                        Column(
                                             modifier = Modifier
-                                                .size(54.dp)
-                                                .clip(CircleShape)
-                                                .background(Color(profile.avatarColorHex))
-                                                .border(2.dp, Color.White.copy(alpha = 0.4f), CircleShape),
-                                            contentAlignment = Alignment.Center
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .clickable {
+                                                    sessionManager.setActiveProfileId(profile.id)
+                                                    activeProfileId = profile.id
+                                                    onProfileChanged(profile)
+                                                    onDismiss()
+                                                },
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
-                                            Text(
-                                                text = profile.name.take(1).uppercase(),
-                                                color = Color.White,
-                                                fontSize = 22.sp,
-                                                fontWeight = FontWeight.Black
-                                            )
-                                        }
-
-                                        Text(
-                                            text = profile.name,
-                                            color = if (cardFocused) Color.White else TextPrimary,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-
-                                        if (isActive) {
+                                            // Avatar avec icône style Netflix / Prime Video
                                             Box(
                                                 modifier = Modifier
-                                                    .clip(RoundedCornerShape(50))
-                                                    .background(NoosBlue.copy(alpha = 0.25f))
-                                                    .padding(horizontal = 8.dp, vertical = 2.dp)
-                                            ) {
-                                                Text(
-                                                    text = "ACTIF",
-                                                    color = NoosCyan,
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Black
-                                                )
-                                            }
-                                        } else {
-                                            Text(
-                                                text = "Basculer",
-                                                color = TextSecondary,
-                                                fontSize = 11.sp
-                                            )
-                                        }
-
-                                        // Suppression si plus d'un profil
-                                        if (profiles.size > 1 && !isActive) {
-                                            IconButton(
-                                                onClick = {
-                                                    sessionManager.deleteProfile(profile.id)
-                                                    profiles = sessionManager.getProfiles()
-                                                },
-                                                modifier = Modifier.size(24.dp)
+                                                    .size(56.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(profile.avatarColorHex))
+                                                    .border(2.dp, Color.White.copy(alpha = 0.5f), CircleShape),
+                                                contentAlignment = Alignment.Center
                                             ) {
                                                 Icon(
-                                                    imageVector = Icons.Default.Delete,
-                                                    contentDescription = "Supprimer le profil",
-                                                    tint = RedLive.copy(alpha = 0.7f),
-                                                    modifier = Modifier.size(16.dp)
+                                                    imageVector = UserProfile.getAvatarIconVector(profile.avatarIcon),
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(32.dp)
                                                 )
+                                            }
+
+                                            Text(
+                                                text = profile.name,
+                                                color = if (cardFocused) Color.White else TextPrimary,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+
+                                            if (isActive) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(50))
+                                                        .background(NoosBlue.copy(alpha = 0.25f))
+                                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "ACTIF",
+                                                        color = NoosCyan,
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Black
+                                                    )
+                                                }
+                                            } else {
+                                                Text(
+                                                    text = "Basculer",
+                                                    color = TextSecondary,
+                                                    fontSize = 11.sp
+                                                )
+                                            }
+                                        }
+
+                                        // Actions sur le profil : Renommer / Éditer et Supprimer
+                                        Row(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(50))
+                                                .background(GlassPill)
+                                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            // Bouton Renommer / Modifier avec libellé explicite
+                                            var isEditBtnFocused by remember { mutableStateOf(false) }
+                                            Button(
+                                                onClick = {
+                                                    editingProfile = profile
+                                                    profileNameInput = profile.name
+                                                    selectedColorHex = profile.avatarColorHex
+                                                    selectedIconId = profile.avatarIcon
+                                                    isFormOpen = true
+                                                },
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = if (isEditBtnFocused) NoosCyan else Color(0xFF283652)
+                                                ),
+                                                shape = RoundedCornerShape(50),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                modifier = Modifier
+                                                    .onFocusChanged { isEditBtnFocused = it.isFocused }
+                                                    .focusable()
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Edit,
+                                                    contentDescription = null,
+                                                    tint = if (isEditBtnFocused) Color.Black else NoosCyan,
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = "Modifier",
+                                                    color = if (isEditBtnFocused) Color.Black else Color.White,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+
+                                            // Bouton Supprimer si plus d'un profil et profil non actif
+                                            if (profiles.size > 1 && !isActive) {
+                                                IconButton(
+                                                    onClick = {
+                                                        sessionManager.deleteProfile(profile.id)
+                                                        profiles = sessionManager.getProfiles()
+                                                    },
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Delete,
+                                                        contentDescription = "Supprimer le profil",
+                                                        tint = RedLive.copy(alpha = 0.85f),
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -351,10 +429,16 @@ fun TvProfileModal(
                             }
                         }
 
-                        // Section Création de Nouveau Profil
+                        // Bouton Créer un Nouveau Profil
                         var isBtnFocused by remember { mutableStateOf(false) }
                         Button(
-                            onClick = { isCreatingProfile = true },
+                            onClick = {
+                                editingProfile = null
+                                profileNameInput = ""
+                                selectedColorHex = UserProfile.AVATAR_COLORS[profiles.size % UserProfile.AVATAR_COLORS.size]
+                                selectedIconId = "Person"
+                                isFormOpen = true
+                            },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (isBtnFocused) Color(0xFF283652) else GlassSurfaceElevated
                             ),
@@ -379,7 +463,7 @@ fun TvProfileModal(
                             Text("Créer un nouveau profil", color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     } else {
-                        // Formulaire de création Glassy
+                        // Formulaire de Création / Édition Glassy
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -390,16 +474,16 @@ fun TvProfileModal(
                         ) {
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text(
-                                    text = "Nouveau profil",
+                                    text = if (editingProfile != null) "Renommer le profil" else "Nouveau profil",
                                     color = Color.White,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold
                                 )
 
                                 OutlinedTextField(
-                                    value = newProfileName,
-                                    onValueChange = { newProfileName = it },
-                                    placeholder = { Text("Ex: Enfants, Salon, Cinéma...", color = TextTertiary) },
+                                    value = profileNameInput,
+                                    onValueChange = { profileNameInput = it },
+                                    placeholder = { Text("Ex: Salon, Cinéma, Enfants...", color = TextTertiary) },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .focusRequester(nameFieldRequester),
@@ -413,13 +497,13 @@ fun TvProfileModal(
                                     )
                                 )
 
-                                // Presets de noms rapides
+                                // Suggestions rapides de noms
                                 Row(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text("Suggestions :", color = TextSecondary, fontSize = 11.sp)
-                                    listOf("Enfants", "Famille", "Chambre", "Invité").forEach { preset ->
+                                    listOf("Enfants", "Famille", "Chambre", "Invité", "Cinéma").forEach { preset ->
                                         var isSuggFocused by remember { mutableStateOf(false) }
                                         Box(
                                             modifier = Modifier
@@ -428,7 +512,7 @@ fun TvProfileModal(
                                                 .border(1.dp, if (isSuggFocused) NoosCyan else GlassBorder, RoundedCornerShape(50))
                                                 .onFocusChanged { isSuggFocused = it.isFocused }
                                                 .focusable()
-                                                .clickable { newProfileName = preset }
+                                                .clickable { profileNameInput = preset }
                                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                                         ) {
                                             Text(
@@ -436,6 +520,46 @@ fun TvProfileModal(
                                                 color = if (isSuggFocused) Color.White else NoosCyan,
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Sélecteur de logos / icônes de profil (style Netflix / Prime)
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Logo :", color = TextSecondary, fontSize = 11.sp)
+                                    UserProfile.AVATAR_ICONS.forEach { opt ->
+                                        val isChosen = opt.id == selectedIconId
+                                        var isIconFocused by remember { mutableStateOf(false) }
+                                        Box(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(
+                                                    when {
+                                                        isChosen -> Color(selectedColorHex).copy(alpha = 0.45f)
+                                                        isIconFocused -> Color(0xFF283652)
+                                                        else -> GlassPill
+                                                    }
+                                                )
+                                                .border(
+                                                    width = if (isIconFocused) 2.5.dp else if (isChosen) 2.dp else 1.dp,
+                                                    color = if (isIconFocused) FocusGlow else if (isChosen) Color(selectedColorHex) else GlassBorder,
+                                                    shape = RoundedCornerShape(10.dp)
+                                                )
+                                                .onFocusChanged { isIconFocused = it.isFocused }
+                                                .focusable()
+                                                .clickable { selectedIconId = opt.id },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = opt.icon,
+                                                contentDescription = opt.name,
+                                                tint = if (isChosen) Color.White else TextSecondary,
+                                                modifier = Modifier.size(19.dp)
                                             )
                                         }
                                     }
@@ -474,7 +598,10 @@ fun TvProfileModal(
                                 ) {
                                     var isCancelFocused by remember { mutableStateOf(false) }
                                     TextButton(
-                                        onClick = { isCreatingProfile = false },
+                                        onClick = {
+                                            isFormOpen = false
+                                            editingProfile = null
+                                        },
                                         modifier = Modifier
                                             .onFocusChanged { isCancelFocused = it.isFocused }
                                             .border(
@@ -489,19 +616,37 @@ fun TvProfileModal(
                                     var isValFocused by remember { mutableStateOf(false) }
                                     Button(
                                         onClick = {
-                                            if (newProfileName.isNotBlank()) {
-                                                val created = sessionManager.createProfile(
-                                                    name = newProfileName.trim(),
-                                                    colorHex = selectedColorHex
-                                                )
-                                                profiles = sessionManager.getProfiles()
-                                                activeProfileId = created.id
-                                                onProfileChanged(created)
-                                                isCreatingProfile = false
-                                                onDismiss()
+                                            if (profileNameInput.isNotBlank()) {
+                                                if (editingProfile != null) {
+                                                    // Modification d'un profil existant
+                                                    val updated = sessionManager.updateProfile(
+                                                        id = editingProfile!!.id,
+                                                        name = profileNameInput.trim(),
+                                                        colorHex = selectedColorHex,
+                                                        icon = selectedIconId
+                                                    )
+                                                    profiles = sessionManager.getProfiles()
+                                                    if (updated != null && updated.id == activeProfileId) {
+                                                        onProfileChanged(updated)
+                                                    }
+                                                    isFormOpen = false
+                                                    editingProfile = null
+                                                } else {
+                                                    // Création d'un nouveau profil
+                                                    val created = sessionManager.createProfile(
+                                                        name = profileNameInput.trim(),
+                                                        colorHex = selectedColorHex,
+                                                        icon = selectedIconId
+                                                    )
+                                                    profiles = sessionManager.getProfiles()
+                                                    activeProfileId = created.id
+                                                    onProfileChanged(created)
+                                                    isFormOpen = false
+                                                    onDismiss()
+                                                }
                                             }
                                         },
-                                        enabled = newProfileName.isNotBlank(),
+                                        enabled = profileNameInput.isNotBlank(),
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = if (isValFocused) Color(0xFF1D72E8) else NoosBlue
                                         ),
@@ -514,7 +659,11 @@ fun TvProfileModal(
                                             ),
                                         shape = RoundedCornerShape(50)
                                     ) {
-                                        Text("Valider et Activer", color = Color.White, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            text = if (editingProfile != null) "Enregistrer" else "Valider et Activer",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                     }
                                 }
                             }
