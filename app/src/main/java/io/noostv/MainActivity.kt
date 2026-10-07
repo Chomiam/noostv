@@ -349,9 +349,20 @@ class MainActivity : ComponentActivity() {
                                 isSeriesLoading = isSeriesLoading,
                                 sessionManager = sessionManager,
                                 entitlementManager = entitlementManager,
+                                playerEngine = playerEngine,
                                 onSelectChannel = { startPlayChannel(it) },
                                 onSelectMovie = { startPlayMovie(it) },
                                 onSelectSeries = { startPlaySeries(it) },
+                                onLoadChannelEpg = { chan ->
+                                    coroutineScope.launch {
+                                        repository.loadChannelEpg(
+                                            sessionManager.serverUrl,
+                                            sessionManager.username,
+                                            sessionManager.password,
+                                            chan.id
+                                        )
+                                    }
+                                },
                                 onLoadChannelsBatch = { chs ->
                                     coroutineScope.launch {
                                         repository.loadEpgForChannels(

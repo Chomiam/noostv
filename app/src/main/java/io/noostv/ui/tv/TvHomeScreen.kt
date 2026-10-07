@@ -191,6 +191,7 @@ fun TvHomeScreen(
             TvNavTab.SETTINGS to FocusRequester()
         )
     }
+    val tvChannelListFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
         sidebarFocusRequesters[TvNavTab.TV]?.requestFocus()
@@ -279,14 +280,47 @@ fun TvHomeScreen(
             when (selectedTab) {
                 // ==================== 1. ONGLET TV (DIRECT) ====================
                 TvNavTab.TV -> {
-                    if (previewChannel != null && playerEngine != null) {
+                    val liveCatNames = remember(categories, channels, favoriteIds) {
+                        val list = mutableListOf("Toutes")
+                        if (favoriteIds.isNotEmpty()) {
+                            list.add("⭐ Favoris (${favoriteIds.size})")
+                        }
+                        list.addAll(if (categories.isNotEmpty()) categories.map { it.name } else channels.map { it.categoryName }.distinct())
+                        list
+                    }
+
+                    TvCategoryChipsRow(
+                        categories = liveCatNames,
+                        selectedCategory = selectedLiveCategory,
+                        focusRequester = contentFocusRequesters[TvNavTab.TV],
+                        onNavigateLeft = { sidebarFocusRequesters[TvNavTab.TV]?.requestFocus() },
+                        onNavigateDown = {
+                            runCatching { tvChannelListFocusRequester.requestFocus() }
+                        },
+                        onSelectCategory = { selectedLiveCategory = it }
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (filteredChannels.isEmpty()) {
+                        TvEmptyState(message = "Aucune chaîne disponible dans cette catégorie")
+                    } else if (playerEngine != null) {
+                        val activePreview = if (filteredChannels.any { it.id == previewChannel?.id }) {
+                            previewChannel!!
+                        } else {
+                            filteredChannels.first()
+                        }
+
                         TvChannelPreviewContent(
                             channels = filteredChannels,
-                            selectedChannel = previewChannel!!,
+                            selectedChannel = activePreview,
                             epgPrograms = epgPrograms,
                             playerEngine = playerEngine,
                             sessionManager = sessionManager,
-                            contentFocusRequester = contentFocusRequesters[TvNavTab.TV]!!,
+                            contentFocusRequester = tvChannelListFocusRequester,
+                            onNavigateUpFromFirstItem = {
+                                runCatching { contentFocusRequesters[TvNavTab.TV]?.requestFocus() }
+                            },
                             onChannelChanged = { newChan ->
                                 previewChannel = newChan
                                 onLoadChannelEpg?.invoke(newChan)
@@ -294,11 +328,7 @@ fun TvHomeScreen(
                             onOpenFullscreen = { chan ->
                                 onSelectChannel(chan)
                             },
-                            onClosePreview = {
-                                playerEngine.stop()
-                                previewChannel = null
-                                onClearCurrentChannel?.invoke()
-                            },
+                            onClosePreview = null,
                             onNavigateLeftToSidebar = {
                                 runCatching { sidebarFocusRequesters[TvNavTab.TV]?.requestFocus() }
                             },
@@ -306,55 +336,6 @@ fun TvHomeScreen(
                                 favoriteIds = sessionManager.getFavoriteChannelIds()
                             }
                         )
-                    } else {
-                        val liveCatNames = remember(categories, channels, favoriteIds) {
-                            val list = mutableListOf("Toutes")
-                            if (favoriteIds.isNotEmpty()) {
-                                list.add("⭐ Favoris (${favoriteIds.size})")
-                            }
-                            list.addAll(if (categories.isNotEmpty()) categories.map { it.name } else channels.map { it.categoryName }.distinct())
-                            list
-                        }
-
-                        TvCategoryChipsRow(
-                            categories = liveCatNames,
-                            selectedCategory = selectedLiveCategory,
-                            focusRequester = contentFocusRequesters[TvNavTab.TV],
-                            onNavigateLeft = { sidebarFocusRequesters[TvNavTab.TV]?.requestFocus() },
-                            onSelectCategory = { selectedLiveCategory = it }
-                        )
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        if (filteredChannels.isEmpty()) {
-                            TvEmptyState(message = "Aucune chaîne disponible dans cette catégorie")
-                        } else {
-                            LazyVerticalGrid(
-                                columns = GridCells.Fixed(4),
-                                modifier = Modifier.fillMaxSize(),
-                                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                                verticalArrangement = Arrangement.spacedBy(14.dp),
-                                contentPadding = PaddingValues(bottom = 32.dp)
-                            ) {
-                                items(filteredChannels.size) { index ->
-                                    val channel = filteredChannels[index]
-                                    val currentProg = EpgProvider.getCurrentProgram(channel, epgPrograms)
-
-                                    TvChannelGridCard(
-                                        channel = channel,
-                                        currentProgram = currentProg,
-                                        isFavorite = favoriteIds.contains(channel.id),
-                                        onNavigateLeft = if (index % 4 == 0) {
-                                            { sidebarFocusRequesters[TvNavTab.TV]?.requestFocus() }
-                                        } else null,
-                                        onClick = {
-                                            previewChannel = channel
-                                            onLoadChannelEpg?.invoke(channel)
-                                        }
-                                    )
-                                }
-                            }
-                        }
                     }
                 }
 
@@ -883,6 +864,7 @@ fun TvCategoryChipsRow(
     selectedCategory: String,
     focusRequester: FocusRequester? = null,
     onNavigateLeft: (() -> Unit)? = null,
+    onNavigateDown: (() -> Unit)? = null,
     onSelectCategory: (String) -> Unit
 ) {
     Row(
@@ -909,9 +891,22 @@ fun TvCategoryChipsRow(
                     .focusable()
                     .clickable { onSelectCategory(category) }
                     .onPreviewKeyEvent { keyEvent ->
-                        if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.DirectionLeft && category == categories.firstOrNull()) {
-                            onNavigateLeft?.invoke()
-                            true
+                        if (keyEvent.type == KeyEventType.KeyDown) {
+                            when (keyEvent.key) {
+                                Key.DirectionLeft -> {
+                                    if (category == categories.firstOrNull()) {
+                                        onNavigateLeft?.invoke()
+                                        true
+                                    } else false
+                                }
+                                Key.DirectionDown -> {
+                                    if (onNavigateDown != null) {
+                                        onNavigateDown()
+                                        true
+                                    } else false
+                                }
+                                else -> false
+                            }
                         } else false
                     }
                     .background(

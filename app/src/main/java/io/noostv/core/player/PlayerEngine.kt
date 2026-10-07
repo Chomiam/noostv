@@ -74,10 +74,10 @@ class PlayerEngine(
     // LoadControl optimisé pour zapping IPTV ultra-rapide et streaming VOD résilient
     private val defaultLoadControl = DefaultLoadControl.Builder()
         .setBufferDurationsMs(
-            20_000, // minBufferMs
-            50_000, // maxBufferMs
-            1_500,  // bufferForPlaybackMs
-            3_000   // bufferForPlaybackAfterRebufferMs
+            15_000, // minBufferMs
+            45_000, // maxBufferMs
+            1_000,  // bufferForPlaybackMs (zapping ultra-rapide)
+            2_000   // bufferForPlaybackAfterRebufferMs
         )
         .setPrioritizeTimeOverSizeThresholds(true)
         .build()
@@ -164,13 +164,46 @@ class PlayerEngine(
     }
 
     /**
+     * Active ou désactive le mode prévisualisation.
+     * En mode prévisualisation :
+     * - Limite la résolution vidéo maximale à 720p (1280x720) pour alléger le décodage et la bande passante
+     * - Limite le débit maximal à 2.5 Mbps
+     * - Désactive le forçage du débit maximal
+     * Cela élimine les saccades/gels et accélère instantanément l'affichage du flux lors du zapping.
+     */
+    fun setPreviewMode(enabled: Boolean) {
+        val builder = trackSelector.buildUponParameters()
+        if (enabled) {
+            builder
+                .setMaxVideoSize(1280, 720)
+                .setMaxVideoBitrate(2_500_000)
+                .setForceHighestSupportedBitrate(false)
+                .setExceedVideoConstraintsIfNecessary(true)
+        } else {
+            builder
+                .clearVideoSizeConstraints()
+                .setMaxVideoBitrate(Int.MAX_VALUE)
+                .setForceHighestSupportedBitrate(true)
+        }
+        trackSelector.setParameters(builder)
+    }
+
+    /**
      * Lance la lecture d'un flux IPTV ou VOD avec vérification de l'accès 4K HDR SaaS
      */
-    fun playStream(url: String, title: String, isHdrStream: Boolean = false, is4K: Boolean = false): Boolean {
-        // Garde-fou SaaS : vérifie si l'utilisateur a droit aux flux 4K / HDR
-        if ((isHdrStream || is4K) && !entitlementManager.isFeatureAllowed(Feature.HDR_4K_STREAMING)) {
+    fun playStream(
+        url: String,
+        title: String,
+        isHdrStream: Boolean = false,
+        is4K: Boolean = false,
+        isPreview: Boolean = false
+    ): Boolean {
+        // Garde-fou SaaS : vérifie si l'utilisateur a droit aux flux 4K / HDR (hors prévisualisation bridée à 720p)
+        if (!isPreview && (isHdrStream || is4K) && !entitlementManager.isFeatureAllowed(Feature.HDR_4K_STREAMING)) {
             return false // Requiert la mise à niveau vers NoosTV Premium
         }
+
+        setPreviewMode(isPreview)
 
         _playerError.value = null
         currentStreamUrl = url
