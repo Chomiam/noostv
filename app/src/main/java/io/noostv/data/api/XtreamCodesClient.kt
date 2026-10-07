@@ -566,7 +566,7 @@ class XtreamCodesClient(
     }
 
     /**
-     * Récupère l'EPG court d'une chaîne avec décodage Base64
+     * Récupère l'EPG court d'une chaîne avec décodage Base64, support des dates et fallback get_simple_data_table
      */
     suspend fun getShortEpg(
         serverUrl: String,
@@ -575,25 +575,52 @@ class XtreamCodesClient(
         streamId: String
     ): Result<List<EpgProgram>> = withContext(Dispatchers.IO) {
         val cleanServer = serverUrl.trimEnd('/')
-        val url = "$cleanServer/player_api.php?username=$username&password=$password&action=get_short_epg&stream_id=$streamId"
+        // 1. Essai avec get_short_epg
+        val shortEpgResult = executeEpgRequest("$cleanServer/player_api.php?username=$username&password=$password&action=get_short_epg&stream_id=$streamId", streamId)
+        if (shortEpgResult.isSuccess && shortEpgResult.getOrNull()?.isNotEmpty() == true) {
+            return@withContext shortEpgResult
+        }
 
-        try {
+        // 2. Repli vers get_simple_data_table si get_short_epg est vide
+        val simpleTableResult = executeEpgRequest("$cleanServer/player_api.php?username=$username&password=$password&action=get_simple_data_table&stream_id=$streamId", streamId)
+        if (simpleTableResult.isSuccess && simpleTableResult.getOrNull()?.isNotEmpty() == true) {
+            return@withContext simpleTableResult
+        }
+
+        shortEpgResult
+    }
+
+    private fun executeEpgRequest(url: String, streamId: String): Result<List<EpgProgram>> {
+        return try {
             val request = Request.Builder().url(url).build()
             val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext Result.failure(Exception("Réponse vide"))
+            val body = response.body?.string() ?: return Result.failure(Exception("Réponse vide"))
             val type = object : TypeToken<Map<String, Any>>() {}.type
-            val jsonMap: Map<String, Any> = gson.fromJson(body, type)
+            val jsonMap: Map<String, Any> = runCatching { gson.fromJson<Map<String, Any>>(body, type) }.getOrNull()
+                ?: return Result.success(emptyList())
 
             @Suppress("UNCHECKED_CAST")
-            val listings = jsonMap["epg_listings"] as? List<Map<String, Any>> ?: return@withContext Result.success(emptyList())
+            val listings = jsonMap["epg_listings"] as? List<Map<String, Any>> ?: return Result.success(emptyList())
 
+            val now = System.currentTimeMillis()
             val programs = listings.mapNotNull { item ->
                 val rawTitle = item["title"]?.toString() ?: return@mapNotNull null
                 val rawDesc = item["description"]?.toString()
-                val startTs = (item["start_timestamp"]?.toString()?.toLongOrNull()) ?: 0L
-                val stopTs = (item["stop_timestamp"]?.toString()?.toLongOrNull()) ?: 0L
+                var startMs = parseEpgEpochMs(item, "start_timestamp", "start")
+                var stopMs = parseEpgEpochMs(item, "stop_timestamp", "end").takeIf { it > 0 }
+                    ?: parseEpgEpochMs(item, "stop_timestamp", "stop")
+                val isNowPlaying = (item["now_playing"] as? Number)?.toInt() == 1 || item["now_playing"]?.toString() == "1"
+
+                if (startMs == 0L && stopMs == 0L && isNowPlaying) {
+                    startMs = now - (15 * 60 * 1000L)
+                    stopMs = now + (45 * 60 * 1000L)
+                }
+
                 val hasArchive = (item["has_archive"] as? Number)?.toInt() ?: 0
-                val icon = item["icon"]?.toString() ?: item["image"]?.toString() ?: item["cover"]?.toString()
+                val icon = item["icon"]?.toString()
+                    ?: item["image"]?.toString()
+                    ?: item["cover"]?.toString()
+                    ?: item["poster"]?.toString()
 
                 val title = maybeDecodeBase64(rawTitle)
                 val desc = rawDesc?.let { maybeDecodeBase64(it) }
@@ -603,8 +630,8 @@ class XtreamCodesClient(
                     channelId = streamId,
                     title = title,
                     description = desc,
-                    startEpochMs = startTs * 1000,
-                    stopEpochMs = stopTs * 1000,
+                    startEpochMs = startMs,
+                    stopEpochMs = stopMs,
                     iconUrl = icon,
                     hasCatchup = hasArchive > 0
                 )
@@ -616,18 +643,42 @@ class XtreamCodesClient(
         }
     }
 
-    private fun maybeDecodeBase64(input: String): String {
-        return try {
-            val decodedBytes = java.util.Base64.getDecoder().decode(input.trim())
-            val decodedStr = String(decodedBytes, Charsets.UTF_8)
-            // Si le résultat est un texte lisible, on le conserve
-            if (decodedStr.all { it.isLetterOrDigit() || it.isWhitespace() || it in ".,;:!?'\"-()/@#" }) {
-                decodedStr
-            } else {
-                input
+    private fun parseEpgEpochMs(item: Map<String, Any>, tsKey: String, dateKey: String): Long {
+        val rawTs = item[tsKey]?.toString()?.trim()?.toLongOrNull()
+        if (rawTs != null && rawTs > 0) {
+            return if (rawTs > 10_000_000_000L) rawTs else rawTs * 1000L
+        }
+        val dateStr = item[dateKey]?.toString()?.trim()
+        if (!dateStr.isNullOrBlank()) {
+            val formats = listOf(
+                java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US),
+                java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US),
+                java.text.SimpleDateFormat("yyyyMMddHHmmss", java.util.Locale.US)
+            )
+            for (format in formats) {
+                try {
+                    val d = format.parse(dateStr)
+                    if (d != null) return d.time
+                } catch (_: Exception) {}
             }
-        } catch (e: Exception) {
-            input
+        }
+        return 0L
+    }
+
+    private fun maybeDecodeBase64(input: String): String {
+        val trimmed = input.trim()
+        if (trimmed.isBlank() || trimmed.contains(" ")) {
+            return trimmed
+        }
+        return try {
+            val decodedBytes = java.util.Base64.getDecoder().decode(trimmed)
+            val decodedStr = String(decodedBytes, Charsets.UTF_8).trim()
+            val isReadable = decodedStr.isNotEmpty() && decodedStr.none { 
+                Character.isISOControl(it) && it != '\n' && it != '\r' && it != '\t' 
+            }
+            if (isReadable) decodedStr else trimmed
+        } catch (_: Exception) {
+            trimmed
         }
     }
 

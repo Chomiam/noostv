@@ -110,7 +110,8 @@ fun MobileHomeScreen(
     onSelectEpisode: ((Series, io.noostv.data.model.Episode) -> Unit)? = null,
     onFetchVodInfo: (suspend (String) -> VodMovie?)? = null,
     onFetchSeriesInfo: (suspend (String) -> Series?)? = null,
-    onLanguageChanged: (AppLanguage) -> Unit = {}
+    onLanguageChanged: (AppLanguage) -> Unit = {},
+    onLoadChannelsBatch: ((List<Channel>) -> Unit)? = null
 ) {
     val strings = LocalStrings.current
     var selectedTab by remember { mutableStateOf(MobileBottomTab.TV) }
@@ -173,6 +174,13 @@ fun MobileHomeScreen(
             channels
         } else {
             channels.filter { it.categoryName.equals(selectedLiveCategory, ignoreCase = true) || it.categoryId == selectedLiveCategory }
+        }
+    }
+
+    // Chargement automatique de l'EPG pour les premières chaînes de la catégorie affichée
+    LaunchedEffect(filteredChannels, selectedLiveCategory) {
+        if (filteredChannels.isNotEmpty()) {
+            onLoadChannelsBatch?.invoke(filteredChannels.take(20))
         }
     }
 
@@ -611,6 +619,9 @@ private fun MobileChannelCard(
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val backdropUrl = remember(channel.id, currentProgram.id) {
+        EpgProvider.getProgramBackdrop(channel, currentProgram)
+    }
 
     Box(
         modifier = Modifier
@@ -619,34 +630,67 @@ private fun MobileChannelCard(
             .background(SurfaceDark)
             .border(1.dp, CardBorderUnfocused, RoundedCornerShape(16.dp))
             .clickable { onClick() }
-            .padding(12.dp)
+            .padding(10.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Logo de la chaîne
+            // Miniature 16:9 du programme en cours avec macaron logo de chaîne
             Box(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(SurfaceDarkVariant),
+                    .size(width = 84.dp, height = 54.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFF131A26)),
                 contentAlignment = Alignment.Center
             ) {
+                SubcomposeAsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(backdropUrl)
+                        .crossfade(true)
+                        .allowHardware(false)
+                        .build(),
+                    contentDescription = currentProgram.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // Voile sombre subtil pour la lisibilité
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color(0x22000000), Color(0xAA080A0F))
+                            )
+                        )
+                )
+
+                // Macaron du logo de la chaîne en coin inférieur gauche
                 if (!channel.logoUrl.isNullOrBlank()) {
-                    SubcomposeAsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(channel.logoUrl)
-                            .crossfade(true)
-                            .allowHardware(false)
-                            .build(),
-                        contentDescription = channel.name,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize().padding(4.dp)
-                    )
-                } else {
-                    Icon(imageVector = Icons.Default.Tv, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(24.dp))
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(3.dp)
+                            .size(24.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xDD000000))
+                            .border(0.5.dp, Color(0x44FFFFFF), RoundedCornerShape(6.dp))
+                            .padding(2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        SubcomposeAsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(channel.logoUrl)
+                                .crossfade(true)
+                                .allowHardware(false)
+                                .build(),
+                            contentDescription = channel.name,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
 
@@ -663,9 +707,14 @@ private fun MobileChannelCard(
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         LiveIndicatorBadge()
                         if (channel.isHdr) HdrBadge() else ResolutionBadge(resolution = channel.resolution)
                     }

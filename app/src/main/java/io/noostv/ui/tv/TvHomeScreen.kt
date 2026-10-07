@@ -114,6 +114,7 @@ fun TvHomeScreen(
     onClearCurrentChannel: (() -> Unit)? = null,
     onSelectChannel: (Channel) -> Unit,
     onLoadChannelEpg: ((Channel) -> Unit)? = null,
+    onLoadChannelsBatch: ((List<Channel>) -> Unit)? = null,
     onSelectMovie: (VodMovie) -> Unit,
     onSelectSeries: (Series) -> Unit,
     onSelectEpisode: (Series, io.noostv.data.model.Episode) -> Unit = { ser, _ -> onSelectSeries(ser) },
@@ -201,6 +202,13 @@ fun TvHomeScreen(
             channels
         } else {
             channels.filter { it.categoryName.equals(selectedLiveCategory, ignoreCase = true) || it.categoryId == selectedLiveCategory }
+        }
+    }
+
+    // Chargement automatique en arrière-plan de l'EPG pour les premières chaînes de la catégorie affichée
+    LaunchedEffect(filteredChannels, selectedLiveCategory) {
+        if (filteredChannels.isNotEmpty()) {
+            onLoadChannelsBatch?.invoke(filteredChannels.take(24))
         }
     }
 
@@ -1006,10 +1014,11 @@ fun TvChannelGridCard(
                     if (!channel.logoUrl.isNullOrBlank()) {
                         Box(
                             modifier = Modifier
-                                .size(28.dp)
+                                .size(36.dp)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0x99000000))
-                                .padding(2.dp),
+                                .background(Color(0xDD0B0F17))
+                                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(8.dp))
+                                .padding(3.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             SubcomposeAsyncImage(

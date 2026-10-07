@@ -4,9 +4,15 @@ import io.noostv.data.api.XtreamCodesClient
 import io.noostv.data.model.*
 import io.noostv.data.parser.M3UParser
 import io.noostv.data.parser.XmlTvParser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 
 /**
@@ -253,6 +259,59 @@ class IptvRepository(
                 }
             }
         } catch (_: Exception) {}
+    }
+
+    private val epgLoadingChannels = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * Charge en arrière-plan l'EPG pour un groupe de chaînes (ex: chaînes visibles à l'écran)
+     */
+    suspend fun loadEpgForChannels(
+        serverUrl: String,
+        username: String,
+        password: String,
+        channelsToLoad: List<Channel>
+    ) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        if (serverUrl.isBlank() || channelsToLoad.isEmpty()) return@withContext
+        val now = System.currentTimeMillis()
+        val currentEpg = _epgPrograms.value
+
+        val needed = channelsToLoad.filter { ch ->
+            val hasValidEpg = currentEpg.any { p ->
+                (p.channelId == ch.id || p.channelId == ch.epgChannelId) && p.isLiveNow(now)
+            }
+            !hasValidEpg && epgLoadingChannels.add(ch.id)
+        }.take(24)
+
+        if (needed.isEmpty()) return@withContext
+
+        try {
+            val newProgs = mutableListOf<EpgProgram>()
+            val semaphore = Semaphore(6)
+            coroutineScope {
+                needed.forEach { ch ->
+                    launch {
+                        semaphore.withPermit {
+                            val res = xtreamClient.getShortEpg(serverUrl, username, password, ch.id)
+                            res.getOrNull()?.let { progs ->
+                                synchronized(newProgs) {
+                                    newProgs.addAll(progs)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (newProgs.isNotEmpty()) {
+                val updated = _epgPrograms.value.toMutableList()
+                val updatedIds = needed.map { it.id }.toSet()
+                updated.removeAll { it.channelId in updatedIds }
+                updated.addAll(newProgs)
+                _epgPrograms.value = updated
+            }
+        } finally {
+            needed.forEach { epgLoadingChannels.remove(it.id) }
+        }
     }
 
     /**

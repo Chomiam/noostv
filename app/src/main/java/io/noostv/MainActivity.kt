@@ -278,6 +278,16 @@ class MainActivity : ComponentActivity() {
                                         )
                                     }
                                 },
+                                onLoadChannelsBatch = { chs ->
+                                    coroutineScope.launch {
+                                        repository.loadEpgForChannels(
+                                            sessionManager.serverUrl,
+                                            sessionManager.username,
+                                            sessionManager.password,
+                                            chs
+                                        )
+                                    }
+                                },
                                 onSelectMovie = { startPlayMovie(it) },
                                 onSelectSeries = { startPlaySeries(it) },
                                 onSelectEpisode = { ser, ep -> startPlayEpisode(ser, ep) },
@@ -342,6 +352,16 @@ class MainActivity : ComponentActivity() {
                                 onSelectChannel = { startPlayChannel(it) },
                                 onSelectMovie = { startPlayMovie(it) },
                                 onSelectSeries = { startPlaySeries(it) },
+                                onLoadChannelsBatch = { chs ->
+                                    coroutineScope.launch {
+                                        repository.loadEpgForChannels(
+                                            sessionManager.serverUrl,
+                                            sessionManager.username,
+                                            sessionManager.password,
+                                            chs
+                                        )
+                                    }
+                                },
                                 onSelectEpisode = { ser, ep -> startPlayEpisode(ser, ep) },
                                 onFetchVodInfo = { movieId ->
                                     repository.getOrFetchVodInfo(
