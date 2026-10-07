@@ -47,12 +47,17 @@ import io.noostv.data.model.EpgProgram
 import io.noostv.data.model.Series
 import io.noostv.data.model.VodMovie
 import io.noostv.ui.common.HdrBadge
+import io.noostv.data.model.UserProfile
 import io.noostv.ui.common.LiveIndicatorBadge
 import io.noostv.ui.common.NoosPaginationBar
 import io.noostv.ui.common.PremiumVipBadge
 import io.noostv.ui.common.ResolutionBadge
 import io.noostv.ui.theme.*
 import io.noostv.ui.tv.EpgProvider
+import io.noostv.ui.tv.TvCategoryFiltersContent
+import io.noostv.ui.tv.TvFavoritesContent
+import io.noostv.ui.tv.TvProfileModal
+import io.noostv.ui.tv.TvProfileButton
 import kotlin.math.ceil
 import kotlinx.coroutines.launch
 
@@ -60,6 +65,8 @@ enum class MobileBottomTab(val label: String, val icon: ImageVector) {
     TV("Direct", Icons.Default.Tv),
     MOVIES("Films", Icons.Default.Movie),
     SERIES("Séries", Icons.Default.VideoLibrary),
+    FAVORITES("Favoris", Icons.Default.Star),
+    FILTERS("Filtres", Icons.Default.Tune),
     EPG("Guide TV", Icons.Default.CalendarToday),
     SETTINGS("Paramètres", Icons.Default.Settings)
 }
@@ -97,8 +104,25 @@ fun MobileHomeScreen(
 
     var activeDetailMovie by remember { mutableStateOf<VodMovie?>(null) }
     var activeDetailSeries by remember { mutableStateOf<Series?>(null) }
-    var favoriteMovieIds by remember { mutableStateOf(sessionManager.getFavoriteMovieIds()) }
-    var favoriteSeriesIds by remember { mutableStateOf(sessionManager.getFavoriteSeriesIds()) }
+
+    var activeProfile by remember { mutableStateOf(sessionManager.getActiveProfile()) }
+    var isProfileModalOpen by remember { mutableStateOf(false) }
+
+    var favoriteChannelIds by remember(activeProfile) { mutableStateOf(sessionManager.getFavoriteChannelIds()) }
+    var favoriteMovieIds by remember(activeProfile) { mutableStateOf(sessionManager.getFavoriteMovieIds()) }
+    var favoriteSeriesIds by remember(activeProfile) { mutableStateOf(sessionManager.getFavoriteSeriesIds()) }
+    var hiddenVodIds by remember(activeProfile) { mutableStateOf(sessionManager.getHiddenVodCategoryIds()) }
+    var hiddenSeriesIds by remember(activeProfile) { mutableStateOf(sessionManager.getHiddenSeriesCategoryIds()) }
+
+    fun refreshProfileData(newProfile: UserProfile) {
+        activeProfile = newProfile
+        favoriteChannelIds = sessionManager.getFavoriteChannelIds()
+        favoriteMovieIds = sessionManager.getFavoriteMovieIds()
+        favoriteSeriesIds = sessionManager.getFavoriteSeriesIds()
+        hiddenVodIds = sessionManager.getHiddenVodCategoryIds()
+        hiddenSeriesIds = sessionManager.getHiddenSeriesCategoryIds()
+    }
+
     var moviePage by remember(selectedVodCategory) { mutableIntStateOf(1) }
     var seriesPage by remember(selectedSeriesCategory) { mutableIntStateOf(1) }
 
@@ -113,8 +137,11 @@ fun MobileHomeScreen(
         }
     }
 
-    val liveCategoryNames: List<String> = remember(categories, channels) {
+    val liveCategoryNames: List<String> = remember(categories, channels, favoriteChannelIds) {
         val list = mutableListOf("Toutes")
+        if (favoriteChannelIds.isNotEmpty()) {
+            list.add("⭐ Favoris (${favoriteChannelIds.size})")
+        }
         if (categories.isNotEmpty()) {
             list.addAll(categories.map { it.name })
         } else {
@@ -123,8 +150,10 @@ fun MobileHomeScreen(
         list
     }
 
-    val filteredChannels = remember(channels, selectedLiveCategory) {
-        if (selectedLiveCategory == "Toutes") {
+    val filteredChannels = remember(channels, selectedLiveCategory, favoriteChannelIds) {
+        if (selectedLiveCategory.startsWith("⭐ Favoris")) {
+            channels.filter { favoriteChannelIds.contains(it.id) }
+        } else if (selectedLiveCategory == "Toutes") {
             channels
         } else {
             channels.filter { it.categoryName.equals(selectedLiveCategory, ignoreCase = true) || it.categoryId == selectedLiveCategory }
@@ -136,6 +165,8 @@ fun MobileHomeScreen(
         topBar = {
             MobileTopBar(
                 isPremium = subscription.isPremium,
+                activeProfile = activeProfile,
+                onOpenProfiles = { isProfileModalOpen = true },
                 onOpenSearch = onOpenSearch,
                 onOpenUpgrade = onOpenUpgrade,
                 onOpenLogin = onOpenLogin
@@ -152,18 +183,20 @@ fun MobileHomeScreen(
                     NavigationBarItem(
                         selected = isSelected,
                         onClick = { selectedTab = tab },
+                        alwaysShowLabel = false,
                         icon = {
                             Icon(
                                 imageVector = tab.icon,
                                 contentDescription = tab.label,
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                         },
                         label = {
                             Text(
                                 text = tab.label,
-                                fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                fontSize = 10.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                maxLines = 1
                             )
                         },
                         colors = NavigationBarItemDefaults.colors(
@@ -218,9 +251,12 @@ fun MobileHomeScreen(
                 // ==================== 2. FILMS (VOD) ====================
                 MobileBottomTab.MOVIES -> {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        val vodCatNames: List<String> = remember(vodCategories) {
+                        val visibleVodCategories = remember(vodCategories, hiddenVodIds) {
+                            vodCategories.filter { !hiddenVodIds.contains(it.id) }
+                        }
+                        val vodCatNames: List<String> = remember(visibleVodCategories) {
                             val list = mutableListOf("Toutes")
-                            list.addAll(vodCategories.map { it.name })
+                            list.addAll(visibleVodCategories.map { it.name })
                             list
                         }
 
@@ -229,7 +265,7 @@ fun MobileHomeScreen(
                             selectedCategory = selectedVodCategory,
                             onSelect = { catName ->
                                 selectedVodCategory = catName
-                                val target = vodCategories.firstOrNull { it.name == catName }
+                                val target = visibleVodCategories.firstOrNull { it.name == catName }
                                 if (target != null) onSelectVodCategory(target)
                             }
                         )
@@ -279,9 +315,12 @@ fun MobileHomeScreen(
                 // ==================== 3. SÉRIES ====================
                 MobileBottomTab.SERIES -> {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        val seriesCatNames: List<String> = remember(seriesCategories) {
+                        val visibleSeriesCategories = remember(seriesCategories, hiddenSeriesIds) {
+                            seriesCategories.filter { !hiddenSeriesIds.contains(it.id) }
+                        }
+                        val seriesCatNames: List<String> = remember(visibleSeriesCategories) {
                             val list = mutableListOf("Toutes")
-                            list.addAll(seriesCategories.map { it.name })
+                            list.addAll(visibleSeriesCategories.map { it.name })
                             list
                         }
 
@@ -290,7 +329,7 @@ fun MobileHomeScreen(
                             selectedCategory = selectedSeriesCategory,
                             onSelect = { catName ->
                                 selectedSeriesCategory = catName
-                                val target = seriesCategories.firstOrNull { it.name == catName }
+                                val target = visibleSeriesCategories.firstOrNull { it.name == catName }
                                 if (target != null) onSelectSeriesCategory(target)
                             }
                         )
@@ -337,7 +376,37 @@ fun MobileHomeScreen(
                     }
                 }
 
-                // ==================== 4. GUIDE TV ====================
+                // ==================== 4. FAVORIS ====================
+                MobileBottomTab.FAVORITES -> {
+                    TvFavoritesContent(
+                        channels = channels,
+                        movies = movies,
+                        series = series,
+                        sessionManager = sessionManager,
+                        onSelectChannel = onSelectChannel,
+                        onSelectMovie = { activeDetailMovie = it },
+                        onSelectSeries = { activeDetailSeries = it },
+                        onFavoriteChanged = {
+                            val prof = sessionManager.getActiveProfile()
+                            refreshProfileData(prof)
+                        }
+                    )
+                }
+
+                // ==================== 5. FILTRES ====================
+                MobileBottomTab.FILTERS -> {
+                    TvCategoryFiltersContent(
+                        vodCategories = vodCategories,
+                        seriesCategories = seriesCategories,
+                        sessionManager = sessionManager,
+                        onFiltersUpdated = {
+                            val prof = sessionManager.getActiveProfile()
+                            refreshProfileData(prof)
+                        }
+                    )
+                }
+
+                // ==================== 6. GUIDE TV ====================
                 MobileBottomTab.EPG -> {
                     MobileEpgContent(
                         channels = channels,
@@ -346,7 +415,7 @@ fun MobileHomeScreen(
                     )
                 }
 
-                // ==================== 5. PARAMÈTRES & OTA ====================
+                // ==================== 7. PARAMÈTRES & OTA ====================
                 MobileBottomTab.SETTINGS -> {
                     MobileSettingsView(
                         sessionManager = sessionManager,
@@ -369,7 +438,8 @@ fun MobileHomeScreen(
             },
             onToggleFavorite = { id ->
                 sessionManager.toggleFavoriteMovie(id)
-                favoriteMovieIds = sessionManager.getFavoriteMovieIds()
+                val prof = sessionManager.getActiveProfile()
+                refreshProfileData(prof)
             },
             onFetchFullInfo = { id -> onFetchVodInfo?.invoke(id) }
         )
@@ -390,9 +460,21 @@ fun MobileHomeScreen(
             },
             onToggleFavorite = { id ->
                 sessionManager.toggleFavoriteSeries(id)
-                favoriteSeriesIds = sessionManager.getFavoriteSeriesIds()
+                val prof = sessionManager.getActiveProfile()
+                refreshProfileData(prof)
             },
             onFetchFullInfo = { id -> onFetchSeriesInfo?.invoke(id) }
+        )
+    }
+
+    if (isProfileModalOpen) {
+        TvProfileModal(
+            sessionManager = sessionManager,
+            onDismiss = { isProfileModalOpen = false },
+            onProfileChanged = { newProfile ->
+                refreshProfileData(newProfile)
+                isProfileModalOpen = false
+            }
         )
     }
 }
@@ -403,6 +485,8 @@ fun MobileHomeScreen(
 @Composable
 private fun MobileTopBar(
     isPremium: Boolean,
+    activeProfile: UserProfile,
+    onOpenProfiles: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenUpgrade: () -> Unit,
     onOpenLogin: () -> Unit
@@ -441,30 +525,25 @@ private fun MobileTopBar(
             }
         }
 
-        // Actions droites (Recherche & Compte)
+        // Actions droites (Recherche & Profil)
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             IconButton(
                 onClick = onOpenSearch,
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(34.dp)
                     .clip(CircleShape)
                     .background(SurfaceDarkVariant)
             ) {
                 Icon(imageVector = Icons.Default.Search, contentDescription = "Recherche", tint = TextPrimary, modifier = Modifier.size(18.dp))
             }
 
-            IconButton(
-                onClick = onOpenLogin,
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(SurfaceDarkVariant)
-            ) {
-                Icon(imageVector = Icons.Default.Dns, contentDescription = "Serveur IPTV", tint = NoosCyan, modifier = Modifier.size(18.dp))
-            }
+            TvProfileButton(
+                profile = activeProfile,
+                onClick = onOpenProfiles
+            )
         }
     }
 }

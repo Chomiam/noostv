@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -94,7 +96,7 @@ fun TvFavoritesContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -103,41 +105,46 @@ fun TvFavoritesContent(
                         imageVector = Icons.Default.Star,
                         contentDescription = null,
                         tint = GoldVip,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                     Text(
-                        text = "Mes Favoris & Programmes Épinglés",
+                        text = "Mes Favoris",
                         color = Color.White,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
                 Text(
-                    text = "Accédez rapidement à vos contenus préférés (Profil : ${activeProfile.name})",
+                    text = "Profil actif : ${activeProfile.name}",
                     color = TextSecondary,
                     fontSize = 12.sp
                 )
             }
+
+            Spacer(modifier = Modifier.width(8.dp))
 
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
                     .background(GlassPill)
                     .border(1.dp, GlassBorder, RoundedCornerShape(50))
-                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                    .padding(horizontal = 12.dp, vertical = 5.dp)
             ) {
                 Text(
-                    text = "$totalFavorites contenus épinglés",
+                    text = "$totalFavorites épinglés",
                     color = GoldVip,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
                 )
             }
         }
 
         // Filtres par type de média
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             FavTabChip(
