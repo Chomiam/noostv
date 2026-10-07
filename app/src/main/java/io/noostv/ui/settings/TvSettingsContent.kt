@@ -43,7 +43,8 @@ fun TvSettingsContent(
     sessionManager: SessionManager,
     focusRequester: FocusRequester,
     onNavigateLeft: () -> Unit,
-    onOpenLogin: () -> Unit
+    onOpenLogin: () -> Unit,
+    onLogout: () -> Unit
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -455,6 +456,17 @@ fun TvSettingsContent(
                         Icon(imageVector = Icons.Default.Key, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Changer d'identifiants", color = TextPrimary, fontSize = 11.sp)
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Button(
+                        onClick = onLogout,
+                        shape = RoundedCornerShape(50),
+                        colors = ButtonDefaults.buttonColors(containerColor = SurfaceDarkVariant),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.ExitToApp, contentDescription = null, tint = Color(0xFFFF5252), modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Se déconnecter", color = Color(0xFFFF5252), fontSize = 11.sp)
                     }
                 }
             }
