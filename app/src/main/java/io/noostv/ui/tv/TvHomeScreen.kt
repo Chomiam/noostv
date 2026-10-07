@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
@@ -426,7 +427,11 @@ fun TvHomeScreen(
                                 verticalArrangement = Arrangement.spacedBy(14.dp),
                                 contentPadding = PaddingValues(bottom = 16.dp)
                             ) {
-                                items(pagedMovies.size) { index ->
+                                items(
+                                    count = pagedMovies.size,
+                                    key = { index -> pagedMovies[index].id },
+                                    contentType = { "movie_card" }
+                                ) { index ->
                                     val movie = pagedMovies[index]
                                     TvMovieGridCard(
                                         movie = movie,
@@ -508,7 +513,11 @@ fun TvHomeScreen(
                                 verticalArrangement = Arrangement.spacedBy(14.dp),
                                 contentPadding = PaddingValues(bottom = 16.dp)
                             ) {
-                                items(pagedSeries.size) { index ->
+                                items(
+                                    count = pagedSeries.size,
+                                    key = { index -> pagedSeries[index].id },
+                                    contentType = { "series_card" }
+                                ) { index ->
                                     val ser = pagedSeries[index]
                                     TvSeriesGridCard(
                                         series = ser,
@@ -1037,32 +1046,15 @@ fun TvChannelGridCard(
                 shape = RoundedCornerShape(18.dp)
             )
     ) {
-        // 1. Image du programme en cours en arrière-plan plein format
-        SubcomposeAsyncImage(
+        // 1. Image du programme en cours en arrière-plan plein format avec downsampling 400x225
+        AsyncImage(
             model = ImageRequest.Builder(context)
                 .data(backdropUrl)
+                .size(width = 400, height = 225)
                 .crossfade(true)
                 .allowHardware(false)
                 .build(),
             contentDescription = currentProgram.title,
-            loading = {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    LinearProgressIndicator(
-                        modifier = Modifier
-                            .fillMaxWidth(0.5f)
-                            .height(3.dp)
-                            .clip(RoundedCornerShape(2.dp)),
-                        color = NoosBlue,
-                        trackColor = SurfaceDarkVariant
-                    )
-                }
-            },
-            error = {
-                Box(modifier = Modifier.fillMaxSize().background(Color(0xFF131A26)))
-            },
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
@@ -1275,41 +1267,16 @@ fun TvMovieGridCard(
                 shape = RoundedCornerShape(18.dp)
             )
     ) {
-        // 1. Affiche plein format respectant le ratio 2:3
+        // 1. Affiche plein format respectant le ratio 2:3 avec downsampling mémoire 300x450
         if (!movie.posterUrl.isNullOrBlank()) {
-            SubcomposeAsyncImage(
+            AsyncImage(
                 model = ImageRequest.Builder(context)
                     .data(movie.posterUrl)
+                    .size(width = 300, height = 450)
                     .crossfade(true)
                     .allowHardware(false)
                     .build(),
                 contentDescription = movie.title,
-                loading = {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            LinearProgressIndicator(
-                                modifier = Modifier
-                                    .width(60.dp)
-                                    .height(3.dp)
-                                    .clip(RoundedCornerShape(2.dp)),
-                                color = NoosBlue,
-                                trackColor = SurfaceDarkVariant
-                            )
-                            Text("Chargement...", color = TextSecondary, fontSize = 9.sp)
-                        }
-                    }
-                },
-                error = {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(imageVector = Icons.Default.Movie, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(36.dp))
-                    }
-                },
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
@@ -1446,41 +1413,16 @@ fun TvSeriesGridCard(
                 shape = RoundedCornerShape(18.dp)
             )
     ) {
-        // 1. Affiche plein format respectant le ratio 2:3
+        // 1. Affiche plein format respectant le ratio 2:3 avec downsampling mémoire 300x450
         if (!series.posterUrl.isNullOrBlank()) {
-            SubcomposeAsyncImage(
+            AsyncImage(
                 model = ImageRequest.Builder(context)
                     .data(series.posterUrl)
+                    .size(width = 300, height = 450)
                     .crossfade(true)
                     .allowHardware(false)
                     .build(),
                 contentDescription = series.title,
-                loading = {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            LinearProgressIndicator(
-                                modifier = Modifier
-                                    .width(60.dp)
-                                    .height(3.dp)
-                                    .clip(RoundedCornerShape(2.dp)),
-                                color = NoosBlue,
-                                trackColor = SurfaceDarkVariant
-                            )
-                            Text("Chargement...", color = TextSecondary, fontSize = 9.sp)
-                        }
-                    }
-                },
-                error = {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(imageVector = Icons.Default.VideoLibrary, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(36.dp))
-                    }
-                },
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )

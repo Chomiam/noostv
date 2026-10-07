@@ -38,6 +38,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import io.noostv.core.player.PlayerEngine
@@ -154,7 +155,11 @@ fun TvChannelPreviewContent(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                itemsIndexed(channels) { index, ch ->
+                itemsIndexed(
+                    items = channels,
+                    key = { _, ch -> ch.id },
+                    contentType = { _, _ -> "channel_item" }
+                ) { index, ch ->
                     val isCurrent = ch.id == selectedChannel.id
                     val isFirstItem = index == 0
                     val liveProg = EpgProvider.getCurrentProgram(ch, epgPrograms)
@@ -500,9 +505,10 @@ fun TvChannelListItem(
                         .background(SurfaceDark),
                     contentAlignment = Alignment.Center
                 ) {
-                    SubcomposeAsyncImage(
+                    AsyncImage(
                         model = ImageRequest.Builder(context)
                             .data(channel.logoUrl)
+                            .size(72, 72)
                             .crossfade(true)
                             .allowHardware(false)
                             .build(),

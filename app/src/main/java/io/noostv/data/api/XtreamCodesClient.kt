@@ -5,6 +5,7 @@ import com.google.gson.reflect.TypeToken
 import io.noostv.data.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.UUID
@@ -29,11 +30,25 @@ data class XtreamAccountInfo(
  */
 class XtreamCodesClient(
     private val client: OkHttpClient = OkHttpClient.Builder()
+        .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
+        .retryOnConnectionFailure(true)
         .connectTimeout(6, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         .build(),
     private val gson: Gson = Gson()
 ) {
+
+    /**
+     * Lit et désérialise le JSON directement depuis le flux réseau sans allouer de String intermédiaire géante
+     */
+    private inline fun <T> parseJsonStreaming(response: okhttp3.Response, type: java.lang.reflect.Type): T? {
+        val responseBody = response.body ?: return null
+        return runCatching {
+            responseBody.charStream().use { reader ->
+                gson.fromJson<T>(reader, type)
+            }
+        }.getOrNull()
+    }
 
     /**
      * Authentifie l'utilisateur sur le serveur Xtream Codes
@@ -53,9 +68,9 @@ class XtreamCodesClient(
                 return@withContext Result.failure(Exception("Erreur HTTP: ${response.code}"))
             }
 
-            val body = response.body?.string() ?: return@withContext Result.failure(Exception("Réponse vide"))
             val type = object : TypeToken<Map<String, Any>>() {}.type
-            val jsonMap: Map<String, Any> = gson.fromJson(body, type)
+            val jsonMap: Map<String, Any> = parseJsonStreaming(response, type)
+                ?: return@withContext Result.failure(Exception("Réponse vide ou invalide"))
 
             @Suppress("UNCHECKED_CAST")
             val userInfo = jsonMap["user_info"] as? Map<String, Any>
@@ -116,9 +131,9 @@ class XtreamCodesClient(
         try {
             val request = Request.Builder().url(url).build()
             val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext Result.failure(Exception("Réponse vide"))
             val type = object : TypeToken<List<Map<String, Any>>>() {}.type
-            val rawList: List<Map<String, Any>> = gson.fromJson(body, type)
+            val rawList: List<Map<String, Any>> = parseJsonStreaming(response, type)
+                ?: return@withContext Result.failure(Exception("Réponse vide ou invalide"))
 
             val channels = rawList.mapNotNull { item ->
                 val streamId = item["stream_id"]?.toString()?.substringBefore(".") ?: return@mapNotNull null
@@ -200,9 +215,9 @@ class XtreamCodesClient(
         try {
             val request = Request.Builder().url(url).build()
             val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext Result.failure(Exception("Réponse vide"))
             val type = object : TypeToken<List<Map<String, Any>>>() {}.type
-            val rawList: List<Map<String, Any>> = gson.fromJson(body, type)
+            val rawList: List<Map<String, Any>> = parseJsonStreaming(response, type)
+                ?: return@withContext Result.failure(Exception("Réponse vide ou invalide"))
 
             val listToProcess = if (limit != null && limit > 0) rawList.take(limit) else rawList
 
@@ -273,9 +288,9 @@ class XtreamCodesClient(
         try {
             val request = Request.Builder().url(url).build()
             val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext Result.failure(Exception("Réponse vide"))
             val type = object : TypeToken<Map<String, Any>>() {}.type
-            val jsonMap: Map<String, Any> = gson.fromJson(body, type)
+            val jsonMap: Map<String, Any> = parseJsonStreaming(response, type)
+                ?: return@withContext Result.failure(Exception("Réponse vide ou invalide"))
 
             @Suppress("UNCHECKED_CAST")
             val info = jsonMap["info"] as? Map<String, Any> ?: emptyMap()
@@ -386,9 +401,9 @@ class XtreamCodesClient(
         try {
             val request = Request.Builder().url(url).build()
             val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext Result.failure(Exception("Réponse vide"))
             val type = object : TypeToken<List<Map<String, Any>>>() {}.type
-            val rawList: List<Map<String, Any>> = gson.fromJson(body, type)
+            val rawList: List<Map<String, Any>> = parseJsonStreaming(response, type)
+                ?: return@withContext Result.failure(Exception("Réponse vide ou invalide"))
 
             val listToProcess = if (limit != null && limit > 0) rawList.take(limit) else rawList
 
@@ -444,9 +459,9 @@ class XtreamCodesClient(
         try {
             val request = Request.Builder().url(url).build()
             val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext Result.failure(Exception("Réponse vide"))
             val type = object : TypeToken<Map<String, Any>>() {}.type
-            val jsonMap: Map<String, Any> = gson.fromJson(body, type)
+            val jsonMap: Map<String, Any> = parseJsonStreaming(response, type)
+                ?: return@withContext Result.failure(Exception("Réponse vide ou invalide"))
 
             @Suppress("UNCHECKED_CAST")
             val info = jsonMap["info"] as? Map<String, Any> ?: emptyMap()
@@ -646,9 +661,8 @@ class XtreamCodesClient(
         return try {
             val request = Request.Builder().url(url).build()
             val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return Result.failure(Exception("Réponse vide"))
             val type = object : TypeToken<Map<String, Any>>() {}.type
-            val jsonMap: Map<String, Any> = runCatching { gson.fromJson<Map<String, Any>>(body, type) }.getOrNull()
+            val jsonMap: Map<String, Any> = parseJsonStreaming(response, type)
                 ?: return Result.success(emptyList())
 
             @Suppress("UNCHECKED_CAST")
@@ -747,9 +761,9 @@ class XtreamCodesClient(
         return try {
             val request = Request.Builder().url(url).build()
             val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return Result.failure(Exception("Réponse vide"))
             val type = object : TypeToken<List<Map<String, Any>>>() {}.type
-            val rawList: List<Map<String, Any>> = gson.fromJson(body, type)
+            val rawList: List<Map<String, Any>> = parseJsonStreaming(response, type)
+                ?: return Result.failure(Exception("Réponse vide ou invalide"))
 
             val categories = rawList.mapNotNull { item ->
                 val id = item["category_id"]?.toString() ?: return@mapNotNull null

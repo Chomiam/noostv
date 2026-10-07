@@ -162,17 +162,26 @@ class IptvRepository(
                 _isSeriesLoading.value = false
             }
 
-            // 6. Charger en arrière-plan l'EPG pour les premières chaînes
-            val epgList = mutableListOf<EpgProgram>()
-            val channelsToEpg = enrichedChannels.take(15)
-            for (ch in channelsToEpg) {
-                val epgResult = xtreamClient.getShortEpg(serverUrl, username, password, ch.id)
-                epgResult.onSuccess { progs ->
-                    epgList.addAll(progs)
+            // 6. Charger en arrière-plan l'EPG pour les premières chaînes en parallèle (rapide, ~300ms au lieu de 3s)
+            val channelsToEpg = enrichedChannels.take(16)
+            if (channelsToEpg.isNotEmpty()) {
+                val epgList = java.util.Collections.synchronizedList(mutableListOf<EpgProgram>())
+                val semaphore = Semaphore(5)
+                coroutineScope {
+                    channelsToEpg.forEach { ch ->
+                        launch {
+                            semaphore.withPermit {
+                                val epgResult = xtreamClient.getShortEpg(serverUrl, username, password, ch.id)
+                                epgResult.onSuccess { progs ->
+                                    epgList.addAll(progs)
+                                }
+                            }
+                        }
+                    }
                 }
-            }
-            if (epgList.isNotEmpty()) {
-                _epgPrograms.value = epgList
+                if (epgList.isNotEmpty()) {
+                    _epgPrograms.value = epgList.toList()
+                }
             }
 
             Result.success(Unit)

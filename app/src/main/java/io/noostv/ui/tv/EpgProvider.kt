@@ -149,37 +149,63 @@ object EpgProvider {
         return pool[hash % pool.size]
     }
 
-    /**
-     * Retourne le programme actuellement en cours de diffusion pour la chaîne
-     */
-    fun getCurrentProgram(channel: Channel, epgPrograms: List<EpgProgram>): EpgProgram {
-        val now = System.currentTimeMillis()
+    // Index mémoire O(1) pour éviter le balayage linéaire O(N) sur des milliers de programmes
+    private var lastRawListRef: List<EpgProgram>? = null
+    private var cachedIndex: Map<String, List<EpgProgram>> = emptyMap()
 
-        // 1. Chercher dans les vrais programmes EPG en cours
-        val realLive = epgPrograms.firstOrNull { prog ->
-            (prog.channelId == channel.id || prog.channelId == channel.epgChannelId) && prog.isLiveNow(now)
+    // Cache des programmes auto-générés pour ne pas recalculer inutilement durant le scroll rapide
+    private val defaultProgramCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, EpgProgram>>()
+
+    @Synchronized
+    private fun getIndexedMap(epgPrograms: List<EpgProgram>): Map<String, List<EpgProgram>> {
+        if (epgPrograms === lastRawListRef && cachedIndex.isNotEmpty()) {
+            return cachedIndex
         }
-        if (realLive != null) return realLive
-
-        // 2. Chercher le premier programme disponible dans le futur proche pour cette chaîne
-        val anyProg = epgPrograms.firstOrNull { prog ->
-            prog.channelId == channel.id || prog.channelId == channel.epgChannelId
+        val map = HashMap<String, MutableList<EpgProgram>>(epgPrograms.size / 2)
+        for (prog in epgPrograms) {
+            map.getOrPut(prog.channelId) { ArrayList() }.add(prog)
         }
-        if (anyProg != null) return anyProg
-
-        // 3. Synthétiser un programme réaliste adapté à la chaîne avec horaires dynamiques
-        return generateDefaultLiveProgram(channel, now)
+        lastRawListRef = epgPrograms
+        cachedIndex = map
+        return map
     }
 
     /**
-     * Retourne la liste complète des programmes du jour pour une chaîne (Guide TV)
+     * Retourne le programme actuellement en cours de diffusion pour la chaîne en O(1)
+     */
+    fun getCurrentProgram(channel: Channel, epgPrograms: List<EpgProgram>): EpgProgram {
+        val now = System.currentTimeMillis()
+        val index = getIndexedMap(epgPrograms)
+
+        // 1. Chercher dans les vrais programmes EPG en cours par clé O(1)
+        val channelList = index[channel.id] ?: (channel.epgChannelId?.let { index[it] })
+        if (!channelList.isNullOrEmpty()) {
+            val realLive = channelList.firstOrNull { it.isLiveNow(now) }
+            if (realLive != null) return realLive
+
+            val anyProg = channelList.firstOrNull()
+            if (anyProg != null) return anyProg
+        }
+
+        // 2. Synthétiser un programme réaliste avec cache mémoïsé (valide 60s)
+        val cached = defaultProgramCache[channel.id]
+        if (cached != null && now - cached.first < 60_000L && cached.second.isLiveNow(now)) {
+            return cached.second
+        }
+        val generated = generateDefaultLiveProgram(channel, now)
+        defaultProgramCache[channel.id] = Pair(now, generated)
+        return generated
+    }
+
+    /**
+     * Retourne la liste complète des programmes du jour pour une chaîne (Guide TV) en O(1)
      */
     fun getChannelSchedule(channel: Channel, epgPrograms: List<EpgProgram>): List<EpgProgram> {
-        val channelProgs = epgPrograms.filter {
-            it.channelId == channel.id || it.channelId == channel.epgChannelId
-        }.sortedBy { it.startEpochMs }
-
-        if (channelProgs.isNotEmpty()) return channelProgs
+        val index = getIndexedMap(epgPrograms)
+        val channelProgs = index[channel.id] ?: (channel.epgChannelId?.let { index[it] })
+        if (!channelProgs.isNullOrEmpty()) {
+            return channelProgs.sortedBy { it.startEpochMs }
+        }
 
         // Génération automatique d'une grille complète et variée pour la journée
         return generateDefaultSchedule(channel)

@@ -197,3 +197,21 @@ Charger des images non redimensionnées en ARGB_8888 sur des chipsets Mali-G31 /
 * Plafonner le cache mémoire Coil à **100 Mo max**.
 * Appliquer des dimensions maximales de rendu sur les posters (`size(width, height)` ou `precision(Precision.INEXACT)`).
 * Toujours activer la pagination intégrale des catalogues VOD (50 à 100 éléments par page) plutôt que de charger 39 000 éléments dans un seul `LazyVerticalGrid`.
+
+---
+
+## 8. Optimisations Performances IPTV à Grande Échelle (28 000+ Chaînes & VOD)
+
+### ⚠️ Les Pièges
+1. **`response.body?.string()` avec Gson** : Sur un fournisseur avec 28 000 chaînes, charger tout le corps JSON dans une `String` alloue 30 à 60 Mo de caractères UTF-16, puis des centaines de milliers d'objets `Map.Node`, déclenchant des pauses GC de 1 à 3 secondes.
+2. **Scan linéaire EPG $O(N)$** : Dans un `LazyColumn`, appeler `epgPrograms.firstOrNull { it.channelId == id }` exécute 28 000 itérations par chaîne visible lors du défilement.
+3. **`SubcomposeAsyncImage` avec animations continues** : Avoir 24 `LinearProgressIndicator` animés indéfiniment dans les cartes de la grille surcharge le Choreographer Compose.
+
+### ✅ La Solution Robuste
+1. **Streaming JSON OkHttp & Gson** : Toujours utiliser `response.body?.charStream().use { reader -> gson.fromJson(reader, type) }`. Le flux est lu par blocs de 8 Ko directement depuis le socket réseau.
+2. **Indexation EPG en mémoire $O(1)$** : Grouper les programmes par `channelId` dans un `HashMap` dès la réception. La recherche devient un accès instantané en $O(1)$.
+3. **`AsyncImage` + `RGB_565` + Downsampling** :
+   * Configurer `bitmapConfig(Bitmap.Config.RGB_565)` dans `NoosApplication` (divise par 2 la RAM des bitmaps sans perte visible sur TV).
+   * Spécifier `.size(width = 300, height = 450)` dans `ImageRequest.Builder`.
+   * Fournir systématiquement `key = { it.id }` et `contentType` dans les `LazyColumn` et `LazyVerticalGrid`.
+4. **`android:largeHeap="true"`** : Impératif dans `AndroidManifest.xml` pour les box Android TV dotées de 1.5 Go / 2 Go de RAM afin de supporter de volumineux catalogues IPTV.
