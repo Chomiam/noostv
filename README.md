@@ -10,7 +10,7 @@
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-3DDC84?logo=android&logoColor=white)](https://developer.android.com/)
 [![Compose TV](https://img.shields.io/badge/Jetpack%20Compose-Android%20TV%20%26%20M3-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![Media3](https://img.shields.io/badge/Media3%20ExoPlayer-1.2.1-FF6F00?logo=youtube&logoColor=white)](https://developer.android.com/media/media3)
-[![GitHub Releases](https://img.shields.io/badge/Release-v1.1.0%20%2F%20v1.1.0--beta.3-00E5FF)](https://github.com/Chomiam/noostv/releases)
+[![GitHub Releases](https://img.shields.io/badge/Release-v1.2.0%20%2F%20v1.2.0--beta.1-00E5FF)](https://github.com/Chomiam/noostv/releases)
 
 ---
 
@@ -20,13 +20,17 @@
 
 **NoosTV** est une application Android moderne et universelle conçue pour offrir une expérience de streaming fluide et immersive sur **téléviseurs connectés, box Android TV (Nvidia Shield, Xiaomi Mi Box, Chromecast avec Google TV)** ainsi que sur **smartphones et tablettes Android (Google Pixel, Samsung Galaxy, etc.)**.
 
-Développée en **Kotlin** avec **Jetpack Compose for TV** et **Material 3**, NoosTV intègre les standards visuels les plus soignés :
-- Thème sombre OLED épuré (*Midnight Dark*),
+Développée en **Kotlin** avec **Jetpack Compose for TV** et **Material 3**, NoosTV intègre les standards visuels et ergonomiques les plus soignés :
+- **Design Glassy Frosted Blur** inspiré des interfaces Apple TV et Google TV (translucidité moderne, reflets lumineux et contraste dynamique),
+- **Gestion Multi-Profils** sur un compte unique (avatars colorés, favoris et filtres isolés par utilisateur),
+- **Onglet Favoris dédié** pour épingler chaînes en direct, films et séries préférés avec accès instantané,
+- **Filtres de Catégories personnalisables** pour masquer/afficher à la volée les bouquets VOD dans la barre supérieure,
 - Navigation D-Pad ultra-réactive avec halos lumineux néon,
 - Fiches de détails cinématographiques riches avec métadonnées complètes pour les films et séries,
 - Pagination intelligente pour explorer la totalité des catalogues de VOD volumineux (des dizaines de milliers de titres),
 - Moteur de lecture vidéo robuste basé sur **Media3 ExoPlayer** avec accélération matérielle HEVC/H.264 et bascule automatique de conteneur (.mp4 / .mkv),
 - Prévisualisation live sur 1/4 d'écran et zapping instantané,
+- Sécurité renforcée avec chiffrement matériel des identifiants (AES-256-GCM Keystore) et masquage à l'écran,
 - Système de mise à jour transparente **OTA (Over-The-Air)** directement depuis GitHub Releases.
 
 ---
@@ -81,9 +85,52 @@ Développée en **Kotlin** avec **Jetpack Compose for TV** et **Material 3**, No
   <p><em>Fiches de métadonnées enrichies pour les Films et Séries sur grand écran Android TV</em></p>
 </div>
 
+### 👤 4. Multi-Profils Utilisateur & Design Glassy Frosted Blur
+- **Bouton profil interactif dans l'en-tête** : pastille vitrée affichant l'avatar coloré et le nom du profil actif.
+- **Gestion complète multi-comptes** :
+  - Création de profils avec nom personnalisé et suggestions rapides (*Salon, Famille, Enfants, Chambre, Invité*).
+  - Palette d'avatars avec couleurs distinctives (Bleu, Cyan, Violet, Émeraude, Ambre, Rose, Corail).
+  - Bascule instantanée entre profils sans rechargement de compte.
+  - Suppression sécurisée des profils secondaires.
+- **Isolation stricte des données** : chaque membre du foyer dispose de sa propre liste de favoris et de sa propre sélection de catégories VOD visibles.
+- **Esthétique Glassy Blur** : arrières-plans subtilement floutés, surfaces en verre dépoli, reflets lumineux et bordures translucides inspirés des dernières interfaces Apple TV et Google TV.
+
+<div align="center">
+  <img src="docs/screenshots/tv_glassy_profiles.png" alt="Gestion Multi-Profils Android TV" width="48%" />
+  &nbsp;
+  <img src="docs/screenshots/tv_glassy_home.png" alt="Interface Glassy Blur Android TV" width="48%" />
+  <p><em>Modale de gestion multi-profils et interface au design Glassy Frosted Blur</em></p>
+</div>
+
 ---
 
-### ⚡ 4. Moteur de Lecture Vidéo Avancé & Accélération Matérielle
+### 🌟 5. Onglet Favoris & Programmes Épinglés
+- **Centralisation des préférences** : regroupe dans un onglet dédié toutes vos chaînes de télévision en direct, films et séries favoris.
+- **Navigation par onglets de filtrage** : *Tout*, *Chaînes TV*, *Films*, *Séries* avec compteurs d'éléments en temps réel.
+- **Épinglage / Désépinglage en un clic** : depuis les fiches de détails ou directement depuis les cartes.
+- **Zéro latence** : synchronisation instantanée avec le profil utilisateur actif.
+
+<div align="center">
+  <img src="docs/screenshots/tv_favorites_pinned.png" alt="Onglet Favoris et Contenus Épinglés" width="85%" />
+  <p><em>Écran des favoris avec filtres par type de média et accès immédiat aux programmes épinglés</em></p>
+</div>
+
+---
+
+### 🎛️ 6. Filtres Avancés de Catégories VOD
+- **Contrôle total du catalogue** : permet de masquer les bouquets ou langues non désirés parmi les centaines de catégories de films et séries.
+- **Boutons d'action globale** : *Tout afficher* ou *Tout masquer* pour une configuration rapide.
+- **Compteur dynamique** : affichage en direct du nombre de catégories actives (ex. `179 / 180 catégories visibles`).
+- **Impact immédiat** : les catégories masquées disparaissent instantanément de la barre de défilement horizontal des onglets Films et Séries.
+
+<div align="center">
+  <img src="docs/screenshots/tv_category_filters.png" alt="Filtres de Catégories VOD" width="85%" />
+  <p><em>Écran de filtrage des catégories VOD avec boutons d'activation et compteur dynamique</em></p>
+</div>
+
+---
+
+### ⚡ 7. Moteur de Lecture Vidéo Avancé & Accélération Matérielle
 - **Media3 ExoPlayer haute performance** :
   - Décodage matériel matériel optimisé pour flux **H.264, HEVC / H.265, AV1, VP9** jusqu'en 4K 60fps.
   - Décodeur de secours automatique (`enableDecoderFallback = true`) pour garantir la lecture même sur les flux aux profils vidéo exotiques.
@@ -103,7 +150,7 @@ Développée en **Kotlin** avec **Jetpack Compose for TV** et **Material 3**, No
 
 ---
 
-### 📱 5. Expérience Dédiée Android Mobile
+### 📱 8. Expérience Dédiée Android Mobile
 Une interface pensée pour les écrans tactiles verticaux et validée sur **Google Pixel 10 Pro** :
 - **Barre de navigation inférieure à 5 onglets** : Direct, Films, Séries, Guide TV, Paramètres.
 - **Fiches de détails VOD en bottom sheet tactile** avec backdrops dynamiques, badges techniques et lecture en 1 geste.
@@ -124,7 +171,7 @@ Une interface pensée pour les écrans tactiles verticaux et validée sur **Goog
 
 ---
 
-### 📅 6. Guide TV Électronique Interactif (EPG)
+### 📅 9. Guide TV Électronique Interactif (EPG)
 - Grille tabulaire chronologique des programmes par tranche horaire et par chaîne.
 - **Bandeau de synopsis dynamique** : affiche en temps réel la description, le genre et les horaires exacts du programme sélectionné.
 - Clic direct sur n'importe quelle émission pour démarrer immédiatement la chaîne associée.
@@ -136,7 +183,7 @@ Une interface pensée pour les écrans tactiles verticaux et validée sur **Goog
 
 ---
 
-### 🔄 7. Mises à Jour OTA Automatiques (Stable & Testing)
+### 🔄 10. Mises à Jour OTA Automatiques (Stable & Testing)
 - **Gestionnaire OTA intégré** interrogeant directement GitHub Releases.
 - **Sélecteur de canal** : basculez d'un clic entre la branche **Stable** (production certifiée) et la branche **Testing** (nouvelles fonctionnalités et correctifs en avant-première).
 - Détection automatique des nouvelles versions, affichage des notes de mise à jour (*changelog*) et installation transparente de l'APK.
