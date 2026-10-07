@@ -51,6 +51,7 @@ import io.noostv.data.model.EpgProgram
 import io.noostv.data.model.Episode
 import io.noostv.data.model.Season
 import io.noostv.data.model.Series
+import io.noostv.data.model.UserProfile
 import io.noostv.data.model.VodMovie
 import io.noostv.ui.common.HdrBadge
 import io.noostv.ui.common.LiveIndicatorBadge
@@ -62,19 +63,23 @@ import io.noostv.ui.theme.*
 import kotlin.math.ceil
 
 /**
- * 5 Catégories latérales :
+ * 7 Catégories latérales :
  * 1. TV (Direct)
  * 2. Guide TV (EPG)
  * 3. Films (VOD Films)
  * 4. Séries (VOD Séries)
- * 5. Settings (Paramètres & Mises à jour GitHub)
+ * 5. Favoris (Épingles chaînes, films, séries)
+ * 6. Filtres (Visibilité des catégories)
+ * 7. Paramètres (Gestion système & Mises à jour GitHub)
  */
 enum class TvNavTab(val label: String, val icon: ImageVector) {
     TV("TV", Icons.Default.Tv),
     EPG("Guide TV", Icons.Default.DateRange),
     MOVIES("Films", Icons.Default.Movie),
     SERIES("Séries", Icons.Default.VideoLibrary),
-    SETTINGS("Settings", Icons.Default.Settings)
+    FAVORITES("Favoris", Icons.Default.Star),
+    FILTERS("Filtres", Icons.Default.Tune),
+    SETTINGS("Paramètres", Icons.Default.Settings)
 }
 
 @Composable
@@ -112,14 +117,19 @@ fun TvHomeScreen(
     var selectedSeriesCategory by remember { mutableStateOf("Toutes") }
     var previewChannel by remember { mutableStateOf(initialPreviewChannel) }
 
+    var activeProfile by remember { mutableStateOf(sessionManager.getActiveProfile()) }
+    var isProfileModalOpen by remember { mutableStateOf(false) }
+
     var selectedMovieDetail by remember { mutableStateOf<VodMovie?>(null) }
     var selectedSeriesDetail by remember { mutableStateOf<Series?>(null) }
     var favoriteMovieIds by remember { mutableStateOf(sessionManager.getFavoriteMovieIds()) }
     var favoriteSeriesIds by remember { mutableStateOf(sessionManager.getFavoriteSeriesIds()) }
 
-    // Interception de la touche Retour télécommande pour fermer les modales de détail ou le mode prévisualisation
-    BackHandler(enabled = selectedMovieDetail != null || selectedSeriesDetail != null || previewChannel != null) {
-        if (selectedMovieDetail != null) {
+    // Interception de la touche Retour télécommande pour fermer les modales de détail, modale profil ou le mode prévisualisation
+    BackHandler(enabled = isProfileModalOpen || selectedMovieDetail != null || selectedSeriesDetail != null || previewChannel != null) {
+        if (isProfileModalOpen) {
+            isProfileModalOpen = false
+        } else if (selectedMovieDetail != null) {
             selectedMovieDetail = null
         } else if (selectedSeriesDetail != null) {
             selectedSeriesDetail = null
@@ -139,6 +149,8 @@ fun TvHomeScreen(
             TvNavTab.EPG to FocusRequester(),
             TvNavTab.MOVIES to FocusRequester(),
             TvNavTab.SERIES to FocusRequester(),
+            TvNavTab.FAVORITES to FocusRequester(),
+            TvNavTab.FILTERS to FocusRequester(),
             TvNavTab.SETTINGS to FocusRequester()
         )
     }
@@ -175,11 +187,13 @@ fun TvHomeScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(GlassMeshBackground)
+    ) {
         Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(DarkOledBackground)
+            modifier = Modifier.fillMaxSize()
         ) {
         // ==================== BARRE LATÉRALE GAUCHE MODERNE & ARRONDIE ====================
         TvSidebar(
@@ -200,9 +214,11 @@ fun TvHomeScreen(
                 .fillMaxHeight()
                 .padding(top = 18.dp, end = 24.dp)
         ) {
-            // Header supérieur (Logo officiel NOOS, statut VIP, Recherche, Identifiants)
+            // Header supérieur (Logo officiel NOOS, statut VIP, Recherche, Profil & Identifiants)
             TvHeader(
                 isPremium = subscription.isPremium,
+                activeProfile = activeProfile,
+                onOpenProfileModal = { isProfileModalOpen = true },
                 onOpenSearch = onOpenSearch,
                 onOpenUpgrade = onOpenUpgrade,
                 onOpenLogin = onOpenLogin
@@ -305,8 +321,11 @@ fun TvHomeScreen(
 
                 // ==================== 3. ONGLET FILMS (VOD) — RATIO CINÉMA 2:3 ====================
                 TvNavTab.MOVIES -> {
-                    val vodCatNames = remember(vodCategories) {
-                        listOf("Toutes") + vodCategories.map { it.name }
+                    val visibleVodCategories = remember(vodCategories, activeProfile) {
+                        vodCategories.filter { sessionManager.isVodCategoryVisible(it.id) }
+                    }
+                    val vodCatNames = remember(visibleVodCategories) {
+                        listOf("Toutes") + visibleVodCategories.map { it.name }
                     }
 
                     TvCategoryChipsRow(
@@ -371,8 +390,11 @@ fun TvHomeScreen(
 
                 // ==================== 4. ONGLET SÉRIES (VOD) — RATIO CINÉMA 2:3 ====================
                 TvNavTab.SERIES -> {
-                    val seriesCatNames = remember(seriesCategories) {
-                        listOf("Toutes") + seriesCategories.map { it.name }
+                    val visibleSeriesCategories = remember(seriesCategories, activeProfile) {
+                        seriesCategories.filter { sessionManager.isSeriesCategoryVisible(it.id) }
+                    }
+                    val seriesCatNames = remember(visibleSeriesCategories) {
+                        listOf("Toutes") + visibleSeriesCategories.map { it.name }
                     }
 
                     TvCategoryChipsRow(
@@ -435,7 +457,46 @@ fun TvHomeScreen(
                     }
                 }
 
-                // ==================== 5. ONGLET SETTINGS (PARAMÈTRES & MISES À JOUR) ====================
+                // ==================== 5. ONGLET FAVORIS (CHAÎNES, FILMS & SÉRIES ÉPINGLÉS) ====================
+                TvNavTab.FAVORITES -> {
+                    TvFavoritesContent(
+                        channels = channels,
+                        movies = movies,
+                        series = series,
+                        sessionManager = sessionManager,
+                        focusRequester = contentFocusRequester,
+                        onNavigateLeftToSidebar = {
+                            sidebarFocusRequesters[TvNavTab.FAVORITES]?.requestFocus()
+                        },
+                        onSelectChannel = onSelectChannel,
+                        onSelectMovie = { selectedMovieDetail = it },
+                        onSelectSeries = { selectedSeriesDetail = it },
+                        onFavoriteChanged = {
+                            activeProfile = sessionManager.getActiveProfile()
+                            favoriteIds = sessionManager.getFavoriteChannelIds()
+                            favoriteMovieIds = sessionManager.getFavoriteMovieIds()
+                            favoriteSeriesIds = sessionManager.getFavoriteSeriesIds()
+                        }
+                    )
+                }
+
+                // ==================== 6. ONGLET FILTRES DE CATÉGORIES ====================
+                TvNavTab.FILTERS -> {
+                    TvCategoryFiltersContent(
+                        vodCategories = vodCategories,
+                        seriesCategories = seriesCategories,
+                        sessionManager = sessionManager,
+                        focusRequester = contentFocusRequester,
+                        onNavigateLeftToSidebar = {
+                            sidebarFocusRequesters[TvNavTab.FILTERS]?.requestFocus()
+                        },
+                        onFiltersUpdated = {
+                            activeProfile = sessionManager.getActiveProfile()
+                        }
+                    )
+                }
+
+                // ==================== 7. ONGLET SETTINGS (PARAMÈTRES & MISES À JOUR) ====================
                 TvNavTab.SETTINGS -> {
                     TvSettingsContent(
                         sessionManager = sessionManager,
@@ -461,6 +522,7 @@ fun TvHomeScreen(
                     val id = selectedMovieDetail!!.id
                     sessionManager.toggleFavoriteMovie(id)
                     favoriteMovieIds = sessionManager.getFavoriteMovieIds()
+                    activeProfile = sessionManager.getActiveProfile()
                 },
                 onDismiss = { selectedMovieDetail = null },
                 onFetchFullInfo = { id -> onFetchVodInfo?.invoke(id) }
@@ -480,16 +542,32 @@ fun TvHomeScreen(
                     val id = selectedSeriesDetail!!.id
                     sessionManager.toggleFavoriteSeries(id)
                     favoriteSeriesIds = sessionManager.getFavoriteSeriesIds()
+                    activeProfile = sessionManager.getActiveProfile()
                 },
                 onDismiss = { selectedSeriesDetail = null },
                 onFetchFullInfo = { id -> onFetchSeriesInfo?.invoke(id) }
+            )
+        }
+
+        // ==================== MODALE DE GESTION MULTI-PROFILS ====================
+        if (isProfileModalOpen) {
+            TvProfileModal(
+                sessionManager = sessionManager,
+                onDismiss = { isProfileModalOpen = false },
+                onProfileChanged = { newProfile ->
+                    activeProfile = newProfile
+                    favoriteIds = newProfile.favoriteChannelIds
+                    favoriteMovieIds = newProfile.favoriteMovieIds
+                    favoriteSeriesIds = newProfile.favoriteSeriesIds
+                    isProfileModalOpen = false
+                }
             )
         }
     }
 }
 
 /**
- * Barre latérale avec 4 onglets sobres et arrondis (TV, Guide TV, Films, Séries)
+ * Barre latérale avec 7 onglets au style Glassy Frosted Blur
  */
 @Composable
 fun TvSidebar(
@@ -504,17 +582,18 @@ fun TvSidebar(
         modifier = Modifier
             .width(88.dp)
             .fillMaxHeight()
-            .background(SurfaceDark)
-            .padding(vertical = 24.dp),
+            .background(GlassSurface)
+            .border(androidx.compose.foundation.BorderStroke(1.dp, GlassBorder))
+            .padding(vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         tabList.forEachIndexed { index, tab ->
             val isSelected = tab == selectedTab
             var isFocused by remember { mutableStateOf(false) }
 
             val scale by animateFloatAsState(
-                targetValue = if (isFocused) 1.10f else 1.0f,
+                targetValue = if (isFocused) 1.08f else 1.0f,
                 label = "sidebar_scale"
             )
 
@@ -524,9 +603,9 @@ fun TvSidebar(
 
             Box(
                 modifier = Modifier
-                    .size(60.dp)
+                    .size(54.dp)
                     .scale(scale)
-                    .clip(RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(18.dp))
                     .focusRequester(myRequester)
                     .onFocusChanged {
                         isFocused = it.isFocused
@@ -564,15 +643,15 @@ fun TvSidebar(
                     }
                     .background(
                         when {
-                            isFocused -> Color(0xFF1E2838)
-                            isSelected -> NoosBlue.copy(alpha = 0.22f)
+                            isFocused -> Color(0xFF24334D)
+                            isSelected -> NoosBlue.copy(alpha = 0.32f)
                             else -> Color.Transparent
                         }
                     )
                     .border(
-                        width = if (isFocused) 3.dp else if (isSelected) 1.dp else 0.dp,
-                        color = if (isFocused) FocusGlow else if (isSelected) NoosBlue.copy(alpha = 0.6f) else Color.Transparent,
-                        shape = RoundedCornerShape(20.dp)
+                        width = if (isFocused) 2.5.dp else if (isSelected) 1.dp else 0.dp,
+                        color = if (isFocused) FocusGlow else if (isSelected) NoosCyan.copy(alpha = 0.6f) else Color.Transparent,
+                        shape = RoundedCornerShape(18.dp)
                     ),
                 contentAlignment = Alignment.Center
             ) {
@@ -584,14 +663,15 @@ fun TvSidebar(
                         imageVector = tab.icon,
                         contentDescription = tab.label,
                         tint = if (isFocused) Color.White else if (isSelected) NoosCyan else TextSecondary,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = tab.label,
                         color = if (isFocused) Color.White else if (isSelected) NoosCyan else TextSecondary,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
                     )
                 }
             }
@@ -600,11 +680,13 @@ fun TvSidebar(
 }
 
 /**
- * En-tête supérieur moderne : Logo officiel NOOS, pill TV en dégradé, boutons arrondis
+ * En-tête supérieur moderne au style Glassy : Logo officiel NOOS, profil utilisateur, boutons arrondis
  */
 @Composable
 fun TvHeader(
     isPremium: Boolean,
+    activeProfile: UserProfile,
+    onOpenProfileModal: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenUpgrade: () -> Unit,
     onOpenLogin: () -> Unit
@@ -654,17 +736,17 @@ fun TvHeader(
             }
         }
 
-        // Actions rapides sobres avec forme pilule moderne (50%)
+        // Actions rapides sobres avec forme pilule moderne glassy (50%)
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Bouton Recherche Pilule
+            // Bouton Recherche Pilule Glassy
             Button(
                 onClick = onOpenSearch,
-                colors = ButtonDefaults.buttonColors(containerColor = SurfaceDarkVariant),
+                colors = ButtonDefaults.buttonColors(containerColor = GlassSurfaceElevated),
                 shape = RoundedCornerShape(50),
-                border = androidx.compose.foundation.BorderStroke(1.dp, CardBorderUnfocused),
+                border = androidx.compose.foundation.BorderStroke(1.dp, GlassBorder),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
             ) {
                 Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(15.dp))
@@ -672,12 +754,12 @@ fun TvHeader(
                 Text("Recherche", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
 
-            // Bouton Identifiants IPTV Pilule
+            // Bouton Identifiants IPTV Pilule Glassy
             Button(
                 onClick = onOpenLogin,
-                colors = ButtonDefaults.buttonColors(containerColor = SurfaceDarkVariant),
+                colors = ButtonDefaults.buttonColors(containerColor = GlassSurfaceElevated),
                 shape = RoundedCornerShape(50),
-                border = androidx.compose.foundation.BorderStroke(1.dp, CardBorderUnfocused),
+                border = androidx.compose.foundation.BorderStroke(1.dp, GlassBorder),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
             ) {
                 Icon(imageVector = Icons.Default.Dns, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(15.dp))
@@ -685,7 +767,11 @@ fun TvHeader(
                 Text("Identifiants IPTV", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
 
-            ResolutionBadge(resolution = "4K HDR")
+            // Bouton Profil multi-utilisateurs (remplace la pastille 4K HDR)
+            TvProfileButton(
+                profile = activeProfile,
+                onClick = onOpenProfileModal
+            )
         }
     }
 }
