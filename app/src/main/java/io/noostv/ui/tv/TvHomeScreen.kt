@@ -192,6 +192,8 @@ fun TvHomeScreen(
         )
     }
     val tvChannelListFocusRequester = remember { FocusRequester() }
+    val moviesCategoryChipsFocusRequester = remember { FocusRequester() }
+    val seriesCategoryChipsFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
         sidebarFocusRequesters[TvNavTab.TV]?.requestFocus()
@@ -249,12 +251,34 @@ fun TvHomeScreen(
         TvSidebar(
             selectedTab = selectedTab,
             sidebarFocusRequesters = sidebarFocusRequesters,
-            contentFocusRequester = contentFocusRequesters[selectedTab],
+            contentFocusRequester = when (selectedTab) {
+                TvNavTab.MOVIES -> if (movies.isNotEmpty() && !isVodLoading) contentFocusRequesters[TvNavTab.MOVIES] else moviesCategoryChipsFocusRequester
+                TvNavTab.SERIES -> if (series.isNotEmpty() && !isSeriesLoading) contentFocusRequesters[TvNavTab.SERIES] else seriesCategoryChipsFocusRequester
+                else -> contentFocusRequesters[selectedTab]
+            },
             onTabSelected = { tab ->
                 selectedTab = tab
             },
             onNavigateRight = {
-                runCatching { contentFocusRequesters[selectedTab]?.requestFocus() }
+                when (selectedTab) {
+                    TvNavTab.MOVIES -> {
+                        if (movies.isNotEmpty() && !isVodLoading) {
+                            runCatching { contentFocusRequesters[TvNavTab.MOVIES]?.requestFocus() }
+                        } else {
+                            runCatching { moviesCategoryChipsFocusRequester.requestFocus() }
+                        }
+                    }
+                    TvNavTab.SERIES -> {
+                        if (series.isNotEmpty() && !isSeriesLoading) {
+                            runCatching { contentFocusRequesters[TvNavTab.SERIES]?.requestFocus() }
+                        } else {
+                            runCatching { seriesCategoryChipsFocusRequester.requestFocus() }
+                        }
+                    }
+                    else -> {
+                        runCatching { contentFocusRequesters[selectedTab]?.requestFocus() }
+                    }
+                }
             }
         )
 
@@ -362,8 +386,15 @@ fun TvHomeScreen(
                     TvCategoryChipsRow(
                         categories = vodCatNames,
                         selectedCategory = selectedVodCategory,
-                        focusRequester = contentFocusRequesters[TvNavTab.MOVIES],
+                        focusRequester = moviesCategoryChipsFocusRequester,
+                        downFocusRequester = contentFocusRequesters[TvNavTab.MOVIES],
+                        leftFocusRequester = sidebarFocusRequesters[TvNavTab.MOVIES],
                         onNavigateLeft = { sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus() },
+                        onNavigateDown = {
+                            if (movies.isNotEmpty()) {
+                                runCatching { contentFocusRequesters[TvNavTab.MOVIES]?.requestFocus() }
+                            }
+                        },
                         onSelectCategory = { catName ->
                             selectedVodCategory = catName
                             val found = vodCategories.find { it.name == catName }
@@ -399,8 +430,14 @@ fun TvHomeScreen(
                                     val movie = pagedMovies[index]
                                     TvMovieGridCard(
                                         movie = movie,
+                                        focusRequester = if (index == 0) contentFocusRequesters[TvNavTab.MOVIES] else null,
+                                        upFocusRequester = if (index < 6) moviesCategoryChipsFocusRequester else null,
+                                        leftFocusRequester = if (index % 6 == 0) sidebarFocusRequesters[TvNavTab.MOVIES] else null,
                                         onNavigateLeft = if (index % 6 == 0) {
                                             { sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus() }
+                                        } else null,
+                                        onNavigateUp = if (index < 6) {
+                                            { runCatching { moviesCategoryChipsFocusRequester.requestFocus() } }
                                         } else null,
                                         onClick = { selectedMovieDetail = movie }
                                     )
@@ -431,8 +468,15 @@ fun TvHomeScreen(
                     TvCategoryChipsRow(
                         categories = seriesCatNames,
                         selectedCategory = selectedSeriesCategory,
-                        focusRequester = contentFocusRequesters[TvNavTab.SERIES],
+                        focusRequester = seriesCategoryChipsFocusRequester,
+                        downFocusRequester = contentFocusRequesters[TvNavTab.SERIES],
+                        leftFocusRequester = sidebarFocusRequesters[TvNavTab.SERIES],
                         onNavigateLeft = { sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus() },
+                        onNavigateDown = {
+                            if (series.isNotEmpty()) {
+                                runCatching { contentFocusRequesters[TvNavTab.SERIES]?.requestFocus() }
+                            }
+                        },
                         onSelectCategory = { catName ->
                             selectedSeriesCategory = catName
                             val found = seriesCategories.find { it.name == catName }
@@ -468,8 +512,14 @@ fun TvHomeScreen(
                                     val ser = pagedSeries[index]
                                     TvSeriesGridCard(
                                         series = ser,
+                                        focusRequester = if (index == 0) contentFocusRequesters[TvNavTab.SERIES] else null,
+                                        upFocusRequester = if (index < 6) seriesCategoryChipsFocusRequester else null,
+                                        leftFocusRequester = if (index % 6 == 0) sidebarFocusRequesters[TvNavTab.SERIES] else null,
                                         onNavigateLeft = if (index % 6 == 0) {
                                             { sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus() }
+                                        } else null,
+                                        onNavigateUp = if (index < 6) {
+                                            { runCatching { seriesCategoryChipsFocusRequester.requestFocus() } }
                                         } else null,
                                         onClick = { selectedSeriesDetail = ser }
                                     )
@@ -863,6 +913,8 @@ fun TvCategoryChipsRow(
     categories: List<String>,
     selectedCategory: String,
     focusRequester: FocusRequester? = null,
+    downFocusRequester: FocusRequester? = null,
+    leftFocusRequester: FocusRequester? = null,
     onNavigateLeft: (() -> Unit)? = null,
     onNavigateDown: (() -> Unit)? = null,
     onSelectCategory: (String) -> Unit
@@ -874,19 +926,27 @@ fun TvCategoryChipsRow(
             .padding(horizontal = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        categories.forEach { category ->
+        categories.forEachIndexed { index, category ->
             val isSelected = category.equals(selectedCategory, ignoreCase = true)
             var isFocused by remember { mutableStateOf(false) }
 
             var chipMod = Modifier
                 .clip(RoundedCornerShape(50))
 
-            if (focusRequester != null && category == categories.firstOrNull()) {
+            if (focusRequester != null && index == 0) {
                 chipMod = chipMod.focusRequester(focusRequester)
             }
 
             Box(
                 modifier = chipMod
+                    .focusProperties {
+                        if (downFocusRequester != null) {
+                            down = downFocusRequester
+                        }
+                        if (index == 0 && leftFocusRequester != null) {
+                            left = leftFocusRequester
+                        }
+                    }
                     .onFocusChanged { isFocused = it.isFocused }
                     .focusable()
                     .clickable { onSelectCategory(category) }
@@ -894,8 +954,8 @@ fun TvCategoryChipsRow(
                         if (keyEvent.type == KeyEventType.KeyDown) {
                             when (keyEvent.key) {
                                 Key.DirectionLeft -> {
-                                    if (category == categories.firstOrNull()) {
-                                        onNavigateLeft?.invoke()
+                                    if (index == 0 && onNavigateLeft != null) {
+                                        onNavigateLeft()
                                         true
                                     } else false
                                 }
@@ -1155,26 +1215,57 @@ fun TvChannelGridCard(
 @Composable
 fun TvMovieGridCard(
     movie: VodMovie,
+    focusRequester: FocusRequester? = null,
+    upFocusRequester: FocusRequester? = null,
+    leftFocusRequester: FocusRequester? = null,
     onNavigateLeft: (() -> Unit)? = null,
+    onNavigateUp: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
     var isFocused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(targetValue = if (isFocused) 1.06f else 1.0f, label = "vod_scale")
 
+    var cardModifier = Modifier
+        .fillMaxWidth()
+        .aspectRatio(2f / 3f) // Ratio standard d'affiche de film (ex: 200x300, 500x750)
+        .scale(scale)
+        .clip(RoundedCornerShape(18.dp))
+
+    if (focusRequester != null) {
+        cardModifier = cardModifier.focusRequester(focusRequester)
+    }
+
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(2f / 3f) // Ratio standard d'affiche de film (ex: 200x300, 500x750)
-            .scale(scale)
-            .clip(RoundedCornerShape(18.dp))
+        modifier = cardModifier
+            .focusProperties {
+                if (upFocusRequester != null) {
+                    up = upFocusRequester
+                }
+                if (leftFocusRequester != null) {
+                    left = leftFocusRequester
+                }
+            }
             .onFocusChanged { isFocused = it.isFocused }
             .focusable()
             .clickable { onClick() }
             .onPreviewKeyEvent { keyEvent ->
-                if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.DirectionLeft && onNavigateLeft != null) {
-                    onNavigateLeft()
-                    true
+                if (keyEvent.type == KeyEventType.KeyDown) {
+                    when (keyEvent.key) {
+                        Key.DirectionLeft -> {
+                            if (onNavigateLeft != null) {
+                                onNavigateLeft()
+                                true
+                            } else false
+                        }
+                        Key.DirectionUp -> {
+                            if (onNavigateUp != null) {
+                                onNavigateUp()
+                                true
+                            } else false
+                        }
+                        else -> false
+                    }
                 } else false
             }
             .background(if (isFocused) Color(0xFF1E2838) else CardBackground)
@@ -1295,26 +1386,57 @@ fun TvMovieGridCard(
 @Composable
 fun TvSeriesGridCard(
     series: Series,
+    focusRequester: FocusRequester? = null,
+    upFocusRequester: FocusRequester? = null,
+    leftFocusRequester: FocusRequester? = null,
     onNavigateLeft: (() -> Unit)? = null,
+    onNavigateUp: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
     var isFocused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(targetValue = if (isFocused) 1.06f else 1.0f, label = "series_scale")
 
+    var cardModifier = Modifier
+        .fillMaxWidth()
+        .aspectRatio(2f / 3f) // Ratio standard d'affiche de série (ex: 200x300, 500x750)
+        .scale(scale)
+        .clip(RoundedCornerShape(18.dp))
+
+    if (focusRequester != null) {
+        cardModifier = cardModifier.focusRequester(focusRequester)
+    }
+
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(2f / 3f) // Ratio standard d'affiche de série (ex: 200x300, 500x750)
-            .scale(scale)
-            .clip(RoundedCornerShape(18.dp))
+        modifier = cardModifier
+            .focusProperties {
+                if (upFocusRequester != null) {
+                    up = upFocusRequester
+                }
+                if (leftFocusRequester != null) {
+                    left = leftFocusRequester
+                }
+            }
             .onFocusChanged { isFocused = it.isFocused }
             .focusable()
             .clickable { onClick() }
             .onPreviewKeyEvent { keyEvent ->
-                if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.DirectionLeft && onNavigateLeft != null) {
-                    onNavigateLeft()
-                    true
+                if (keyEvent.type == KeyEventType.KeyDown) {
+                    when (keyEvent.key) {
+                        Key.DirectionLeft -> {
+                            if (onNavigateLeft != null) {
+                                onNavigateLeft()
+                                true
+                            } else false
+                        }
+                        Key.DirectionUp -> {
+                            if (onNavigateUp != null) {
+                                onNavigateUp()
+                                true
+                            } else false
+                        }
+                        else -> false
+                    }
                 } else false
             }
             .background(if (isFocused) Color(0xFF1E2838) else CardBackground)
