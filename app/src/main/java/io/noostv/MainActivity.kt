@@ -121,6 +121,12 @@ class MainActivity : ComponentActivity() {
                 var customStreamSubtitle by remember { mutableStateOf<String?>(null) }
 
                 fun performLogout() {
+                    val s = sessionManager.serverUrl
+                    val u = sessionManager.username
+                    val p = sessionManager.password
+                    if (s.isNotBlank() && u.isNotBlank() && p.isNotBlank()) {
+                        sessionManager.saveAccountToHistory(s, u, p, sessionManager.playlistName)
+                    }
                     playerEngine.stop()
                     repository.clear()
                     sessionManager.logout()
@@ -231,6 +237,7 @@ class MainActivity : ComponentActivity() {
                 when (currentScreen) {
                     CurrentScreen.LOGIN -> {
                         LoginScreen(
+                            sessionManager = sessionManager,
                             onLoginSuccess = { server, user, pass ->
                                 sessionManager.saveCredentials(server, user, pass)
                                 sessionManager.isPremium = true
