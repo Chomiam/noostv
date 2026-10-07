@@ -473,6 +473,7 @@ class MainActivity : ComponentActivity() {
                             isHdr = isHdr,
                             resolution = resolution,
                             codec = codec,
+                            isMobile = !deviceDetector.isTv,
                             channel = currentChannel,
                             channels = channels,
                             epgPrograms = epgPrograms,

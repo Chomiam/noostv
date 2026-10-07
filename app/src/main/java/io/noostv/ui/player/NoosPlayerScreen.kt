@@ -1,5 +1,7 @@
 package io.noostv.ui.player
 
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
@@ -32,12 +34,17 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -77,6 +84,7 @@ fun NoosPlayerScreen(
     isHdr: Boolean,
     resolution: String,
     codec: String,
+    isMobile: Boolean = false,
     channel: Channel? = null,
     channels: List<Channel> = emptyList(),
     epgPrograms: List<EpgProgram> = emptyList(),
@@ -244,9 +252,62 @@ fun NoosPlayerScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
+    // ------------------------------------------------------------------
+    // ORIENTATION (mobile uniquement)
+    //  - Téléphone retourné (paysage) : lecteur plein écran immersif
+    //    (barres système masquées) + gestes tactiles actifs.
+    //  - Téléphone vertical (portrait) : lecteur en haut (16:9) et
+    //    Guide TV par chaîne en bas.
+    // ------------------------------------------------------------------
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isPortraitMobile = isMobile && !isLandscape
+
+    val view = LocalView.current
+    val activity = view.context as? android.app.Activity
+
+    // Immersion : aucune barre système en paysage mobile, restaurées sinon
+    DisposableEffect(isMobile, isLandscape, view) {
+        val window = activity?.window
+        if (window == null) {
+            onDispose { }
+        } else {
+            if (isMobile && isLandscape) {
+                WindowCompat.setDecorFitsSystemWindows(window, false)
+                WindowInsetsControllerCompat(window, view).apply {
+                    systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    hide(WindowInsetsCompat.Type.systemBars())
+                }
+            } else if (isMobile) {
+                WindowCompat.setDecorFitsSystemWindows(window, true)
+                WindowInsetsControllerCompat(window, view).show(WindowInsetsCompat.Type.systemBars())
+            }
+            onDispose {
+                if (isMobile) {
+                    WindowCompat.setDecorFitsSystemWindows(window, true)
+                    WindowInsetsControllerCompat(window, view).show(WindowInsetsCompat.Type.systemBars())
+                }
+            }
+        }
+    }
+
+    // L'écran suit le capteur de rotation pendant la lecture mobile : c'est ce qui
+    // permet de détecter le « flip » du téléphone et d'activer gestes + plein écran.
+    DisposableEffect(isMobile, activity) {
+        if (isMobile && activity != null) {
+            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
+        }
+        onDispose {
+            if (isMobile && activity != null) {
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                activity.window.attributes = activity.window.attributes.apply { screenBrightness = -1f }
+            }
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        Box(
+        modifier = (if (isPortraitMobile) Modifier.fillMaxWidth().fillMaxHeight(0.42f) else Modifier.fillMaxSize())
             .background(Color.Black)
             .focusRequester(playerFocusRequester)
             .focusable()
@@ -424,6 +485,24 @@ fun NoosPlayerScreen(
                 playerView.resizeMode = resizeMode
             }
         )
+
+        // ------------------ 1.5. COUCHE GESTES TACTILES (MOBILE) ------------------
+        // Tap = afficher/masquer l'OSD • Double-tap gauche/droite = ±10 s
+        // Glissement vertical = volume/luminosité • horizontal = avance/recul
+        if (isMobile) {
+            PlayerTouchGestureLayer(
+                enabled = !showSettingsDialog,
+                isLive = isLive,
+                onToggleOsd = { isOsdVisible = !isOsdVisible },
+                onTogglePlayPause = {
+                    if (isPlaying) playerEngine.pause() else playerEngine.resume()
+                },
+                onSeekRelative = { deltaMs -> playerEngine.seekBy(deltaMs) },
+                onNextChannel = if (isLive) onNextChannel else null,
+                onPreviousChannel = if (isLive) onPreviousChannel else null,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         // ------------------ 2. OVERLAY FORMAT D'IMAGE CHANGER ------------------
         AnimatedVisibility(
@@ -1163,7 +1242,24 @@ fun NoosPlayerScreen(
                 onDismiss = { showSettingsDialog = false }
             )
         }
-    }
+        } // fin Box lecteur
+
+        // ------------------ 8. GUIDE TV (MOBILE EN VERTICAL) ------------------
+        // Le téléphone en portrait affiche le lecteur en haut (16:9) et ce
+        // guide des chaînes en dessous, avec le programme en cours de chacune.
+        if (isPortraitMobile && isLive && onSelectChannel != null) {
+            MobileTvGuidePanel(
+                channels = channels,
+                epgPrograms = epgPrograms,
+                activeChannel = channel,
+                onSelectChannel = { selected -> onSelectChannel.invoke(selected) },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.58f)
+            )
+        }
+    } // fin Box racine
 }
 
 /**
