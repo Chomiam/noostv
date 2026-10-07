@@ -305,9 +305,11 @@ fun NoosPlayerScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        // Guide TV en arrière-plan : il remplit l'écran, la vidéo 16:9 par-dessus
-        // ne couvre que sa partie haute en portrait.
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        // Hauteur de la bande vidéo 16:9 en portrait : le guide commence en dessous,
+        // ainsi son en-tête et ses groupes/catégories restent visibles (et non cachés par la vidéo).
+        val playerHeightDp = if (isPortraitMobile) maxWidth * 9f / 16f else 0.dp
+        // Guide TV : occupe tout ce qui se trouve SOUS la bande vidéo en portrait.
         if (isPortraitMobile && isLive && onSelectChannel != null) {
             MobileTvGuidePanel(
                 channels = channels,
@@ -318,6 +320,7 @@ fun NoosPlayerScreen(
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .fillMaxHeight(1f)
+                    .padding(top = playerHeightDp)
             )
         }
         Box(
@@ -514,7 +517,13 @@ fun NoosPlayerScreen(
                 onSeekRelative = { deltaMs -> playerEngine.seekBy(deltaMs) },
                 onNextChannel = if (isLive) onNextChannel else null,
                 onPreviousChannel = if (isLive) onPreviousChannel else null,
-                modifier = Modifier.fillMaxSize()
+                modifier = if (isPortraitMobile) {
+                    // La couche de gestes ne couvre que la bande vidéo : le guide du bas
+                    // garde ses propres scrolls (listes, groupes) sans être intercepté.
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth().aspectRatio(16f / 9f)
+                } else {
+                    Modifier.fillMaxSize()
+                }
             )
         }
 
