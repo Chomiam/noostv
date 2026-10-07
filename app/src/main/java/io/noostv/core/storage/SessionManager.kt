@@ -31,12 +31,22 @@ class SessionManager(context: Context) {
         private const val KEY_APP_LANGUAGE = "app_language"
         private const val KEY_GITHUB_TOKEN = "github_token"
         private const val KEY_SAVED_ACCOUNTS_ENCRYPTED = "saved_accounts_encrypted"
+        private const val KEY_SOUND_EFFECTS_ENABLED = "sound_effects_enabled"
+        private const val KEY_SOUND_EFFECTS_VOLUME = "sound_effects_volume"
         private val DEFAULT_TOKEN: String
             get() = runCatching { io.noostv.BuildConfig.GITHUB_TOKEN }.getOrDefault("")
 
         private const val KEY_PROFILES_JSON = "profiles_json"
         private const val KEY_ACTIVE_PROFILE_ID = "active_profile_id"
     }
+
+    var isSoundEffectsEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SOUND_EFFECTS_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_SOUND_EFFECTS_ENABLED, value).apply()
+
+    var soundEffectsVolume: Float
+        get() = prefs.getFloat(KEY_SOUND_EFFECTS_VOLUME, 0.35f)
+        set(value) = prefs.edit().putFloat(KEY_SOUND_EFFECTS_VOLUME, value).apply()
 
     var appLanguage: String
         get() = prefs.getString(KEY_APP_LANGUAGE, "fr") ?: "fr"

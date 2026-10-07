@@ -7,6 +7,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
 import androidx.compose.runtime.CompositionLocalProvider
+import io.noostv.core.audio.LocalSoundEffectManager
+import io.noostv.core.audio.SoundEffectManager
+import android.view.KeyEvent
 import io.noostv.core.localization.AppLanguage
 import io.noostv.core.localization.AppStrings
 import io.noostv.core.localization.LocalAppLanguage
@@ -46,12 +49,14 @@ class MainActivity : ComponentActivity() {
     private lateinit var repository: IptvRepository
     private lateinit var playerEngine: PlayerEngine
     private lateinit var sessionManager: SessionManager
+    private lateinit var soundEffectManager: SoundEffectManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         deviceDetector = DeviceDetector(this)
         sessionManager = SessionManager(this)
+        soundEffectManager = SoundEffectManager(this, sessionManager)
         val initialSub = if (sessionManager.isPremium) {
             io.noostv.core.entitlement.UserSubscription(
                 userId = "dev_user",
@@ -78,7 +83,8 @@ class MainActivity : ComponentActivity() {
 
             CompositionLocalProvider(
                 LocalAppLanguage provides currentLanguage,
-                LocalStrings provides AppStrings.get(currentLanguage)
+                LocalStrings provides AppStrings.get(currentLanguage),
+                LocalSoundEffectManager provides soundEffectManager
             ) {
                 NoosTvTheme {
                     // Si l'utilisateur n'a pas encore configuré d'identifiants, on démarre sur LOGIN
@@ -511,8 +517,31 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_UP,
+                KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_LEFT,
+                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    soundEffectManager.playFocus()
+                }
+                KeyEvent.KEYCODE_DPAD_CENTER,
+                KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                    soundEffectManager.playSelect()
+                }
+                KeyEvent.KEYCODE_BACK -> {
+                    soundEffectManager.playBack()
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         playerEngine.release()
+        soundEffectManager.release()
     }
 }

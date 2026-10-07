@@ -275,6 +275,12 @@ class PlayerEngine(
         hasAttemptedFallback = false
         _isHdrActive.value = isHdrStream
 
+        // Réinitialise les métriques et pistes pour ne pas hériter des données d'un flux précédent
+        _availableVideoTracks.value = emptyList()
+        _availableAudioTracks.value = emptyList()
+        _availableSubtitleTracks.value = emptyList()
+        _playbackStats.value = PlaybackStats()
+
         Log.i("NoosPlayer", "playStream: '$title' -> ${io.noostv.core.security.CryptoManager.sanitizeUrl(url)}")
 
         val mediaItem = MediaItem.Builder()
@@ -429,9 +435,9 @@ class PlayerEngine(
                     C.TRACK_TYPE_VIDEO -> {
                         val resLabel = if (format.width > 0 && format.height > 0) {
                             when {
-                                format.height >= 2160 || format.width >= 3840 -> "4K UHD (${format.width}×${format.height})"
-                                format.height >= 1080 || format.width >= 1920 -> "1080p FHD (${format.width}×${format.height})"
-                                format.height >= 720 || format.width >= 1280 -> "720p HD (${format.width}×${format.height})"
+                                format.height >= 1800 || format.width >= 3200 -> "4K UHD (${format.width}×${format.height})"
+                                format.height >= 800 || format.width >= 1600 -> "1080p FHD (${format.width}×${format.height})"
+                                format.height >= 600 || format.width >= 1100 -> "720p HD (${format.width}×${format.height})"
                                 format.height >= 576 -> "576p SD"
                                 format.height >= 480 -> "480p SD"
                                 else -> "${format.width}×${format.height}"

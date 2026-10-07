@@ -739,15 +739,28 @@ fun NoosPlayerScreen(
             ) {
                 // ==================== BARRE SUPÉRIEURE (TITRE, BADGES & HEURE) ====================
                 val selectedVideoTrack = videoTracks.firstOrNull { it.isSelected }
+                val effectiveWidth = selectedVideoTrack?.width?.takeIf { it > 0 }
+                    ?: playbackStats.width.takeIf { it > 0 }
                 val effectiveHeight = selectedVideoTrack?.height?.takeIf { it > 0 }
                     ?: playbackStats.height.takeIf { it > 0 }
 
                 val displayRes = when {
-                    effectiveHeight != null && effectiveHeight >= 2160 -> "4K"
-                    effectiveHeight != null && effectiveHeight >= 1080 -> "1080p"
-                    effectiveHeight != null && effectiveHeight >= 720 -> "720p"
-                    effectiveHeight != null && effectiveHeight in 400..719 -> "SD"
-                    resolution.contains("4K", ignoreCase = true) -> "4K"
+                    selectedVideoTrack?.label?.contains("4K", ignoreCase = true) == true ||
+                    (effectiveWidth != null && effectiveWidth >= 3200) ||
+                    (effectiveHeight != null && effectiveHeight >= 1800) -> "4K"
+
+                    selectedVideoTrack?.label?.contains("1080", ignoreCase = true) == true ||
+                    selectedVideoTrack?.label?.contains("FHD", ignoreCase = true) == true ||
+                    (effectiveWidth != null && effectiveWidth >= 1600) ||
+                    (effectiveHeight != null && effectiveHeight >= 800) -> "1080p"
+
+                    selectedVideoTrack?.label?.contains("720", ignoreCase = true) == true ||
+                    selectedVideoTrack?.label?.contains("HD", ignoreCase = true) == true ||
+                    (effectiveWidth != null && effectiveWidth >= 1100) ||
+                    (effectiveHeight != null && effectiveHeight >= 600) -> "720p"
+
+                    effectiveHeight != null && effectiveHeight in 360..599 -> "SD"
+                    resolution.contains("4K", ignoreCase = true) || resolution.contains("UHD", ignoreCase = true) -> "4K"
                     resolution.contains("1080", ignoreCase = true) || resolution.contains("FHD", ignoreCase = true) -> "1080p"
                     resolution.contains("720", ignoreCase = true) || resolution.contains("HD", ignoreCase = true) -> "720p"
                     resolution.isNotBlank() -> resolution
@@ -1039,15 +1052,23 @@ fun NoosPlayerScreen(
                         var isQualityFocused by remember { mutableStateOf(false) }
                         val qualityBtnLabel = when {
                             selectedVideoTrack != null -> when {
-                                selectedVideoTrack.height >= 2160 -> "4K"
-                                selectedVideoTrack.height >= 1080 -> "1080p"
-                                selectedVideoTrack.height >= 720 -> "720p"
+                                selectedVideoTrack.label.contains("4K", ignoreCase = true) ||
+                                selectedVideoTrack.width >= 3200 || selectedVideoTrack.height >= 1800 -> "4K"
+
+                                selectedVideoTrack.label.contains("1080", ignoreCase = true) ||
+                                selectedVideoTrack.label.contains("FHD", ignoreCase = true) ||
+                                selectedVideoTrack.width >= 1600 || selectedVideoTrack.height >= 800 -> "1080p"
+
+                                selectedVideoTrack.label.contains("720", ignoreCase = true) ||
+                                selectedVideoTrack.label.contains("HD", ignoreCase = true) ||
+                                selectedVideoTrack.width >= 1100 || selectedVideoTrack.height >= 600 -> "720p"
+
                                 selectedVideoTrack.height > 0 -> "${selectedVideoTrack.height}p"
                                 else -> selectedVideoTrack.label
                             }
-                            playbackStats.height >= 2160 -> "Auto (4K)"
-                            playbackStats.height >= 1080 -> "Auto (1080p)"
-                            playbackStats.height >= 720 -> "Auto (720p)"
+                            playbackStats.width >= 3200 || playbackStats.height >= 1800 -> "Auto (4K)"
+                            playbackStats.width >= 1600 || playbackStats.height >= 800 -> "Auto (1080p)"
+                            playbackStats.width >= 1100 || playbackStats.height >= 600 -> "Auto (720p)"
                             playbackStats.height > 0 -> "Auto (${playbackStats.height}p)"
                             displayRes != "HD" -> "Auto ($displayRes)"
                             else -> "Qualité Auto"

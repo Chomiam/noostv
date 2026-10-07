@@ -573,6 +573,90 @@ fun TvSettingsContent(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // ==================== SECTION 5 : EXPÉRIENCE & AUDIO ====================
+        Text(
+            text = "EXPÉRIENCE & AUDIO",
+            color = NoosCyan,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        var isSoundEnabled by remember { mutableStateOf(sessionManager.isSoundEffectsEnabled) }
+        var isSoundCardFocused by remember { mutableStateOf(false) }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(if (isSoundCardFocused) SurfaceDarkVariant else SurfaceDark)
+                .border(if (isSoundCardFocused) 2.dp else 1.dp, if (isSoundCardFocused) NoosCyan else CardBorderUnfocused, RoundedCornerShape(20.dp))
+                .onFocusChanged { isSoundCardFocused = it.isFocused }
+                .focusable()
+                .clickable {
+                    val newVal = !isSoundEnabled
+                    isSoundEnabled = newVal
+                    sessionManager.isSoundEffectsEnabled = newVal
+                }
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(if (isSoundEnabled) NoosBlue.copy(alpha = 0.2f) else Color(0x22FFFFFF)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isSoundEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                            contentDescription = null,
+                            tint = if (isSoundEnabled) NoosCyan else TextSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Sons de navigation (style Apple TV)",
+                            color = TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Retours sonores subtils et élégants lors des déplacements à la télécommande",
+                            color = TextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                Switch(
+                    checked = isSoundEnabled,
+                    onCheckedChange = {
+                        isSoundEnabled = it
+                        sessionManager.isSoundEffectsEnabled = it
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = NoosBlue,
+                        uncheckedThumbColor = TextSecondary,
+                        uncheckedTrackColor = SurfaceDarkVariant
+                    )
+                )
+            }
+        }
     }
 }
 
