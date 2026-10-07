@@ -828,7 +828,7 @@ fun NoosPlayerScreen(
                             )
                         )
                     )
-                    .padding(24.dp)
+                    .padding(if (isPortraitMobile) 12.dp else 24.dp)
             ) {
                 // ==================== BARRE SUPÉRIEURE (TITRE, BADGES & HEURE) ====================
                 val selectedVideoTrack = videoTracks.firstOrNull { it.isSelected }
@@ -889,7 +889,7 @@ fun NoosPlayerScreen(
                                 Text(
                                     text = title,
                                     color = TextPrimary,
-                                    fontSize = 18.sp,
+                                    fontSize = if (isPortraitMobile) 16.sp else 18.sp,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -1013,7 +1013,7 @@ fun NoosPlayerScreen(
 
                     // Boutons de contrôle de lecture principaux (Play/Pause, Précédent, Suivant)
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(24.dp),
+                        horizontalArrangement = Arrangement.spacedBy(if (isPortraitMobile) 16.dp else 24.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (isLive && onPreviousChannel != null) {
@@ -1029,7 +1029,7 @@ fun NoosPlayerScreen(
                                     .border(1.5.dp, if (isPrevFocused) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))
                                     .onFocusChanged { isPrevFocused = it.isFocused }
                             ) {
-                                Icon(imageVector = Icons.Default.SkipPrevious, contentDescription = "Chaîne précédente", tint = TextPrimary, modifier = Modifier.size(34.dp))
+                                Icon(imageVector = Icons.Default.SkipPrevious, contentDescription = "Chaîne précédente", tint = TextPrimary, modifier = Modifier.size(if (isPortraitMobile) 28.dp else 34.dp))
                             }
                         } else if (!isLive) {
                             var isReplayFocused by remember { mutableStateOf(false) }
@@ -1045,7 +1045,7 @@ fun NoosPlayerScreen(
                                     .border(1.5.dp, if (isReplayFocused) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))
                                     .onFocusChanged { isReplayFocused = it.isFocused }
                             ) {
-                                Icon(imageVector = Icons.Default.Replay10, contentDescription = "Recul 10s", tint = TextPrimary, modifier = Modifier.size(34.dp))
+                                Icon(imageVector = Icons.Default.Replay10, contentDescription = "Recul 10s", tint = TextPrimary, modifier = Modifier.size(if (isPortraitMobile) 28.dp else 34.dp))
                             }
                         }
 
@@ -1056,7 +1056,7 @@ fun NoosPlayerScreen(
                                 if (isPlaying) playerEngine.pause() else playerEngine.resume()
                             },
                             modifier = Modifier
-                                .size(56.dp)
+                                .size(if (isPortraitMobile) 48.dp else 56.dp)
                                 .clip(RoundedCornerShape(28.dp))
                                 .background(NoosCyan)
                                 .focusRequester(playPauseFocusRequester)
@@ -1067,7 +1067,7 @@ fun NoosPlayerScreen(
                                 imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                 contentDescription = if (isPlaying) "Pause" else "Lecture",
                                 tint = Color.Black,
-                                modifier = Modifier.size(34.dp)
+                                modifier = Modifier.size(if (isPortraitMobile) 28.dp else 34.dp)
                             )
                         }
 
@@ -1084,7 +1084,7 @@ fun NoosPlayerScreen(
                                     .border(1.5.dp, if (isNextFocused) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))
                                     .onFocusChanged { isNextFocused = it.isFocused }
                             ) {
-                                Icon(imageVector = Icons.Default.SkipNext, contentDescription = "Chaîne suivante", tint = TextPrimary, modifier = Modifier.size(34.dp))
+                                Icon(imageVector = Icons.Default.SkipNext, contentDescription = "Chaîne suivante", tint = TextPrimary, modifier = Modifier.size(if (isPortraitMobile) 28.dp else 34.dp))
                             }
                         } else if (!isLive) {
                             var isForwardFocused by remember { mutableStateOf(false) }
@@ -1100,15 +1100,33 @@ fun NoosPlayerScreen(
                                     .border(1.5.dp, if (isForwardFocused) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))
                                     .onFocusChanged { isForwardFocused = it.isFocused }
                             ) {
-                                Icon(imageVector = Icons.Default.Forward30, contentDescription = "Avance 30s", tint = TextPrimary, modifier = Modifier.size(34.dp))
+                                Icon(imageVector = Icons.Default.Forward30, contentDescription = "Avance 30s", tint = TextPrimary, modifier = Modifier.size(if (isPortraitMobile) 28.dp else 34.dp))
                             }
                         }
                     }
 
                     // ==================== OPTIONS DU LECTEUR EN BAS ====================
-                    // FlowRow : sur écran étroit (portrait), les boutons se replient sur une 2e ligne
-                    // au lieu de déborder et de se chevaucher.
-                    FlowRow(
+                    // En portrait (mobile), l'OSD 16:9 est trop court pour aligner 5 boutons avec le
+                    // transport : on les range dans le dialogue Réglages et on n'affiche qu'un bouton
+                    // "Paramètres" compact, pour garantir un placement propre de play/précédent/suivant.
+                    if (isPortraitMobile) {
+                        var isSettingsFocused by remember { mutableStateOf(false) }
+                        Button(
+                            onClick = { showSettingsDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = SurfaceDark.copy(alpha = 0.85f)),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                            modifier = Modifier
+                                .onFocusChanged { isSettingsFocused = it.isFocused }
+                                .border(1.5.dp, if (isSettingsFocused) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))
+                        ) {
+                            Icon(imageVector = Icons.Default.Settings, contentDescription = "Réglages", tint = NoosCyan, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Réglages", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    } else {
+                        // FlowRow : sur écran étroit, les boutons se replient proprement
+                        FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -1229,11 +1247,12 @@ fun NoosPlayerScreen(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
+                            }
                         }
+                    }
                     }
                 }
             }
-        }
 
         // ------------------ 7. DIALOGUE RÉGLAGES & INFORMATIONS (AUDIO, SUBS, VITESSE, QUALITÉ, STATS) ------------------
         if (showSettingsDialog) {
