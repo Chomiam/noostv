@@ -11,8 +11,8 @@ android {
         applicationId = "io.noostv"
         minSdk = 21
         targetSdk = 34
-        versionCode = 11
-        versionName = "1.2.5-beta.1"
+        versionCode = 12
+        versionName = "1.2.6-beta.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
