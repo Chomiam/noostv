@@ -315,6 +315,11 @@ class UpdateManager(private val context: Context) {
                 if (r > c) return true
                 if (r < c) return false
             }
+            // Si la version numérique de base est identique (ex: 1.2.6 vs 1.2.6-beta.5),
+            // la version finale stable (sans tiret) est plus récente que la pré-release
+            if (!remoteVersion.contains("-") && currentVersion.contains("-")) {
+                return true
+            }
             return false
         } catch (e: Exception) {
             return remoteVersion != currentVersion
