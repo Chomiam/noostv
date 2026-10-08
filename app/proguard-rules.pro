@@ -3,9 +3,26 @@
 # ============================================================================
 
 # 1. Protection des modèles Gson et sérialisation JSON
--keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
--keepclassmembers class io.noostv.data.model.** { <fields>; }
+-keepattributes Signature
+-keepattributes *Annotation*
+-keepattributes EnclosingMethod
+-keepattributes InnerClasses
+
+# Gson classes & TypeToken generic preservation
+-keep class com.google.gson.** { *; }
+-keep class * extends com.google.gson.reflect.TypeToken
+-keep class * extends com.google.gson.reflect.TypeToken { *; }
+-keep class com.google.gson.reflect.TypeToken { *; }
+-keep class * extends com.google.gson.TypeAdapter { *; }
+-keep class * implements com.google.gson.TypeAdapterFactory { *; }
+-keep class * implements com.google.gson.JsonSerializer { *; }
+-keep class * implements com.google.gson.JsonDeserializer { *; }
+
+# Modèles de données NoosTV sérialisés avec Gson
 -keep class io.noostv.data.model.** { *; }
+-keep class io.noostv.core.storage.** { *; }
+-keep class io.noostv.data.cache.** { *; }
+-keep class io.noostv.core.update.** { *; }
 -keepclassmembers class * {
     @com.google.gson.annotations.SerializedName <fields>;
 }
