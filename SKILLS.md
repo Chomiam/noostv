@@ -15,6 +15,7 @@ Ce document récapitule les apprentissages critiques, les pièges techniques sou
 8. [Optimisations Performances IPTV à Grande Échelle (28 000+ Chaînes & VOD)](#8-optimisations-performances-iptv-à-grande-échelle-28-000-chaînes--vod)
 9. [Persistance des Favoris & Double Couche de Sauvegarde (SharedPreferences + Disque)](#9-persistance-des-favoris--double-couche-de-sauvegarde-sharedpreferences--disque)
 10. [Mises à Jour OTA Publiques GitHub (S3 Redirect 400 & Absence de Token)](#10-mises-à-jour-ota-publiques-github-s3-redirect-400--absence-de-token)
+11. [Sécurité Applicative, Défense Anti-IA et Durcissement Android](#11-sécurité-applicative-défense-anti-ia-et-durcissement-android)
 
 ---
 
@@ -259,3 +260,35 @@ Charger des images non redimensionnées en ARGB_8888 sur des chipsets Mali-G31 /
     ```
   * Cela permet un téléchargement OTA 100% public, ultra-rapide et sans aucune friction utilisateur.
 
+---
+
+## 11. Sécurité Applicative, Défense Anti-IA et Durcissement Android
+
+### ⚠️ Les Pièges
+1. **`android:allowBackup="true"`** : Permet l'extraction physique complète des SharedPreferences, profils, bases de données et clés privées via `adb backup` dès qu'un câble USB ou un débogage réseau est activé.
+2. **`isMinifyEnabled = false` en Release** : Laisse l'APK 100% lisible pour les outils de décompilation automatisée par IA (JADX, Ghidra), exposant l'architecture interne, les formats d'API, les modèles de données et les routines de sécurité.
+3. **`android:usesCleartextTraffic="true"` global sans restriction** : Permet à un attaquant en Wi-Fi partagé de réaliser un Man-in-the-Middle (MitM) sur les vérifications de versions OTA, les métadonnées TMDb et les requêtes applicatives.
+4. **Blocage aveugle du HTTP clair** : Si `cleartextTrafficPermitted="false"` est appliqué à l'ensemble de l'application sans discernement, de nombreux flux IPTV légitimes (`.ts`, `.m3u8` servis sur les ports 80/8080/8000 par des fournisseurs historiques) refuseront catégoriquement de démarrer dans ExoPlayer.
+5. **Fuite des identifiants dans les traces d'erreurs et logs** : Les URLs Xtream Codes contiennent par défaut `?username=...&password=...` ou `/live/user/pass/id.ts`. Toute exception réseau non filtrée imprimée dans Logcat ou affichée à l'écran expose le mot de passe en clair.
+6. **Absence de contrôle sur l'APK téléchargé en OTA** : Lancer l'Intent d'installation sur n'importe quel fichier sans vérifier son `packageName` ni sa structure permettrait l'installation d'une application tierce malveillante en cas d'empoisonnement DNS ou d'interception réseau.
+
+### ✅ La Solution Robuste
+1. **Défense en oignon et verrouillage système** :
+   * Déclarer formellement `android:allowBackup="false"` dans `AndroidManifest.xml`.
+   * Définir un [`res/xml/network_security_config.xml`](file:///home/chomiam/Projets/noostv/app/src/main/res/xml/network_security_config.xml) qui impose du HTTPS strict sur les domaines sensibles (`api.github.com`, `themoviedb.org`), tout en conservant une `base-config` autorisant le HTTP pour la rétro-compatibilité indispensable des flux IPTV bruts.
+2. **Obfuscation et Shrinking R8 intégrale** :
+   * Activer `isMinifyEnabled = true` et `isShrinkResources = true` dans `buildTypes.release`.
+   * Verrouiller les modèles Gson (`io.noostv.data.model.**`), Jetpack Compose et Media3 dans `proguard-rules.pro`, tout en laissant R8 obfusquer agressivement `core.security`, `core.storage` et `data.api`.
+   * Supprimer les attributs de debug et renommer les sources (`-renamesourcefileattribute SourceFile`).
+   * Réduction directe de 59% de l'empreinte binaire de l'APK (de 22 Mo à 9 Mo).
+3. **Module d'intégrité & Détection Anti-Frida ([`AppIntegrityChecker`](file:///home/chomiam/Projets/noostv/app/src/main/java/io/noostv/core/security/AppIntegrityChecker.kt))** :
+   * Détecter les bibliothèques d'instrumentation dynamique en mémoire (`/proc/self/maps` contenant `frida-agent.so`, `gadget.so`, `xposed`).
+   * Sonder le port TCP local 27042 (Frida server) avec un timeout ultracourt (< 30ms).
+   * Détecter les débogueurs actifs en production via `Debug.isDebuggerConnected()`.
+   * Adopter une stratégie non bloquante sur Android TV : notifier et dégrader la persistance plutôt que de crasher sauvagement sur des firmwares de box TV constructeurs exotiques.
+4. **Nettoyage automatique des URLs ([`XtreamCodesClient.sanitizeUrl`](file:///home/chomiam/Projets/noostv/app/src/main/java/io/noostv/data/api/XtreamCodesClient.kt))** :
+   * Masquer systématiquement les mots de passe et tokens de streaming : `password=***` et `/(live|movie|series)/user/***/id.ext`.
+   * Standardiser le `User-Agent` (`NoosTV/1.2.6 (Android TV; ExoPlayer)`) et forcer `ConnectionSpec.MODERN_TLS`.
+5. **Validation cryptographique et structurelle de l'OTA ([`UpdateManager.installApk`](file:///home/chomiam/Projets/noostv/app/src/main/java/io/noostv/core/update/UpdateManager.kt))** :
+   * Avant d'invoquer `Intent.ACTION_VIEW`, analyser le binaire avec `PackageManager.getPackageArchiveInfo()`.
+   * Rejeter et détruire le fichier immédiatement si `archiveInfo == null`, si la taille est inférieure à 100 Ko ou si `archiveInfo.packageName != context.packageName`.

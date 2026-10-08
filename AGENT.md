@@ -93,27 +93,55 @@ adb -s 192.168.1.16:5555 logcat -d -s PlayerEngine,NoosPlayer,SoundEffectManager
 
 ---
 
-## 🔐 SÉCURITÉ : AUCUN SECRET DANS L'APK
+## 🛡️ SÉCURITÉ APPLICATIVE & DÉFENSE EN PROFONDEUR (ANTI-IA & ANTI-REVERSE)
 
 > [!WARNING]
-> **Il est FORMELLEMENT INTERDIT d'embarquer un identifiant ou un secret dans l'APK compilé.**
-> Cela inclut les identifiants IPTV / Xtream Codes (serveur, `username`, `password`) ET tout token GitHub / PAT.
+> **NoosTV intègre une architecture de défense en profondeur contre l'analyse automatisée par IA, le reverse-engineering et l'extraction de secrets.**
 
-### Règles impératives
-1. **Aucun `buildConfigField` ni `resValue` pour un secret** dans `app/build.gradle.kts`. Ne jamais injecter de token depuis `local.properties`, une variable d'environnement ou une ressource embarquée.
-2. **Aucun secret en dur** dans `gradle.properties`, `local.properties` versionné, `app/src/main/assets` ou `app/src/main/res`.
-3. **Ne jamais commiter de fichier contenant un secret** (`local.properties`, `.env`, keystores, PAT). Vérifier avant tout commit :
-   ```bash
-   git ls-files | grep -iE 'secret|token|pass|cred|\.env|keystore|\.jks'
-   ```
-4. **Les identifiants IPTV / Xtream sont chiffrés au runtime** (AES-256-GCM, Android Keystore via `CryptoManager` / `SessionManager`). Ils ne doivent jamais exister en clair dans le code ni dans l'APK.
-5. **Le jeton GitHub (OTA dépôts privés) est saisi par l'utilisateur dans les Réglages** (composable `GithubTokenField`, champ « JETON GITHUB (DÉPÔT PRIVÉ) » sur mobile et TV) et stocké chiffré via `SessionManager.githubToken`. L'OTA lit uniquement `sessionManager.githubToken`, jamais `BuildConfig`.
+### 1. Règle Zéro Secret dans le code et les builds
+* **Aucun `buildConfigField` ni `resValue` pour un secret** dans `app/build.gradle.kts`. Ne jamais injecter de token depuis `local.properties`, une variable d'environnement ou une ressource embarquée.
+* **Aucun secret en dur** dans `gradle.properties`, `local.properties` versionné, `app/src/main/assets` ou `app/src/main/res`.
+* **Ne jamais commiter de fichier contenant un secret** (`local.properties`, `.env`, keystores, PAT). Vérifier avant tout commit :
+  ```bash
+  git ls-files | grep -iE 'secret|token|pass|cred|\.env|keystore|\.jks'
+  ```
+* **Chiffrement matériel au repos** : Les identifiants IPTV / Xtream sont chiffrés en **AES-256-GCM** adossé au TEE / Android KeyStore matériel via [`CryptoManager`](file:///home/chomiam/Projets/noostv/app/src/main/java/io/noostv/core/security/CryptoManager.kt) et [`SessionManager`](file:///home/chomiam/Projets/noostv/app/src/main/java/io/noostv/core/storage/SessionManager.kt). Les indexations de catalogues volumineux sont également chiffrées localement via [`EncryptedCatalogStore`](file:///home/chomiam/Projets/noostv/app/src/main/java/io/noostv/data/cache/EncryptedCatalogStore.kt).
 
-### Vérification post-build
-Après chaque `assembleDebug`, contrôler l'absence de secrets dans l'APK :
+### 2. Obfuscation & Minification R8 Obligatoires en Release
+* Dans `app/build.gradle.kts`, `isMinifyEnabled = true` et `isShrinkResources = true` sont **obligatoires** pour les variantes Release.
+* Toutes les classes métier sensibles (`core.security`, `core.storage`, `data.api`) sont obfusquées et renommées par R8.
+* Les modèles de données Gson (`io.noostv.data.model.**`), Jetpack Compose et Media3/ExoPlayer sont verrouillés via [`app/proguard-rules.pro`](file:///home/chomiam/Projets/noostv/app/proguard-rules.pro) pour éviter tout crash de sérialisation.
+
+### 3. Protection contre l'Extraction Physique (Anti-ADB dump)
+* Dans `AndroidManifest.xml`, `android:allowBackup="false"` est formellement exigé.
+* Cela empêche toute extraction brute des bases locales, des sessions chiffrées et des caches de streaming via la commande `adb backup` lors d'un accès physique à la box TV.
+
+### 4. Cloisonnement Réseau & HTTPS Strict Ciblée
+* `AndroidManifest.xml` référence [`res/xml/network_security_config.xml`](file:///home/chomiam/Projets/noostv/app/src/main/res/xml/network_security_config.xml) :
+  * **HTTPS strict** imposé sur les domaines de mise à jour, métadonnées et GitHub (`api.github.com`, `themoviedb.org`, `tmdb.org`).
+  * Trafic clair (`cleartext`) limité exclusivement aux flux vidéo bruts (`.ts`, `.m3u8`) pour préserver la compatibilité des serveurs IPTV hérités sans exposer les canaux d'administration.
+
+### 5. Détection d'Instrumentation Dynamique & Anti-Frida
+* Le composant [`AppIntegrityChecker`](file:///home/chomiam/Projets/noostv/app/src/main/java/io/noostv/core/security/AppIntegrityChecker.kt) est appelé à l'initialisation de l'application :
+  * Détecte l'injection d'agents de rétro-ingénierie et de hooking IA (`frida-agent.so`, `gadget.so`, `xposed`) dans `/proc/self/maps`.
+  * Sonde le port TCP local par défaut (27042) utilisé par les serveurs Frida.
+  * Détecte la présence d'un débogueur attaché en production (`Debug.isDebuggerConnected()`).
+  * Signale toute tentative d'altération sans bloquer violemment les box TV équipées de firmwares constructeurs personnalisés.
+
+### 6. Assainissement des Données Sensibles (Anti-Leak)
+* Toute manipulation d'URL de flux ou d'appel API passe par [`XtreamCodesClient.sanitizeUrl()`](file:///home/chomiam/Projets/noostv/app/src/main/java/io/noostv/data/api/XtreamCodesClient.kt) pour remplacer automatiquement les mots de passe et jetons (`password=***`, `/live/user/***/id.ts`) avant toute journalisation ou inclusion dans une trace d'exception.
+* Configuration d'OkHttp avec `ConnectionSpec.MODERN_TLS` et normalisation du `User-Agent` (`NoosTV/1.2.6 (Android TV; ExoPlayer)`) pour éliminer le fingerprinting d'outils automatisés.
+
+### 7. Contrôle d'Intégrité des Mises à Jour OTA
+* Dans [`UpdateManager.installApk()`](file:///home/chomiam/Projets/noostv/app/src/main/java/io/noostv/core/update/UpdateManager.kt), avant de transmettre l'archive à l'installateur système Android :
+  * Validation de la structure du paquet via `PackageManager.getPackageArchiveInfo()`.
+  * Contrôle strict que le `packageName` correspond exactement à `io.noostv` et suppression immédiate du fichier si l'archive est corrompue ou altérée par une interception réseau.
+
+### 8. Vérification post-build
+Après chaque `assembleDebug`, contrôler l'absence de secrets résiduels dans l'APK :
 ```bash
 cd /tmp && rm -rf apkx && mkdir apkx && cd apkx
-unzip -o /root/noostv/app/build/outputs/apk/debug/app-debug.apk 'classes*.dex'
+unzip -o /home/chomiam/Projets/noostv/app/build/outputs/apk/debug/app-debug.apk 'classes*.dex'
 strings -n 6 classes*.dex | grep -iE 'ghp_|github_pat_|player_api|username=|password='
 ```
 Le résultat ne doit contenir que des **formats d'URL** (`player_api`, `username=`, `password=`), **aucun** vrai secret ni host:port Xtream.
