@@ -60,12 +60,12 @@ fun SearchScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(DarkOledBackground)
-            .padding(24.dp)
-    ) {
+    MacOsDarkGlassBackground(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp)
+        ) {
         // Barre de recherche
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -202,6 +202,7 @@ fun SearchScreen(
             }
         }
     }
+}
 }
 
 @Composable

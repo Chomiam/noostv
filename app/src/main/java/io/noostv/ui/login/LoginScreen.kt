@@ -124,11 +124,8 @@ fun LoginScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(DarkOledBackground),
-        contentAlignment = Alignment.Center
+    MacOsDarkGlassBackground(
+        modifier = Modifier.fillMaxSize()
     ) {
         if (!hasHistory) {
             // ==================== DISPOSITION 1 : AUCUN HISTORIQUE (CENTRÉ STANDARD) ====================

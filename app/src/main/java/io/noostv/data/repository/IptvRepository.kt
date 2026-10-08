@@ -79,8 +79,10 @@ class IptvRepository(
      */
     suspend fun loadFromCache(serverUrl: String, username: String): Boolean = withContext(Dispatchers.IO) {
         if (catalogStore == null || serverUrl.isBlank()) return@withContext false
+        _syncProgress.value = SyncProgress("Déchiffrement de l'index local...", 0.25f)
         val cachedLive = catalogStore.loadLiveCatalog(serverUrl, username)
         if (cachedLive != null && cachedLive.channels.isNotEmpty()) {
+            _syncProgress.value = SyncProgress("Chargement des chaînes et catégories...", 0.65f)
             _channels.value = cachedLive.channels
             _categories.value = cachedLive.categories
             _isLiveLoading.value = false
@@ -112,6 +114,9 @@ class IptvRepository(
                     }
                 }
             }
+            _syncProgress.value = SyncProgress("Préparation de l'interface...", 0.95f)
+            kotlinx.coroutines.delay(120)
+            _syncProgress.value = SyncProgress("Catalogue prêt !", 1.0f, isFinished = true)
             return@withContext true
         }
         return@withContext false
@@ -132,6 +137,7 @@ class IptvRepository(
         _isVodLoading.value = false
         _isSeriesLoading.value = false
         _isLiveLoading.value = false
+        _syncProgress.value = null
         vodDetailsCache.clear()
         seriesDetailsCache.clear()
     }
@@ -828,5 +834,6 @@ class IptvRepository(
             Category("action_series", "Action", CategoryType.SERIES),
             Category("horreur_series", "Horreur", CategoryType.SERIES)
         )
+        _syncProgress.value = SyncProgress("Catalogue prêt !", 1.0f, isFinished = true)
     }
 }

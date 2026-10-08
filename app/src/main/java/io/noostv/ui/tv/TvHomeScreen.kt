@@ -285,10 +285,8 @@ fun TvHomeScreen(
 
     val isAnyModalOpen = selectedMovieDetail != null || selectedSeriesDetail != null || isProfileModalOpen || showExitDialog
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(GlassMeshBackground)
+    MacOsDarkGlassBackground(
+        modifier = Modifier.fillMaxSize()
     ) {
         Row(
             modifier = Modifier
@@ -2372,21 +2370,40 @@ fun TvLoadingProgress(message: String) {
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(
+                    brush = Brush.verticalGradient(
+                        listOf(Color(0x66182236), Color(0x440C1220))
+                    )
+                )
+                .border(
+                    width = 1.dp,
+                    brush = Brush.verticalGradient(
+                        listOf(Color.White.copy(alpha = 0.25f), Color.White.copy(alpha = 0.05f))
+                    ),
+                    shape = RoundedCornerShape(20.dp)
+                )
+                .padding(horizontal = 28.dp, vertical = 20.dp),
+            contentAlignment = Alignment.Center
         ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(38.dp),
-                color = NoosBlue,
-                strokeWidth = 3.dp
-            )
-            Text(
-                text = message,
-                color = TextPrimary,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(28.dp),
+                    color = NoosCyan,
+                    strokeWidth = 2.8.dp
+                )
+                Text(
+                    text = message,
+                    color = TextPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
         }
     }
 }

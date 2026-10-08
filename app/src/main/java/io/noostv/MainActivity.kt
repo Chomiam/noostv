@@ -128,13 +128,12 @@ class MainActivity : ComponentActivity() {
                     val syncProgress by repository.syncProgress.collectAsState()
 
                     // Si l'utilisateur n'a pas encore configuré d'identifiants, on démarre sur LOGIN
-                    // Si déjà connecté et cache présent, démarrage immédiat sur HOME (< 50ms)
-                    // Si connecté mais aucun cache (premier lancement), passage par l'écran de synchronisation SYNC
+                    // Si déjà connecté, écran de chargement intégral fluide (SYNC) jusqu'à ce que les données soient prêtes
                     var currentScreen by remember {
                         mutableStateOf(
                             when {
                                 !sessionManager.isLoggedIn -> CurrentScreen.LOGIN
-                                sessionManager.serverUrl.isBlank() || repository.hasCachedCatalog(sessionManager.serverUrl, sessionManager.username) -> CurrentScreen.HOME
+                                sessionManager.serverUrl.isBlank() -> CurrentScreen.HOME
                                 else -> CurrentScreen.SYNC
                             }
                         )
@@ -373,6 +372,7 @@ class MainActivity : ComponentActivity() {
                 // Transition automatique de SYNC vers HOME dès que le catalogue est prêt
                 LaunchedEffect(syncProgress?.isFinished) {
                     if (syncProgress?.isFinished == true && currentScreen == CurrentScreen.SYNC) {
+                        kotlinx.coroutines.delay(280)
                         currentScreen = CurrentScreen.HOME
                     }
                 }
@@ -433,7 +433,8 @@ class MainActivity : ComponentActivity() {
                                         sessionManager.password
                                     )
                                 }
-                            }
+                            },
+                            onLogout = { performLogout() }
                         )
                     }
 

@@ -3,32 +3,39 @@ package io.noostv.ui.theme
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
-// Palette Moderne Glassy / Frosted Glass (Apple visionOS & Google Modern TV)
-val DarkOledBackground = Color(0xFF0B0E17) // Moins austère, teinté bleu nuit profond
-val GlassBackgroundTop = Color(0xFF141927)
-val GlassBackgroundBottom = Color(0xFF0A0D15)
-val GlassMeshBackground = Brush.verticalGradient(listOf(GlassBackgroundTop, GlassBackgroundBottom))
+// Palette Moderne Glassy / Frosted Glass (Apple visionOS & macOS Dark Sequoia)
+val DarkOledBackground = Color(0xFF04060A) // Noir obsidienne profond
+val GlassBackgroundTop = Color(0xFF090E1B) // Teinte nuit bleue profonde macOS
+val GlassBackgroundMid = Color(0xFF050812) // Obsidienne velours
+val GlassBackgroundBottom = Color(0xFF020306) // Noir néant abyssal
+val GlassMeshBackground = Brush.verticalGradient(
+    listOf(
+        Color(0xFF090E1B),
+        Color(0xFF050812),
+        Color(0xFF020306)
+    )
+)
 
-// Surfaces Glassy translucides
-val SurfaceDark = Color(0xFF121724)
-val SurfaceDarkVariant = Color(0xFF1B2234)
-val CardBackground = Color(0xFF151B2A)
-val CardBorderUnfocused = Color(0x26FFFFFF)
+// Surfaces Glassy translucides sombres & contrastées
+val SurfaceDark = Color(0xFF0A0E18)
+val SurfaceDarkVariant = Color(0xFF121826)
+val CardBackground = Color(0xFF0D121F)
+val CardBorderUnfocused = Color(0x1FFFFFFF)
 
-val GlassSurface = Color(0x401D273D)
-val GlassSurfaceElevated = Color(0x6624314C)
-val GlassSurfaceHigh = Color(0x802E3D5E)
-val GlassCard = Color(0x4D1B2438)
-val GlassPill = Color(0x38283754)
-val GlassBorder = Color(0x2EFFFFFF)
-val GlassBorderHighlight = Color(0x59FFFFFF)
+val GlassSurface = Color(0x400C1220)
+val GlassSurfaceElevated = Color(0x66101728)
+val GlassSurfaceHigh = Color(0x88141D32)
+val GlassCard = Color(0x550E1526)
+val GlassPill = Color(0x40162035)
+val GlassBorder = Color(0x26FFFFFF)
+val GlassBorderHighlight = Color(0x50FFFFFF)
 
 // Dégradés Glassy
 val GlassCardGradient = Brush.verticalGradient(
-    listOf(Color(0x59283756), Color(0x2E161F33))
+    listOf(Color(0x66182236), Color(0x330C1220))
 )
 val GlassBorderGradient = Brush.verticalGradient(
-    listOf(Color(0x59FFFFFF), Color(0x1AFFFFFF))
+    listOf(Color(0x50FFFFFF), Color(0x14FFFFFF))
 )
 val GlassFocusedGradient = Brush.verticalGradient(
     listOf(Color(0xFF5AC8FA), Color(0xFF3888FF))
