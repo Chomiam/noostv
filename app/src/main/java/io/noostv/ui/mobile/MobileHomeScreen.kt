@@ -135,7 +135,8 @@ fun MobileHomeScreen(
     initialMoviePage: Int = 1,
     onMoviePageChange: (Int) -> Unit = {},
     initialSeriesPage: Int = 1,
-    onSeriesPageChange: (Int) -> Unit = {}
+    onSeriesPageChange: (Int) -> Unit = {},
+    onRefreshCatalog: () -> Unit = {}
 ) {
     val strings = LocalStrings.current
     val coroutineScope = rememberCoroutineScope()
@@ -618,7 +619,8 @@ fun MobileHomeScreen(
                         sessionManager = sessionManager,
                         onOpenLogin = onOpenLogin,
                         onLogout = onLogout,
-                        onLanguageChanged = onLanguageChanged
+                        onLanguageChanged = onLanguageChanged,
+                        onRefreshCatalog = onRefreshCatalog
                     )
                 }
             }
@@ -1176,7 +1178,8 @@ private fun MobileSettingsView(
     sessionManager: SessionManager,
     onOpenLogin: () -> Unit,
     onLogout: () -> Unit,
-    onLanguageChanged: (AppLanguage) -> Unit = {}
+    onLanguageChanged: (AppLanguage) -> Unit = {},
+    onRefreshCatalog: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -1429,7 +1432,23 @@ private fun MobileSettingsView(
                     Text(sessionManager.getMaskedUsername(), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Indexation", color = TextSecondary, fontSize = 12.sp)
+                    Text("Chiffrée AES-256-GCM KeyStore", color = GreenLive, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+
                 Spacer(modifier = Modifier.height(6.dp))
+
+                Button(
+                    onClick = onRefreshCatalog,
+                    modifier = Modifier.fillMaxWidth().height(42.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = SurfaceDarkVariant)
+                ) {
+                    Icon(imageVector = Icons.Default.Refresh, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Actualiser le catalogue", color = NoosCyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
 
                 OutlinedButton(
                     onClick = onLogout,

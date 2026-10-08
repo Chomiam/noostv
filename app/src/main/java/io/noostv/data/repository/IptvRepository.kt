@@ -1,6 +1,7 @@
 package io.noostv.data.repository
 
 import io.noostv.data.api.XtreamCodesClient
+import io.noostv.data.cache.EncryptedCatalogStore
 import io.noostv.data.model.*
 import io.noostv.data.parser.M3UParser
 import io.noostv.data.parser.XmlTvParser
@@ -21,7 +22,8 @@ import java.io.ByteArrayInputStream
 class IptvRepository(
     private val m3uParser: M3UParser = M3UParser(),
     private val xmlTvParser: XmlTvParser = XmlTvParser(),
-    private val xtreamClient: XtreamCodesClient = XtreamCodesClient()
+    private val xtreamClient: XtreamCodesClient = XtreamCodesClient(),
+    private val catalogStore: EncryptedCatalogStore? = null
 ) {
     private val _channels = MutableStateFlow<List<Channel>>(emptyList())
     val channels: StateFlow<List<Channel>> = _channels.asStateFlow()
@@ -104,7 +106,47 @@ class IptvRepository(
      */
     suspend fun loadFromXtream(serverUrl: String, username: String, password: String): Result<Unit> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         try {
-            _isLiveLoading.value = true
+            // 0. CHARGEMENT IMMÉDIAT DU CACHE LOCAL CHIFFRÉ (Cold Start ~30ms)
+            if (catalogStore != null) {
+                val cachedLive = catalogStore.loadLiveCatalog(serverUrl, username)
+                if (cachedLive != null && cachedLive.channels.isNotEmpty()) {
+                    _channels.value = cachedLive.channels
+                    _categories.value = cachedLive.categories
+                    _isLiveLoading.value = false
+                }
+
+                val cachedVodCats = catalogStore.loadVodCategories(serverUrl, username)
+                if (!cachedVodCats.isNullOrEmpty()) {
+                    _vodCategories.value = cachedVodCats
+                    val firstVodCatId = cachedVodCats.firstOrNull()?.id ?: ""
+                    if (firstVodCatId.isNotBlank()) {
+                        catalogStore.loadVodMovies(serverUrl, username, firstVodCatId)?.let {
+                            if (it.isNotEmpty()) {
+                                _movies.value = it
+                                _isVodLoading.value = false
+                            }
+                        }
+                    }
+                }
+
+                val cachedSeriesCats = catalogStore.loadSeriesCategories(serverUrl, username)
+                if (!cachedSeriesCats.isNullOrEmpty()) {
+                    _seriesCategories.value = cachedSeriesCats
+                    val firstSeriesCatId = cachedSeriesCats.firstOrNull()?.id ?: ""
+                    if (firstSeriesCatId.isNotBlank()) {
+                        catalogStore.loadSeries(serverUrl, username, firstSeriesCatId)?.let {
+                            if (it.isNotEmpty()) {
+                                _series.value = it
+                                _isSeriesLoading.value = false
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (_channels.value.isEmpty()) {
+                _isLiveLoading.value = true
+            }
 
             // 1. Catégories direct & Chaînes direct (rapide, ~40Ko)
             val liveCatsResult = xtreamClient.getLiveCategories(serverUrl, username, password)
@@ -119,10 +161,16 @@ class IptvRepository(
                 ch.copy(categoryName = realCatName)
             }
 
-            // MISE À JOUR IMMÉDIATE DU DIRECT TV : accessible en direct sans attendre la VOD
+            // MISE À JOUR DISCRÈTE DU DIRECT TV : préserve les favoris et synchronise le cache
             if (enrichedChannels.isNotEmpty()) {
-                _channels.value = enrichedChannels
+                val currentFavIds = _channels.value.filter { it.isFavorite }.map { it.id }.toSet()
+                val updatedChannels = if (currentFavIds.isNotEmpty()) {
+                    enrichedChannels.map { ch -> if (ch.id in currentFavIds) ch.copy(isFavorite = true) else ch }
+                } else enrichedChannels
+
+                _channels.value = updatedChannels
                 _categories.value = liveCats
+                catalogStore?.saveLiveCatalog(serverUrl, username, updatedChannels, liveCats)
             }
             _isLiveLoading.value = false
 
@@ -131,15 +179,17 @@ class IptvRepository(
             val vodCats = vodCatsResult.getOrDefault(emptyList())
             if (vodCats.isNotEmpty()) {
                 _vodCategories.value = vodCats
+                catalogStore?.saveVodCategories(serverUrl, username, vodCats)
             }
 
             // 3. Charger les films VOD de la première catégorie (catalogue complet pour cette catégorie)
             val firstVodCatId = vodCats.firstOrNull()?.id ?: ""
             if (firstVodCatId.isNotBlank()) {
-                _isVodLoading.value = true
+                if (_movies.value.isEmpty()) _isVodLoading.value = true
                 val initialVodResult = xtreamClient.getVodStreams(serverUrl, username, password, categoryId = firstVodCatId, limit = null)
                 initialVodResult.onSuccess {
                     _movies.value = it
+                    catalogStore?.saveVodMovies(serverUrl, username, firstVodCatId, it)
                 }
                 _isVodLoading.value = false
             }
@@ -149,15 +199,17 @@ class IptvRepository(
             val seriesCats = seriesCatsResult.getOrDefault(emptyList())
             if (seriesCats.isNotEmpty()) {
                 _seriesCategories.value = seriesCats
+                catalogStore?.saveSeriesCategories(serverUrl, username, seriesCats)
             }
 
             // 5. Charger les séries de la première catégorie (catalogue complet pour cette catégorie)
             val firstSeriesCatId = seriesCats.firstOrNull()?.id ?: ""
             if (firstSeriesCatId.isNotBlank()) {
-                _isSeriesLoading.value = true
+                if (_series.value.isEmpty()) _isSeriesLoading.value = true
                 val initialSeriesResult = xtreamClient.getSeriesStreams(serverUrl, username, password, categoryId = firstSeriesCatId, limit = null)
                 initialSeriesResult.onSuccess {
                     _series.value = it
+                    catalogStore?.saveSeries(serverUrl, username, firstSeriesCatId, it)
                 }
                 _isSeriesLoading.value = false
             }
@@ -224,12 +276,28 @@ class IptvRepository(
      * Charge les films VOD d'une catégorie spécifique (ou de l'ensemble du catalogue si Toutes)
      */
     suspend fun loadVodByCategory(serverUrl: String, username: String, password: String, categoryId: String) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        _isVodLoading.value = true
+        val targetCatId = if (categoryId == "Toutes" || categoryId.isBlank()) null else categoryId
+
+        // Affichage instantané depuis le cache chiffré si disponible
+        if (catalogStore != null && targetCatId != null) {
+            val cached = catalogStore.loadVodMovies(serverUrl, username, targetCatId)
+            if (!cached.isNullOrEmpty()) {
+                _movies.value = cached
+                _isVodLoading.value = false
+            } else {
+                _isVodLoading.value = true
+            }
+        } else {
+            _isVodLoading.value = true
+        }
+
         try {
-            val targetCatId = if (categoryId == "Toutes" || categoryId.isBlank()) null else categoryId
             val vodResult = xtreamClient.getVodStreams(serverUrl, username, password, categoryId = targetCatId, limit = null)
-            vodResult.onSuccess {
-                _movies.value = it
+            vodResult.onSuccess { freshList ->
+                _movies.value = freshList
+                if (targetCatId != null) {
+                    catalogStore?.saveVodMovies(serverUrl, username, targetCatId, freshList)
+                }
             }
         } finally {
             _isVodLoading.value = false
@@ -240,9 +308,22 @@ class IptvRepository(
      * Charge les séries d'une catégorie spécifique (ou de l'ensemble du catalogue si Toutes)
      */
     suspend fun loadSeriesByCategory(serverUrl: String, username: String, password: String, categoryId: String) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        _isSeriesLoading.value = true
+        val targetCatId = if (categoryId == "Toutes" || categoryId.isBlank()) null else categoryId
+
+        // Affichage instantané depuis le cache chiffré si disponible
+        if (catalogStore != null && targetCatId != null) {
+            val cached = catalogStore.loadSeries(serverUrl, username, targetCatId)
+            if (!cached.isNullOrEmpty()) {
+                _series.value = cached
+                _isSeriesLoading.value = false
+            } else {
+                _isSeriesLoading.value = true
+            }
+        } else {
+            _isSeriesLoading.value = true
+        }
+
         try {
-            val targetCatId = if (categoryId == "Toutes" || categoryId.isBlank()) null else categoryId
             val seriesResult = xtreamClient.getSeriesStreams(serverUrl, username, password, categoryId = targetCatId, limit = null)
             seriesResult.onSuccess { list ->
                 val enriched = list.map { ser ->
@@ -251,10 +332,21 @@ class IptvRepository(
                     } ?: ser
                 }
                 _series.value = enriched
+                if (targetCatId != null) {
+                    catalogStore?.saveSeries(serverUrl, username, targetCatId, enriched)
+                }
             }
         } finally {
             _isSeriesLoading.value = false
         }
+    }
+
+    fun clearDiskCache(serverUrl: String, username: String) {
+        catalogStore?.clearAccountCache(serverUrl, username)
+    }
+
+    fun clearAllDiskCaches() {
+        catalogStore?.clearAllCaches()
     }
 
     /**

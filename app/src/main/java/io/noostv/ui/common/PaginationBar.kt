@@ -1,5 +1,6 @@
 package io.noostv.ui.common
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -23,6 +25,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -30,10 +33,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.noostv.core.audio.LocalSoundEffectManager
+import io.noostv.ui.theme.CardBorderUnfocused
 import io.noostv.ui.theme.DarkCard
+import io.noostv.ui.theme.FocusGlow
 import io.noostv.ui.theme.NoosCyan
 import io.noostv.ui.theme.TextPrimary
 import io.noostv.ui.theme.TextSecondary
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Barre de pagination moderne et ergonomique pour TV (D-Pad) et Mobile (Touch).
@@ -53,10 +60,13 @@ fun NoosPaginationBar(
     onNavigateUp: (() -> Unit)? = null,
     onNavigateUpFromPrev: (() -> Unit)? = onNavigateUp,
     onNavigateUpFromNext: (() -> Unit)? = onNavigateUp,
-    onNavigateLeftToSidebar: (() -> Unit)? = null
+    onNavigateLeftToSidebar: (() -> Unit)? = null,
+    upFocusRequester: FocusRequester? = null,
+    sidebarFocusRequester: FocusRequester? = null
 ) {
     if (totalPages <= 1) return
 
+    val coroutineScope = rememberCoroutineScope()
     val internalPrevFocusRequester = prevFocusRequester ?: remember { FocusRequester() }
     val internalNextFocusRequester = nextFocusRequester ?: remember { FocusRequester() }
 
@@ -70,24 +80,39 @@ fun NoosPaginationBar(
         // Bouton Précédent
         PaginationButton(
             text = "Précédent",
-            icon = {
+            icon = { isFocused ->
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Précédent",
                     modifier = Modifier.size(16.dp),
-                    tint = if (currentPage > 1) NoosCyan else TextSecondary.copy(alpha = 0.4f)
+                    tint = when {
+                        isTv && isFocused -> FocusGlow
+                        currentPage > 1 -> NoosCyan
+                        else -> TextSecondary.copy(alpha = 0.4f)
+                    }
                 )
             },
             enabled = currentPage > 1,
             onClick = {
                 val newPage = currentPage - 1
                 onPageChange(newPage)
-                if (newPage <= 1) {
-                    runCatching { internalNextFocusRequester.requestFocus() }
+                if (isTv) {
+                    coroutineScope.launch {
+                        delay(60)
+                        runCatching {
+                            if (newPage > 1) {
+                                internalPrevFocusRequester.requestFocus()
+                            } else {
+                                internalNextFocusRequester.requestFocus()
+                            }
+                        }
+                    }
                 }
             },
             isTv = isTv,
             focusRequester = internalPrevFocusRequester,
+            upFocusRequester = upFocusRequester,
+            leftFocusRequester = sidebarFocusRequester,
             rightFocusRequester = if (currentPage < totalPages) internalNextFocusRequester else null,
             onNavigateRight = if (currentPage < totalPages) {
                 {
@@ -106,7 +131,7 @@ fun NoosPaginationBar(
             modifier = Modifier
                 .background(DarkCard, RoundedCornerShape(12.dp))
                 .border(1.dp, Color(0x3300E5FF), RoundedCornerShape(12.dp))
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             contentAlignment = Alignment.Center
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -132,25 +157,39 @@ fun NoosPaginationBar(
         // Bouton Suivant
         PaginationButton(
             text = "Suivant",
-            iconRight = {
+            iconRight = { isFocused ->
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = "Suivant",
                     modifier = Modifier.size(16.dp),
-                    tint = if (currentPage < totalPages) NoosCyan else TextSecondary.copy(alpha = 0.4f)
+                    tint = when {
+                        isTv && isFocused -> FocusGlow
+                        currentPage < totalPages -> NoosCyan
+                        else -> TextSecondary.copy(alpha = 0.4f)
+                    }
                 )
             },
             enabled = currentPage < totalPages,
             onClick = {
                 val newPage = currentPage + 1
                 onPageChange(newPage)
-                if (newPage >= totalPages) {
-                    runCatching { internalPrevFocusRequester.requestFocus() }
+                if (isTv) {
+                    coroutineScope.launch {
+                        delay(60)
+                        runCatching {
+                            if (newPage < totalPages) {
+                                internalNextFocusRequester.requestFocus()
+                            } else {
+                                internalPrevFocusRequester.requestFocus()
+                            }
+                        }
+                    }
                 }
             },
             isTv = isTv,
             focusRequester = internalNextFocusRequester,
-            leftFocusRequester = if (currentPage > 1) internalPrevFocusRequester else null,
+            upFocusRequester = upFocusRequester,
+            leftFocusRequester = if (currentPage > 1) internalPrevFocusRequester else sidebarFocusRequester,
             onNavigateLeft = if (currentPage > 1) {
                 {
                     runCatching { internalPrevFocusRequester.requestFocus() }
@@ -165,12 +204,13 @@ fun NoosPaginationBar(
 @Composable
 private fun PaginationButton(
     text: String,
-    icon: (@Composable () -> Unit)? = null,
-    iconRight: (@Composable () -> Unit)? = null,
+    icon: (@Composable (isFocused: Boolean) -> Unit)? = null,
+    iconRight: (@Composable (isFocused: Boolean) -> Unit)? = null,
     enabled: Boolean,
     onClick: () -> Unit,
     isTv: Boolean,
     focusRequester: FocusRequester? = null,
+    upFocusRequester: FocusRequester? = null,
     leftFocusRequester: FocusRequester? = null,
     rightFocusRequester: FocusRequester? = null,
     onNavigateUp: (() -> Unit)? = null,
@@ -179,27 +219,34 @@ private fun PaginationButton(
 ) {
     val soundManager = LocalSoundEffectManager.current
     var isFocused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isTv && isFocused) 1.08f else 1.0f,
+        label = "pag_btn_scale"
+    )
 
     val bg = when {
+        isTv && isFocused -> Color(0xFF24334D)
         isFocused -> Color(0x3300E5FF)
         enabled -> DarkCard
-        else -> DarkCard.copy(alpha = 0.3f)
+        else -> DarkCard.copy(alpha = 0.35f)
     }
     val borderColor = when {
+        isTv && isFocused -> FocusGlow
         isFocused -> NoosCyan
-        enabled -> Color(0x22FFFFFF)
+        enabled -> CardBorderUnfocused
         else -> Color.Transparent
     }
+    val borderWidth = if (isTv && isFocused) 3.dp else 1.dp
     val textColor = when {
+        isTv && isFocused -> Color.White
         isFocused -> NoosCyan
         enabled -> TextPrimary
         else -> TextSecondary.copy(alpha = 0.4f)
     }
 
     var buttonModifier = Modifier
-        .clip(RoundedCornerShape(10.dp))
-        .background(bg)
-        .border(if (isFocused) 2.dp else 1.dp, borderColor, RoundedCornerShape(10.dp))
+        .scale(scale)
+        .clip(RoundedCornerShape(12.dp))
 
     if (isTv && enabled) {
         if (focusRequester != null) {
@@ -207,6 +254,7 @@ private fun PaginationButton(
         }
         buttonModifier = buttonModifier
             .focusProperties {
+                if (upFocusRequester != null) up = upFocusRequester
                 if (leftFocusRequester != null) left = leftFocusRequester
                 if (rightFocusRequester != null) right = rightFocusRequester
             }
@@ -240,11 +288,22 @@ private fun PaginationButton(
                                 true
                             } else false
                         }
-                        Key.DirectionRight -> {
-                            if (onNavigateRight != null) {
-                                onNavigateRight()
-                                true
-                            } else false
+                        Key.DirectionRight, Key.Tab -> {
+                            if (keyEvent.key == Key.Tab && keyEvent.isShiftPressed) {
+                                if (onNavigateLeft != null) {
+                                    onNavigateLeft()
+                                    true
+                                } else false
+                            } else {
+                                if (onNavigateRight != null) {
+                                    onNavigateRight()
+                                    true
+                                } else false
+                            }
+                        }
+                        Key.DirectionDown -> {
+                            // Déjà tout en bas : consommer l'événement pour ne pas perdre le focus
+                            true
                         }
                         Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
                             soundManager?.playSelect()
@@ -257,24 +316,32 @@ private fun PaginationButton(
             }
     } else {
         buttonModifier = buttonModifier
-            .clickable(enabled = enabled) {
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                enabled = enabled
+            ) {
                 soundManager?.playSelect()
                 onClick()
             }
     }
 
+    buttonModifier = buttonModifier
+        .background(bg)
+        .border(borderWidth, borderColor, RoundedCornerShape(12.dp))
+
     Row(
-        modifier = buttonModifier.padding(horizontal = 14.dp, vertical = 8.dp),
+        modifier = buttonModifier.padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        icon?.invoke()
+        icon?.invoke(isFocused)
         Text(
             text = text,
             color = textColor,
             fontSize = if (isTv) 13.sp else 12.sp,
-            fontWeight = if (isFocused) FontWeight.Bold else FontWeight.Medium
+            fontWeight = if (isFocused) FontWeight.ExtraBold else FontWeight.Medium
         )
-        iconRight?.invoke()
+        iconRight?.invoke(isFocused)
     }
 }

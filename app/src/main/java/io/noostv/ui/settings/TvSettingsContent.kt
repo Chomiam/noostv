@@ -48,7 +48,8 @@ fun TvSettingsContent(
     onNavigateLeft: () -> Unit,
     onOpenLogin: () -> Unit,
     onLogout: () -> Unit,
-    onLanguageChanged: (AppLanguage) -> Unit = {}
+    onLanguageChanged: (AppLanguage) -> Unit = {},
+    onRefreshCatalog: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -64,6 +65,7 @@ fun TvSettingsContent(
     val stableBtnFocus = remember { FocusRequester() }
     val testingBtnFocus = remember { FocusRequester() }
     val checkBtnFocus = remember { FocusRequester() }
+    val refreshCatalogBtnFocus = remember { FocusRequester() }
     val logoutBtnFocus = remember { FocusRequester() }
 
     // Focus requesters pour les 7 langues
@@ -538,17 +540,34 @@ fun TvSettingsContent(
                     Text("${strings.server} ${sessionManager.getMaskedServerUrl()}", color = TextSecondary, fontSize = 11.sp)
                     Text("${strings.username} ${sessionManager.getMaskedUsername()}", color = TextSecondary, fontSize = 11.sp)
 
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Button(
-                        onClick = onLogout,
-                        modifier = Modifier.focusRequester(logoutBtnFocus),
-                        shape = RoundedCornerShape(50),
-                        colors = ButtonDefaults.buttonColors(containerColor = SurfaceDarkVariant),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(imageVector = Icons.Default.ExitToApp, contentDescription = null, tint = Color(0xFFFF5252), modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(strings.logout, color = Color(0xFFFF5252), fontSize = 11.sp)
+                        Button(
+                            onClick = onRefreshCatalog,
+                            modifier = Modifier.focusRequester(refreshCatalogBtnFocus),
+                            shape = RoundedCornerShape(50),
+                            colors = ButtonDefaults.buttonColors(containerColor = SurfaceDarkVariant),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Refresh, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Actualiser le catalogue", color = NoosCyan, fontSize = 11.sp)
+                        }
+
+                        Button(
+                            onClick = onLogout,
+                            modifier = Modifier.focusRequester(logoutBtnFocus),
+                            shape = RoundedCornerShape(50),
+                            colors = ButtonDefaults.buttonColors(containerColor = SurfaceDarkVariant),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.ExitToApp, contentDescription = null, tint = Color(0xFFFF5252), modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(strings.logout, color = Color(0xFFFF5252), fontSize = 11.sp)
+                        }
                     }
                 }
             }
@@ -565,8 +584,9 @@ fun TvSettingsContent(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(strings.systemDiag, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     Text("${strings.device} ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT})", color = TextSecondary, fontSize = 11.sp)
+                    Text("Indexation : Chiffrée AES-256-GCM KeyStore", color = GreenLive, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     Text("ExoPlayer Media3 (4K HDR10, H.265, AV1)", color = TextSecondary, fontSize = 11.sp)
-                    Text("Coil 2.6 (100 Mo cache / Mali Hardware-safe)", color = TextSecondary, fontSize = 11.sp)
+                    Text("Coil 2.6 (100 Mo RAM cache)", color = TextSecondary, fontSize = 11.sp)
                     Text("Git: $selectedChannel", color = NoosCyan, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
             }

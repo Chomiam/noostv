@@ -106,7 +106,7 @@ class MainActivity : ComponentActivity() {
             )
         }
         entitlementManager = EntitlementManager(initialSub)
-        repository = IptvRepository()
+        repository = IptvRepository(catalogStore = io.noostv.data.cache.EncryptedCatalogStore(this))
         playerEngine = PlayerEngine(this, entitlementManager)
 
         setContent {
@@ -346,6 +346,14 @@ class MainActivity : ComponentActivity() {
                     currentScreen = CurrentScreen.HOME
                 }
 
+                val refreshCatalogAction: () -> Unit = {
+                    coroutineScope.launch {
+                        Toast.makeText(this@MainActivity, "Actualisation et indexation chiffrée...", Toast.LENGTH_SHORT).show()
+                        repository.loadFromXtream(sessionManager.serverUrl, sessionManager.username, sessionManager.password)
+                        Toast.makeText(this@MainActivity, "Catalogue synchronisé !", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
                 Box(modifier = Modifier.fillMaxSize()) {
                 when (currentScreen) {
                     CurrentScreen.LOGIN -> {
@@ -468,7 +476,8 @@ class MainActivity : ComponentActivity() {
                                 initialFocusedMovieId = savedTvFocusedMovieId,
                                 onMovieFocused = { savedTvFocusedMovieId = it },
                                 initialFocusedSeriesId = savedTvFocusedSeriesId,
-                                onSeriesFocused = { savedTvFocusedSeriesId = it }
+                                onSeriesFocused = { savedTvFocusedSeriesId = it },
+                                onRefreshCatalog = refreshCatalogAction
                             )
                         } else {
                             MobileHomeScreen(
@@ -561,7 +570,8 @@ class MainActivity : ComponentActivity() {
                                 initialMoviePage = savedMobileMoviePage,
                                 onMoviePageChange = { savedMobileMoviePage = it },
                                 initialSeriesPage = savedMobileSeriesPage,
-                                onSeriesPageChange = { savedMobileSeriesPage = it }
+                                onSeriesPageChange = { savedMobileSeriesPage = it },
+                                onRefreshCatalog = refreshCatalogAction
                             )
                         }
                     }

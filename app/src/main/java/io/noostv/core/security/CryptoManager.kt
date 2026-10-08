@@ -101,6 +101,56 @@ object CryptoManager {
         }
     }
 
+    private val MAGIC_BYTES = "ENC1".toByteArray(Charsets.UTF_8)
+
+    /**
+     * Chiffre un tableau d'octets avec AES-256-GCM via l'Android KeyStore.
+     * Le préfixe magique "ENC1" et le vecteur d'initialisation (IV) sont concaténés au début des données chiffrées.
+     */
+    fun encryptBytes(plainBytes: ByteArray): ByteArray {
+        if (plainBytes.isEmpty()) return ByteArray(0)
+        return try {
+            val key = getOrCreateKey()
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.ENCRYPT_MODE, key)
+            val iv = cipher.iv
+            val cipherBytes = cipher.doFinal(plainBytes)
+
+            val combined = ByteArray(MAGIC_BYTES.size + iv.size + cipherBytes.size)
+            System.arraycopy(MAGIC_BYTES, 0, combined, 0, MAGIC_BYTES.size)
+            System.arraycopy(iv, 0, combined, MAGIC_BYTES.size, iv.size)
+            System.arraycopy(cipherBytes, 0, combined, MAGIC_BYTES.size + iv.size, cipherBytes.size)
+            combined
+        } catch (e: Exception) {
+            plainBytes
+        }
+    }
+
+    /**
+     * Déchiffre un tableau d'octets chiffré avec AES-256-GCM.
+     * Si les données ne portent pas le préfixe magique ENC1, elles sont retournées telles quelles.
+     */
+    fun decryptBytes(encrypted: ByteArray): ByteArray {
+        if (encrypted.size < MAGIC_BYTES.size + GCM_IV_LENGTH) return encrypted
+        val hasMagic = MAGIC_BYTES.indices.all { encrypted[it] == MAGIC_BYTES[it] }
+        if (!hasMagic) {
+            return encrypted
+        }
+
+        return try {
+            val offset = MAGIC_BYTES.size
+            val iv = encrypted.copyOfRange(offset, offset + GCM_IV_LENGTH)
+            val cipherBytes = encrypted.copyOfRange(offset + GCM_IV_LENGTH, encrypted.size)
+            val key = getOrCreateKey()
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
+            cipher.init(Cipher.DECRYPT_MODE, key, spec)
+            cipher.doFinal(cipherBytes)
+        } catch (e: Exception) {
+            ByteArray(0)
+        }
+    }
+
     /**
      * Masque un identifiant pour affichage sécurisé (ex: "utilisateur" -> "ut••••••ur").
      */

@@ -153,7 +153,8 @@ fun TvHomeScreen(
     initialFocusedMovieId: String? = null,
     onMovieFocused: (String) -> Unit = {},
     initialFocusedSeriesId: String? = null,
-    onSeriesFocused: (String) -> Unit = {}
+    onSeriesFocused: (String) -> Unit = {},
+    onRefreshCatalog: () -> Unit = {}
 ) {
     val strings = LocalStrings.current
     val context = LocalContext.current
@@ -580,41 +581,39 @@ fun TvHomeScreen(
                                 isTv = true,
                                 prevFocusRequester = moviePaginationPrevFocusRequester,
                                 nextFocusRequester = moviePaginationNextFocusRequester,
-                                 onNavigateUpFromPrev = {
-                                    runCatching {
+                                onNavigateUpFromPrev = {
+                                    coroutineScope.launch {
                                         val targetIdx = if (lastFocusedMovieId != null) {
                                             pagedMovies.indexOfFirst { it.id == lastFocusedMovieId }.takeIf { it >= 0 }
                                                 ?: maxOf(0, (pagedMovies.size - 1) / 6 * 6)
                                         } else {
-                                            maxOf(0, (pagedMovies.size - 1) / 6 * 6)
+                                            0
                                         }
+                                        moviesGridState.scrollToItem(targetIdx)
+                                        kotlinx.coroutines.delay(60)
                                         val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.MOVIES] else movieCardFocusRequesters.getOrNull(targetIdx)
-                                        val ok = runCatching { req?.requestFocus() }.isSuccess
-                                        if (!ok) {
-                                            contentFocusRequesters[TvNavTab.MOVIES]?.requestFocus()
-                                        }
-                                        Unit
+                                        runCatching { req?.requestFocus() }
                                     }
                                 },
                                 onNavigateUpFromNext = {
-                                    runCatching {
+                                    coroutineScope.launch {
                                         val targetIdx = if (lastFocusedMovieId != null) {
                                             pagedMovies.indexOfFirst { it.id == lastFocusedMovieId }.takeIf { it >= 0 }
                                                 ?: (pagedMovies.size - 1)
                                         } else {
-                                            pagedMovies.size - 1
+                                            0
                                         }
+                                        moviesGridState.scrollToItem(targetIdx)
+                                        kotlinx.coroutines.delay(60)
                                         val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.MOVIES] else movieCardFocusRequesters.getOrNull(targetIdx)
-                                        val ok = runCatching { req?.requestFocus() }.isSuccess
-                                        if (!ok) {
-                                            contentFocusRequesters[TvNavTab.MOVIES]?.requestFocus()
-                                        }
-                                        Unit
+                                        runCatching { req?.requestFocus() }
                                     }
                                 },
                                 onNavigateLeftToSidebar = {
                                     sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus()
-                                }
+                                },
+                                upFocusRequester = movieCardFocusRequesters.firstOrNull(),
+                                sidebarFocusRequester = sidebarFocusRequesters[TvNavTab.MOVIES]
                             )
                         }
                     }
@@ -780,41 +779,39 @@ fun TvHomeScreen(
                                 isTv = true,
                                 prevFocusRequester = seriesPaginationPrevFocusRequester,
                                 nextFocusRequester = seriesPaginationNextFocusRequester,
-                                 onNavigateUpFromPrev = {
-                                    runCatching {
+                                onNavigateUpFromPrev = {
+                                    coroutineScope.launch {
                                         val targetIdx = if (lastFocusedSeriesId != null) {
                                             pagedSeries.indexOfFirst { it.id == lastFocusedSeriesId }.takeIf { it >= 0 }
                                                 ?: maxOf(0, (pagedSeries.size - 1) / 6 * 6)
                                         } else {
-                                            maxOf(0, (pagedSeries.size - 1) / 6 * 6)
+                                            0
                                         }
+                                        seriesGridState.scrollToItem(targetIdx)
+                                        kotlinx.coroutines.delay(60)
                                         val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.SERIES] else seriesCardFocusRequesters.getOrNull(targetIdx)
-                                        val ok = runCatching { req?.requestFocus() }.isSuccess
-                                        if (!ok) {
-                                            contentFocusRequesters[TvNavTab.SERIES]?.requestFocus()
-                                        }
-                                        Unit
+                                        runCatching { req?.requestFocus() }
                                     }
                                 },
                                 onNavigateUpFromNext = {
-                                    runCatching {
+                                    coroutineScope.launch {
                                         val targetIdx = if (lastFocusedSeriesId != null) {
                                             pagedSeries.indexOfFirst { it.id == lastFocusedSeriesId }.takeIf { it >= 0 }
                                                 ?: (pagedSeries.size - 1)
                                         } else {
-                                            pagedSeries.size - 1
+                                            0
                                         }
+                                        seriesGridState.scrollToItem(targetIdx)
+                                        kotlinx.coroutines.delay(60)
                                         val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.SERIES] else seriesCardFocusRequesters.getOrNull(targetIdx)
-                                        val ok = runCatching { req?.requestFocus() }.isSuccess
-                                        if (!ok) {
-                                            contentFocusRequesters[TvNavTab.SERIES]?.requestFocus()
-                                        }
-                                        Unit
+                                        runCatching { req?.requestFocus() }
                                     }
                                 },
                                 onNavigateLeftToSidebar = {
                                     sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus()
-                                }
+                                },
+                                upFocusRequester = seriesCardFocusRequesters.firstOrNull(),
+                                sidebarFocusRequester = sidebarFocusRequesters[TvNavTab.SERIES]
                             )
                         }
                     }
@@ -867,7 +864,8 @@ fun TvHomeScreen(
                         onNavigateLeft = { sidebarFocusRequesters[TvNavTab.SETTINGS]?.requestFocus() },
                         onOpenLogin = onOpenLogin,
                         onLogout = onLogout,
-                        onLanguageChanged = onLanguageChanged
+                        onLanguageChanged = onLanguageChanged,
+                        onRefreshCatalog = onRefreshCatalog
                     )
                 }
             }
