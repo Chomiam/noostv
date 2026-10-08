@@ -548,21 +548,6 @@ fun TvHomeScreen(
                                 }
                             }
 
-                            // Restauration du focus au montage initial si retour du lecteur
-                            var hasRestoredMovieMountFocus by remember { mutableStateOf(false) }
-                            LaunchedEffect(pagedMovies.size, selectedTab) {
-                                if (!hasRestoredMovieMountFocus && initialTab == TvNavTab.MOVIES && selectedTab == TvNavTab.MOVIES && pagedMovies.isNotEmpty() && lastFocusedMovieId != null) {
-                                    hasRestoredMovieMountFocus = true
-                                    val targetIdx = pagedMovies.indexOfFirst { it.id == lastFocusedMovieId }.takeIf { it >= 0 } ?: 0
-                                    if (targetIdx in pagedMovies.indices) {
-                                        moviesGridState.scrollToItem(targetIdx)
-                                        kotlinx.coroutines.delay(100)
-                                        val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.MOVIES] else movieCardFocusRequesters.getOrNull(targetIdx)
-                                        runCatching { req?.requestFocus() }
-                                    }
-                                }
-                            }
-
                             LazyVerticalGrid(
                                 state = moviesGridState,
                                 columns = GridCells.Fixed(6),
@@ -820,21 +805,6 @@ fun TvHomeScreen(
                                     if (targetIdx in pagedSeries.indices) {
                                         seriesGridState.scrollToItem(targetIdx)
                                         kotlinx.coroutines.delay(80)
-                                        val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.SERIES] else seriesCardFocusRequesters.getOrNull(targetIdx)
-                                        runCatching { req?.requestFocus() }
-                                    }
-                                }
-                            }
-
-                            // Restauration du focus au montage initial si retour du lecteur
-                            var hasRestoredSeriesMountFocus by remember { mutableStateOf(false) }
-                            LaunchedEffect(pagedSeries.size, selectedTab) {
-                                if (!hasRestoredSeriesMountFocus && initialTab == TvNavTab.SERIES && selectedTab == TvNavTab.SERIES && pagedSeries.isNotEmpty() && lastFocusedSeriesId != null) {
-                                    hasRestoredSeriesMountFocus = true
-                                    val targetIdx = pagedSeries.indexOfFirst { it.id == lastFocusedSeriesId }.takeIf { it >= 0 } ?: 0
-                                    if (targetIdx in pagedSeries.indices) {
-                                        seriesGridState.scrollToItem(targetIdx)
-                                        kotlinx.coroutines.delay(100)
                                         val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.SERIES] else seriesCardFocusRequesters.getOrNull(targetIdx)
                                         runCatching { req?.requestFocus() }
                                     }
