@@ -19,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -249,30 +248,7 @@ private fun PaginationButton(
         .clip(RoundedCornerShape(12.dp))
 
     if (isTv && enabled) {
-        if (focusRequester != null) {
-            buttonModifier = buttonModifier.focusRequester(focusRequester)
-        }
         buttonModifier = buttonModifier
-            .focusProperties {
-                if (upFocusRequester != null) up = upFocusRequester
-                if (leftFocusRequester != null) left = leftFocusRequester
-                if (rightFocusRequester != null) right = rightFocusRequester
-            }
-            .onFocusChanged {
-                if (it.isFocused && !isFocused) {
-                    soundManager?.playFocus()
-                }
-                isFocused = it.isFocused
-            }
-            .focusable(enabled = enabled)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                enabled = enabled
-            ) {
-                soundManager?.playSelect()
-                onClick()
-            }
             .onPreviewKeyEvent { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyDown) {
                     when (keyEvent.key) {
@@ -286,19 +262,19 @@ private fun PaginationButton(
                             if (onNavigateLeft != null) {
                                 onNavigateLeft()
                                 true
-                            } else false
+                            } else true
                         }
                         Key.DirectionRight, Key.Tab -> {
                             if (keyEvent.key == Key.Tab && keyEvent.isShiftPressed) {
                                 if (onNavigateLeft != null) {
                                     onNavigateLeft()
                                     true
-                                } else false
+                                } else true
                             } else {
                                 if (onNavigateRight != null) {
                                     onNavigateRight()
                                     true
-                                } else false
+                                } else true
                             }
                         }
                         Key.DirectionDown -> {
@@ -313,6 +289,26 @@ private fun PaginationButton(
                         else -> false
                     }
                 } else false
+            }
+
+        if (focusRequester != null) {
+            buttonModifier = buttonModifier.focusRequester(focusRequester)
+        }
+        buttonModifier = buttonModifier
+            .onFocusChanged {
+                if (it.isFocused && !isFocused) {
+                    soundManager?.playFocus()
+                }
+                isFocused = it.isFocused
+            }
+            .focusable(enabled = enabled)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                enabled = enabled
+            ) {
+                soundManager?.playSelect()
+                onClick()
             }
     } else {
         buttonModifier = buttonModifier

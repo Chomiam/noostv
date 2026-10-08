@@ -46,6 +46,7 @@ import io.noostv.ui.tv.TvHomeScreen
 
 enum class CurrentScreen {
     LOGIN,
+    SYNC,
     HOME,
     PLAYER,
     EPG,
@@ -124,9 +125,19 @@ class MainActivity : ComponentActivity() {
                 LocalSoundEffectManager provides soundEffectManager
             ) {
                 NoosTvTheme {
+                    val syncProgress by repository.syncProgress.collectAsState()
+
                     // Si l'utilisateur n'a pas encore configuré d'identifiants, on démarre sur LOGIN
+                    // Si déjà connecté et cache présent, démarrage immédiat sur HOME (< 50ms)
+                    // Si connecté mais aucun cache (premier lancement), passage par l'écran de synchronisation SYNC
                     var currentScreen by remember {
-                        mutableStateOf(if (sessionManager.isLoggedIn) CurrentScreen.HOME else CurrentScreen.LOGIN)
+                        mutableStateOf(
+                            when {
+                                !sessionManager.isLoggedIn -> CurrentScreen.LOGIN
+                                sessionManager.serverUrl.isBlank() || repository.hasCachedCatalog(sessionManager.serverUrl, sessionManager.username) -> CurrentScreen.HOME
+                                else -> CurrentScreen.SYNC
+                            }
+                        )
                     }
                 var showUpgradeDialog by remember { mutableStateOf(false) }
 
@@ -336,20 +347,39 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Chargement automatique en arrière-plan si déjà connecté
+                // Chargement automatique : cache instantané si disponible (< 50ms), sinon écran de synchronisation
                 LaunchedEffect(sessionManager.isLoggedIn) {
-                    if (sessionManager.isLoggedIn && sessionManager.serverUrl.isNotBlank()) {
-                        repository.loadFromXtream(
-                            sessionManager.serverUrl,
-                            sessionManager.username,
-                            sessionManager.password
-                        )
+                    if (sessionManager.isLoggedIn) {
+                        if (sessionManager.serverUrl.isNotBlank()) {
+                            val hasCache = repository.hasCachedCatalog(sessionManager.serverUrl, sessionManager.username)
+                            val cacheLoaded = if (hasCache) {
+                                repository.loadFromCache(sessionManager.serverUrl, sessionManager.username)
+                            } else false
+
+                            if (!cacheLoaded) {
+                                currentScreen = CurrentScreen.SYNC
+                                repository.loadFromXtream(
+                                    sessionManager.serverUrl,
+                                    sessionManager.username,
+                                    sessionManager.password
+                                )
+                            }
+                        } else {
+                            repository.loadDemoCatalog()
+                        }
+                    }
+                }
+
+                // Transition automatique de SYNC vers HOME dès que le catalogue est prêt
+                LaunchedEffect(syncProgress?.isFinished) {
+                    if (syncProgress?.isFinished == true && currentScreen == CurrentScreen.SYNC) {
+                        currentScreen = CurrentScreen.HOME
                     }
                 }
 
                 // Bouton Retour : sur mobile, revenir du lecteur affiche le bandeau mini-lecteur
                 // (lecture continue) au lieu de fermer ; sur TV, retour classique vers l'accueil.
-                BackHandler(enabled = currentScreen != CurrentScreen.HOME) {
+                BackHandler(enabled = currentScreen != CurrentScreen.HOME && currentScreen != CurrentScreen.SYNC) {
                     if (!deviceDetector.isTv && currentScreen == CurrentScreen.PLAYER) {
                         isMiniPlayerActive = true
                         currentScreen = CurrentScreen.HOME
@@ -362,10 +392,9 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val refreshCatalogAction: () -> Unit = {
+                    currentScreen = CurrentScreen.SYNC
                     coroutineScope.launch {
-                        Toast.makeText(this@MainActivity, "Actualisation et indexation chiffrée...", Toast.LENGTH_SHORT).show()
                         repository.loadFromXtream(sessionManager.serverUrl, sessionManager.username, sessionManager.password)
-                        Toast.makeText(this@MainActivity, "Catalogue synchronisé !", Toast.LENGTH_SHORT).show()
                     }
                 }
 
@@ -378,17 +407,32 @@ class MainActivity : ComponentActivity() {
                                 sessionManager.saveCredentials(server, user, pass)
                                 sessionManager.isPremium = true
                                 entitlementManager.upgradeToPremium("dev_vip_user")
-                                Toast.makeText(this@MainActivity, "Connexion réussie ! Chargement du catalogue...", Toast.LENGTH_SHORT).show()
+                                currentScreen = CurrentScreen.SYNC
                                 coroutineScope.launch {
                                     repository.loadFromXtream(server, user, pass)
                                 }
-                                currentScreen = CurrentScreen.HOME
                             },
                             onDemoSelected = {
                                 entitlementManager.upgradeToPremium("dev_vip_user")
                                 sessionManager.isPremium = true
+                                repository.loadDemoCatalog()
                                 Toast.makeText(this@MainActivity, "✨ Mode Démo 4K HDR & VIP Activé !", Toast.LENGTH_SHORT).show()
                                 currentScreen = CurrentScreen.HOME
+                            }
+                        )
+                    }
+
+                    CurrentScreen.SYNC -> {
+                        io.noostv.ui.tv.TvCatalogSyncScreen(
+                            syncProgress = syncProgress,
+                            onRetry = {
+                                coroutineScope.launch {
+                                    repository.loadFromXtream(
+                                        sessionManager.serverUrl,
+                                        sessionManager.username,
+                                        sessionManager.password
+                                    )
+                                }
                             }
                         )
                     }

@@ -18,6 +18,16 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 
 /**
+ * État d'avancement de la synchronisation initiale / actualisation du catalogue
+ */
+data class SyncProgress(
+    val step: String,
+    val progress: Float, // 0.0f à 1.0f
+    val isFinished: Boolean = false,
+    val error: String? = null
+)
+
+/**
  * Dépôt central de données pour NoosTV (Live, VOD, Séries, EPG, Favoris).
  */
 class IptvRepository(
@@ -56,8 +66,55 @@ class IptvRepository(
     private val _isLiveLoading = MutableStateFlow(false)
     val isLiveLoading: StateFlow<Boolean> = _isLiveLoading.asStateFlow()
 
-    init {
-        loadDemoCatalog()
+    private val _syncProgress = MutableStateFlow<SyncProgress?>(null)
+    val syncProgress: StateFlow<SyncProgress?> = _syncProgress.asStateFlow()
+
+    fun hasCachedCatalog(serverUrl: String, username: String): Boolean {
+        return catalogStore?.hasLiveCatalog(serverUrl, username) ?: false
+    }
+
+    /**
+     * Charge instantanément le catalogue local chiffré depuis le stockage sécurisé (< 50ms)
+     * Retourne true si le catalogue a été restauré avec succès
+     */
+    suspend fun loadFromCache(serverUrl: String, username: String): Boolean = withContext(Dispatchers.IO) {
+        if (catalogStore == null || serverUrl.isBlank()) return@withContext false
+        val cachedLive = catalogStore.loadLiveCatalog(serverUrl, username)
+        if (cachedLive != null && cachedLive.channels.isNotEmpty()) {
+            _channels.value = cachedLive.channels
+            _categories.value = cachedLive.categories
+            _isLiveLoading.value = false
+
+            val cachedVodCats = catalogStore.loadVodCategories(serverUrl, username)
+            if (!cachedVodCats.isNullOrEmpty()) {
+                _vodCategories.value = cachedVodCats
+                val firstVodCatId = cachedVodCats.firstOrNull()?.id ?: ""
+                if (firstVodCatId.isNotBlank()) {
+                    catalogStore.loadVodMovies(serverUrl, username, firstVodCatId)?.let {
+                        if (it.isNotEmpty()) {
+                            _movies.value = it
+                            _isVodLoading.value = false
+                        }
+                    }
+                }
+            }
+
+            val cachedSeriesCats = catalogStore.loadSeriesCategories(serverUrl, username)
+            if (!cachedSeriesCats.isNullOrEmpty()) {
+                _seriesCategories.value = cachedSeriesCats
+                val firstSeriesCatId = cachedSeriesCats.firstOrNull()?.id ?: ""
+                if (firstSeriesCatId.isNotBlank()) {
+                    catalogStore.loadSeries(serverUrl, username, firstSeriesCatId)?.let {
+                        if (it.isNotEmpty()) {
+                            _series.value = it
+                            _isSeriesLoading.value = false
+                        }
+                    }
+                }
+            }
+            return@withContext true
+        }
+        return@withContext false
     }
 
     /**
@@ -103,10 +160,12 @@ class IptvRepository(
 
     /**
      * Charge l'ensemble du catalogue en direct depuis un serveur Xtream Codes
-     * avec chargement progressif ultra-rapide (<200ms pour le direct)
+     * avec chargement progressif ultra-rapide (<200ms pour le direct) et suivi de progression
      */
     suspend fun loadFromXtream(serverUrl: String, username: String, password: String): Result<Unit> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         try {
+            _syncProgress.value = SyncProgress("Connexion au serveur IPTV...", 0.15f)
+
             // 0. CHARGEMENT IMMÉDIAT DU CACHE LOCAL CHIFFRÉ (Cold Start ~30ms)
             if (catalogStore != null) {
                 val cachedLive = catalogStore.loadLiveCatalog(serverUrl, username)
@@ -150,7 +209,7 @@ class IptvRepository(
             }
 
             // 1. CHARGEMENT CONCURRENT ULTRA-RAPIDE DE TOUTES LES CATÉGORIES (<200ms)
-            // Récupère en parallèle les catégories Direct, VOD et Séries pour afficher immédiatement les menus
+            _syncProgress.value = SyncProgress("Téléchargement des catégories...", 0.35f)
             val (liveCats, vodCats, seriesCats) = coroutineScope {
                 val liveCatsDef = async { xtreamClient.getLiveCategories(serverUrl, username, password).getOrDefault(emptyList()) }
                 val vodCatsDef = async { xtreamClient.getVodCategories(serverUrl, username, password).getOrDefault(emptyList()) }
@@ -170,7 +229,8 @@ class IptvRepository(
                 catalogStore?.saveSeriesCategories(serverUrl, username, seriesCats)
             }
 
-            // 2. CHARGEMENT CONCURRENT DU CONTENU (Direct, VOD Cat 1, Séries Cat 1)
+            // 2. CHARGEMENT DU CONTENU (Direct, VOD Cat 1, Séries Cat 1)
+            _syncProgress.value = SyncProgress("Indexation des chaînes en direct...", 0.70f)
             val firstVodCatId = vodCats.firstOrNull()?.id ?: ""
             val firstSeriesCatId = seriesCats.firstOrNull()?.id ?: ""
 
@@ -225,6 +285,8 @@ class IptvRepository(
                     _isLiveLoading.value = false
                 }
 
+                _syncProgress.value = SyncProgress("Indexation des films et séries...", 0.90f)
+
                 // VOD Première catégorie
                 if (firstVodCatId.isNotBlank()) {
                     launch {
@@ -254,11 +316,13 @@ class IptvRepository(
                 }
             }
 
+            _syncProgress.value = SyncProgress("Catalogue prêt !", 1.0f, isFinished = true)
             Result.success(Unit)
         } catch (e: Exception) {
             _isLiveLoading.value = false
             _isVodLoading.value = false
             _isSeriesLoading.value = false
+            _syncProgress.value = SyncProgress("Erreur lors de la synchronisation", 0.0f, isFinished = false, error = e.localizedMessage)
             Result.failure(e)
         }
     }
@@ -450,7 +514,7 @@ class IptvRepository(
     /**
      * Catalogue de démonstration NoosTV riche avec chaînes 4K HDR, AV1, VOD et Séries
      */
-    private fun loadDemoCatalog() {
+    fun loadDemoCatalog() {
         val now = System.currentTimeMillis()
         val oneHour = 3600_000L
 

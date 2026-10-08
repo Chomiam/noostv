@@ -1105,9 +1105,6 @@ fun NoosPlayerScreen(
                             modifier = Modifier
                                 .fillMaxWidth(0.92f)
                                 .focusRequester(timelineFocusRequester)
-                                .focusProperties {
-                                    down = playPauseFocusRequester
-                                }
                                 .focusable()
                                 .onFocusChanged { isTimelineFocused = it.isFocused }
                                 .onPreviewKeyEvent { event ->
@@ -1146,7 +1143,7 @@ fun NoosPlayerScreen(
                                                     isUserScrubbing = false
                                                 }
                                                 coroutineScope.launch {
-                                                    playPauseFocusRequester.requestFocus()
+                                                    runCatching { playPauseFocusRequester.requestFocus() }
                                                 }
                                                 true
                                             }
@@ -1268,14 +1265,9 @@ fun NoosPlayerScreen(
                                     seekFeedback = "-10s"
                                 },
                                 modifier = Modifier
-                                    .focusProperties {
-                                        if (!isLive) {
-                                            up = timelineFocusRequester
-                                        }
-                                    }
                                     .onPreviewKeyEvent { event ->
                                         if (!isLive && event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
-                                            timelineFocusRequester.requestFocus()
+                                            runCatching { timelineFocusRequester.requestFocus() }
                                             true
                                         } else false
                                     }
@@ -1299,14 +1291,9 @@ fun NoosPlayerScreen(
                                 .clip(RoundedCornerShape(28.dp))
                                 .background(NoosCyan)
                                 .focusRequester(playPauseFocusRequester)
-                                .focusProperties {
-                                    if (!isLive) {
-                                        up = timelineFocusRequester
-                                    }
-                                }
                                 .onPreviewKeyEvent { event ->
                                     if (!isLive && event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
-                                        timelineFocusRequester.requestFocus()
+                                        runCatching { timelineFocusRequester.requestFocus() }
                                         true
                                     } else false
                                 }
@@ -1345,14 +1332,9 @@ fun NoosPlayerScreen(
                                     seekFeedback = "+30s"
                                 },
                                 modifier = Modifier
-                                    .focusProperties {
-                                        if (!isLive) {
-                                            up = timelineFocusRequester
-                                        }
-                                    }
                                     .onPreviewKeyEvent { event ->
                                         if (!isLive && event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
-                                            timelineFocusRequester.requestFocus()
+                                            runCatching { timelineFocusRequester.requestFocus() }
                                             true
                                         } else false
                                     }

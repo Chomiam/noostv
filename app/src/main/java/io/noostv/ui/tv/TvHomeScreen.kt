@@ -14,6 +14,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
@@ -211,11 +212,12 @@ fun TvHomeScreen(
     val tvChannelListFocusRequester = remember { FocusRequester() }
     val moviesCategoryChipsFocusRequester = remember { FocusRequester() }
     val seriesCategoryChipsFocusRequester = remember { FocusRequester() }
+    val moviesGridState = rememberLazyGridState()
+    val seriesGridState = rememberLazyGridState()
 
     LaunchedEffect(Unit) {
-        if (initialTab == TvNavTab.TV) {
-            sidebarFocusRequesters[TvNavTab.TV]?.requestFocus()
-        }
+        kotlinx.coroutines.delay(150)
+        runCatching { sidebarFocusRequesters[initialTab]?.requestFocus() }
     }
 
     // Interception de la touche Retour télécommande :
@@ -309,25 +311,69 @@ fun TvHomeScreen(
                 onTabSelected(tab)
             },
             onNavigateRight = {
+                var handled = false
                 when (selectedTab) {
                     TvNavTab.MOVIES -> {
-                        if (movies.isNotEmpty() && !isVodLoading) {
-                            runCatching { contentFocusRequesters[TvNavTab.MOVIES]?.requestFocus() }
-                        } else {
-                            runCatching { moviesCategoryChipsFocusRequester.requestFocus() }
+                        coroutineScope.launch {
+                            if (movies.isNotEmpty() && !isVodLoading) {
+                                if (moviesGridState.firstVisibleItemIndex != 0) {
+                                    moviesGridState.scrollToItem(0)
+                                }
+                                kotlinx.coroutines.delay(20)
+                                val r1 = runCatching {
+                                    contentFocusRequesters[TvNavTab.MOVIES]?.requestFocus()
+                                }
+                                if (!r1.isSuccess) {
+                                    runCatching { moviesCategoryChipsFocusRequester.requestFocus() }
+                                }
+                            } else {
+                                kotlinx.coroutines.delay(20)
+                                runCatching { moviesCategoryChipsFocusRequester.requestFocus() }
+                            }
                         }
+                        handled = true
                     }
                     TvNavTab.SERIES -> {
-                        if (series.isNotEmpty() && !isSeriesLoading) {
-                            runCatching { contentFocusRequesters[TvNavTab.SERIES]?.requestFocus() }
-                        } else {
-                            runCatching { seriesCategoryChipsFocusRequester.requestFocus() }
+                        coroutineScope.launch {
+                            if (series.isNotEmpty() && !isSeriesLoading) {
+                                if (seriesGridState.firstVisibleItemIndex != 0) {
+                                    seriesGridState.scrollToItem(0)
+                                }
+                                kotlinx.coroutines.delay(20)
+                                val r1 = runCatching {
+                                    contentFocusRequesters[TvNavTab.SERIES]?.requestFocus()
+                                }
+                                if (!r1.isSuccess) {
+                                    runCatching { seriesCategoryChipsFocusRequester.requestFocus() }
+                                }
+                            } else {
+                                kotlinx.coroutines.delay(20)
+                                runCatching { seriesCategoryChipsFocusRequester.requestFocus() }
+                            }
                         }
+                        handled = true
+                    }
+                    TvNavTab.TV -> {
+                        coroutineScope.launch {
+                            kotlinx.coroutines.delay(20)
+                            val r1 = runCatching {
+                                tvChannelListFocusRequester.requestFocus()
+                            }
+                            if (!r1.isSuccess) {
+                                runCatching { contentFocusRequesters[TvNavTab.TV]?.requestFocus() }
+                            }
+                        }
+                        handled = true
                     }
                     else -> {
-                        runCatching { contentFocusRequesters[selectedTab]?.requestFocus() }
+                        coroutineScope.launch {
+                            kotlinx.coroutines.delay(20)
+                            runCatching { contentFocusRequesters[selectedTab]?.requestFocus() }
+                        }
+                        handled = true
                     }
                 }
+                handled
             }
         )
 
@@ -371,7 +417,7 @@ fun TvHomeScreen(
                         categories = liveCatNames,
                         selectedCategory = selectedLiveCategory,
                         focusRequester = contentFocusRequesters[TvNavTab.TV],
-                        onNavigateLeft = { sidebarFocusRequesters[TvNavTab.TV]?.requestFocus() },
+                        onNavigateLeft = { runCatching { sidebarFocusRequesters[TvNavTab.TV]?.requestFocus() } },
                         onNavigateDown = {
                             runCatching { tvChannelListFocusRequester.requestFocus() }
                         },
@@ -423,7 +469,7 @@ fun TvHomeScreen(
                         channels = channels,
                         epgPrograms = epgPrograms,
                         focusRequester = contentFocusRequesters[TvNavTab.EPG]!!,
-                        onNavigateLeft = { sidebarFocusRequesters[TvNavTab.EPG]?.requestFocus() },
+                        onNavigateLeft = { runCatching { sidebarFocusRequesters[TvNavTab.EPG]?.requestFocus() } },
                         onSelectChannel = onSelectChannel
                     )
                 }
@@ -443,7 +489,7 @@ fun TvHomeScreen(
                         focusRequester = moviesCategoryChipsFocusRequester,
                         downFocusRequester = contentFocusRequesters[TvNavTab.MOVIES],
                         leftFocusRequester = sidebarFocusRequesters[TvNavTab.MOVIES],
-                        onNavigateLeft = { sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus() },
+                        onNavigateLeft = { runCatching { sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus() } },
                         onNavigateDown = {
                             if (movies.isNotEmpty()) {
                                 runCatching { contentFocusRequesters[TvNavTab.MOVIES]?.requestFocus() }
@@ -478,7 +524,6 @@ fun TvHomeScreen(
                         TvEmptyState(message = "Aucun film disponible dans cette catégorie")
                     } else {
                         Column(modifier = Modifier.fillMaxSize()) {
-                            val moviesGridState = rememberLazyGridState()
                             val moviePaginationPrevFocusRequester = remember { FocusRequester() }
                             val moviePaginationNextFocusRequester = remember { FocusRequester() }
 
@@ -549,14 +594,42 @@ fun TvHomeScreen(
                                         downFocusRequester = if (isBottomEdge) targetPaginationFocusRequester else null,
                                         leftFocusRequester = if (index % 6 == 0) sidebarFocusRequesters[TvNavTab.MOVIES] else null,
                                         onNavigateLeft = if (index % 6 == 0) {
-                                            { sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus() }
+                                            { runCatching { sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus() } }
                                         } else null,
                                         onNavigateUp = if (index < 6) {
                                             { runCatching { moviesCategoryChipsFocusRequester.requestFocus() } }
-                                        } else null,
+                                        } else {
+                                            {
+                                                val prevIdx = index - 6
+                                                if (prevIdx in pagedMovies.indices) {
+                                                    coroutineScope.launch {
+                                                        val isPrevVisible = moviesGridState.layoutInfo.visibleItemsInfo.any { it.index == prevIdx }
+                                                        if (!isPrevVisible) {
+                                                            moviesGridState.scrollToItem(prevIdx)
+                                                        }
+                                                        val r = if (prevIdx == 0) contentFocusRequesters[TvNavTab.MOVIES] else movieCardFocusRequesters.getOrNull(prevIdx)
+                                                        runCatching { r?.requestFocus() }
+                                                    }
+                                                }
+                                            }
+                                        },
                                         onNavigateDown = if (isBottomEdge) {
                                             { runCatching { targetPaginationFocusRequester.requestFocus() } }
-                                        } else null,
+                                        } else {
+                                            {
+                                                val nextIdx = index + 6
+                                                if (nextIdx in pagedMovies.indices) {
+                                                    coroutineScope.launch {
+                                                        val isNextVisible = moviesGridState.layoutInfo.visibleItemsInfo.any { it.index == nextIdx }
+                                                        if (!isNextVisible) {
+                                                            moviesGridState.scrollToItem(nextIdx)
+                                                        }
+                                                        val r = if (nextIdx == 0) contentFocusRequesters[TvNavTab.MOVIES] else movieCardFocusRequesters.getOrNull(nextIdx)
+                                                        runCatching { r?.requestFocus() }
+                                                    }
+                                                }
+                                            }
+                                        },
                                         onFocus = {
                                             lastFocusedMovieId = movie.id
                                             onMovieFocused(movie.id)
@@ -586,39 +659,94 @@ fun TvHomeScreen(
                                 isTv = true,
                                 prevFocusRequester = moviePaginationPrevFocusRequester,
                                 nextFocusRequester = moviePaginationNextFocusRequester,
+                                sidebarFocusRequester = sidebarFocusRequesters[TvNavTab.MOVIES],
+                                onNavigateLeftToSidebar = {
+                                    runCatching { sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus() }
+                                },
                                 onNavigateUpFromPrev = {
                                     coroutineScope.launch {
-                                        val targetIdx = if (lastFocusedMovieId != null) {
-                                            pagedMovies.indexOfFirst { it.id == lastFocusedMovieId }.takeIf { it >= 0 }
-                                                ?: maxOf(0, (pagedMovies.size - 1) / 6 * 6)
-                                        } else {
-                                            0
+                                        val visibleIndices = moviesGridState.layoutInfo.visibleItemsInfo
+                                            .map { it.index }
+                                            .filter { it in pagedMovies.indices }
+
+                                        val lastIdx = if (lastFocusedMovieId != null) {
+                                            pagedMovies.indexOfFirst { it.id == lastFocusedMovieId }
+                                        } else -1
+
+                                        val targetIdx = when {
+                                            lastIdx in visibleIndices -> lastIdx
+                                            visibleIndices.isNotEmpty() -> {
+                                                val lastVisible = visibleIndices.last()
+                                                val lastVisibleRowStart = maxOf(visibleIndices.first(), (lastVisible / 6) * 6)
+                                                lastVisibleRowStart
+                                            }
+                                            else -> maxOf(0, ((pagedMovies.size - 1) / 6) * 6)
                                         }
-                                        moviesGridState.scrollToItem(targetIdx)
-                                        kotlinx.coroutines.delay(60)
+
                                         val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.MOVIES] else movieCardFocusRequesters.getOrNull(targetIdx)
-                                        runCatching { req?.requestFocus() }
+                                        var focused = false
+                                        try {
+                                            req?.requestFocus()
+                                            focused = true
+                                        } catch (_: Exception) {}
+
+                                        if (!focused && targetIdx in pagedMovies.indices) {
+                                            moviesGridState.scrollToItem(targetIdx)
+                                            for (d in listOf(30L, 60L, 100L)) {
+                                                kotlinx.coroutines.delay(d)
+                                                try {
+                                                    req?.requestFocus()
+                                                    focused = true
+                                                    break
+                                                } catch (_: Exception) {}
+                                            }
+                                        }
+                                        if (!focused) {
+                                            runCatching { contentFocusRequesters[TvNavTab.MOVIES]?.requestFocus() }
+                                                .onFailure { runCatching { moviesCategoryChipsFocusRequester.requestFocus() } }
+                                        }
                                     }
                                 },
                                 onNavigateUpFromNext = {
                                     coroutineScope.launch {
-                                        val targetIdx = if (lastFocusedMovieId != null) {
-                                            pagedMovies.indexOfFirst { it.id == lastFocusedMovieId }.takeIf { it >= 0 }
-                                                ?: (pagedMovies.size - 1)
-                                        } else {
-                                            0
+                                        val visibleIndices = moviesGridState.layoutInfo.visibleItemsInfo
+                                            .map { it.index }
+                                            .filter { it in pagedMovies.indices }
+
+                                        val lastIdx = if (lastFocusedMovieId != null) {
+                                            pagedMovies.indexOfFirst { it.id == lastFocusedMovieId }
+                                        } else -1
+
+                                        val targetIdx = when {
+                                            lastIdx in visibleIndices -> lastIdx
+                                            visibleIndices.isNotEmpty() -> visibleIndices.last()
+                                            else -> pagedMovies.size - 1
                                         }
-                                        moviesGridState.scrollToItem(targetIdx)
-                                        kotlinx.coroutines.delay(60)
+
                                         val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.MOVIES] else movieCardFocusRequesters.getOrNull(targetIdx)
-                                        runCatching { req?.requestFocus() }
+                                        var focused = false
+                                        try {
+                                            req?.requestFocus()
+                                            focused = true
+                                        } catch (_: Exception) {}
+
+                                        if (!focused && targetIdx in pagedMovies.indices) {
+                                            moviesGridState.scrollToItem(targetIdx)
+                                            for (d in listOf(30L, 60L, 100L)) {
+                                                kotlinx.coroutines.delay(d)
+                                                try {
+                                                    req?.requestFocus()
+                                                    focused = true
+                                                    break
+                                                } catch (_: Exception) {}
+                                            }
+                                        }
+                                        if (!focused) {
+                                            runCatching { contentFocusRequesters[TvNavTab.MOVIES]?.requestFocus() }
+                                                .onFailure { runCatching { moviesCategoryChipsFocusRequester.requestFocus() } }
+                                        }
                                     }
-                                },
-                                onNavigateLeftToSidebar = {
-                                    sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus()
-                                },
-                                upFocusRequester = movieCardFocusRequesters.firstOrNull(),
-                                sidebarFocusRequester = sidebarFocusRequesters[TvNavTab.MOVIES]
+                                }
                             )
                         }
                     }
@@ -639,7 +767,7 @@ fun TvHomeScreen(
                         focusRequester = seriesCategoryChipsFocusRequester,
                         downFocusRequester = contentFocusRequesters[TvNavTab.SERIES],
                         leftFocusRequester = sidebarFocusRequesters[TvNavTab.SERIES],
-                        onNavigateLeft = { sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus() },
+                        onNavigateLeft = { runCatching { sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus() } },
                         onNavigateDown = {
                             if (series.isNotEmpty()) {
                                 runCatching { contentFocusRequesters[TvNavTab.SERIES]?.requestFocus() }
@@ -674,7 +802,6 @@ fun TvHomeScreen(
                         TvEmptyState(message = "Aucune série disponible dans cette catégorie")
                     } else {
                         Column(modifier = Modifier.fillMaxSize()) {
-                            val seriesGridState = rememberLazyGridState()
                             val seriesPaginationPrevFocusRequester = remember { FocusRequester() }
                             val seriesPaginationNextFocusRequester = remember { FocusRequester() }
 
@@ -745,14 +872,42 @@ fun TvHomeScreen(
                                         downFocusRequester = if (isBottomEdge) targetPaginationFocusRequester else null,
                                         leftFocusRequester = if (index % 6 == 0) sidebarFocusRequesters[TvNavTab.SERIES] else null,
                                         onNavigateLeft = if (index % 6 == 0) {
-                                            { sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus() }
+                                            { runCatching { sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus() } }
                                         } else null,
                                         onNavigateUp = if (index < 6) {
                                             { runCatching { seriesCategoryChipsFocusRequester.requestFocus() } }
-                                        } else null,
+                                        } else {
+                                            {
+                                                val prevIdx = index - 6
+                                                if (prevIdx in pagedSeries.indices) {
+                                                    coroutineScope.launch {
+                                                        val isPrevVisible = seriesGridState.layoutInfo.visibleItemsInfo.any { it.index == prevIdx }
+                                                        if (!isPrevVisible) {
+                                                            seriesGridState.scrollToItem(prevIdx)
+                                                        }
+                                                        val r = if (prevIdx == 0) contentFocusRequesters[TvNavTab.SERIES] else seriesCardFocusRequesters.getOrNull(prevIdx)
+                                                        runCatching { r?.requestFocus() }
+                                                    }
+                                                }
+                                            }
+                                        },
                                         onNavigateDown = if (isBottomEdge) {
                                             { runCatching { targetPaginationFocusRequester.requestFocus() } }
-                                        } else null,
+                                        } else {
+                                            {
+                                                val nextIdx = index + 6
+                                                if (nextIdx in pagedSeries.indices) {
+                                                    coroutineScope.launch {
+                                                        val isNextVisible = seriesGridState.layoutInfo.visibleItemsInfo.any { it.index == nextIdx }
+                                                        if (!isNextVisible) {
+                                                            seriesGridState.scrollToItem(nextIdx)
+                                                        }
+                                                        val r = if (nextIdx == 0) contentFocusRequesters[TvNavTab.SERIES] else seriesCardFocusRequesters.getOrNull(nextIdx)
+                                                        runCatching { r?.requestFocus() }
+                                                    }
+                                                }
+                                            }
+                                        },
                                         onFocus = {
                                             lastFocusedSeriesId = ser.id
                                             onSeriesFocused(ser.id)
@@ -782,39 +937,94 @@ fun TvHomeScreen(
                                 isTv = true,
                                 prevFocusRequester = seriesPaginationPrevFocusRequester,
                                 nextFocusRequester = seriesPaginationNextFocusRequester,
+                                sidebarFocusRequester = sidebarFocusRequesters[TvNavTab.SERIES],
+                                onNavigateLeftToSidebar = {
+                                    runCatching { sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus() }
+                                },
                                 onNavigateUpFromPrev = {
                                     coroutineScope.launch {
-                                        val targetIdx = if (lastFocusedSeriesId != null) {
-                                            pagedSeries.indexOfFirst { it.id == lastFocusedSeriesId }.takeIf { it >= 0 }
-                                                ?: maxOf(0, (pagedSeries.size - 1) / 6 * 6)
-                                        } else {
-                                            0
-                                        }
-                                        seriesGridState.scrollToItem(targetIdx)
-                                        kotlinx.coroutines.delay(60)
-                                        val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.SERIES] else seriesCardFocusRequesters.getOrNull(targetIdx)
-                                        runCatching { req?.requestFocus() }
-                                    }
-                                },
-                                onNavigateUpFromNext = {
-                                    coroutineScope.launch {
-                                        val targetIdx = if (lastFocusedSeriesId != null) {
-                                            pagedSeries.indexOfFirst { it.id == lastFocusedSeriesId }.takeIf { it >= 0 }
-                                                ?: (pagedSeries.size - 1)
-                                        } else {
-                                            0
-                                        }
-                                        seriesGridState.scrollToItem(targetIdx)
-                                        kotlinx.coroutines.delay(60)
-                                        val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.SERIES] else seriesCardFocusRequesters.getOrNull(targetIdx)
-                                        runCatching { req?.requestFocus() }
-                                    }
-                                },
-                                onNavigateLeftToSidebar = {
-                                    sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus()
-                                },
-                                upFocusRequester = seriesCardFocusRequesters.firstOrNull(),
-                                sidebarFocusRequester = sidebarFocusRequesters[TvNavTab.SERIES]
+                                        val visibleIndices = seriesGridState.layoutInfo.visibleItemsInfo
+                                            .map { it.index }
+                                            .filter { it in pagedSeries.indices }
+
+                                         val lastIdx = if (lastFocusedSeriesId != null) {
+                                             pagedSeries.indexOfFirst { it.id == lastFocusedSeriesId }
+                                         } else -1
+
+                                         val targetIdx = when {
+                                             lastIdx in visibleIndices -> lastIdx
+                                             visibleIndices.isNotEmpty() -> {
+                                                 val lastVisible = visibleIndices.last()
+                                                 val lastVisibleRowStart = maxOf(visibleIndices.first(), (lastVisible / 6) * 6)
+                                                 lastVisibleRowStart
+                                             }
+                                             else -> maxOf(0, ((pagedSeries.size - 1) / 6) * 6)
+                                         }
+
+                                         val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.SERIES] else seriesCardFocusRequesters.getOrNull(targetIdx)
+                                         var focused = false
+                                         try {
+                                             req?.requestFocus()
+                                             focused = true
+                                         } catch (_: Exception) {}
+
+                                         if (!focused && targetIdx in pagedSeries.indices) {
+                                             seriesGridState.scrollToItem(targetIdx)
+                                             for (d in listOf(30L, 60L, 100L)) {
+                                                 kotlinx.coroutines.delay(d)
+                                                 try {
+                                                     req?.requestFocus()
+                                                     focused = true
+                                                     break
+                                                 } catch (_: Exception) {}
+                                             }
+                                         }
+                                         if (!focused) {
+                                             runCatching { contentFocusRequesters[TvNavTab.SERIES]?.requestFocus() }
+                                                 .onFailure { runCatching { seriesCategoryChipsFocusRequester.requestFocus() } }
+                                         }
+                                     }
+                                 },
+                                 onNavigateUpFromNext = {
+                                     coroutineScope.launch {
+                                         val visibleIndices = seriesGridState.layoutInfo.visibleItemsInfo
+                                             .map { it.index }
+                                             .filter { it in pagedSeries.indices }
+
+                                         val lastIdx = if (lastFocusedSeriesId != null) {
+                                             pagedSeries.indexOfFirst { it.id == lastFocusedSeriesId }
+                                         } else -1
+
+                                         val targetIdx = when {
+                                             lastIdx in visibleIndices -> lastIdx
+                                             visibleIndices.isNotEmpty() -> visibleIndices.last()
+                                             else -> pagedSeries.size - 1
+                                         }
+
+                                         val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.SERIES] else seriesCardFocusRequesters.getOrNull(targetIdx)
+                                         var focused = false
+                                         try {
+                                             req?.requestFocus()
+                                             focused = true
+                                         } catch (_: Exception) {}
+
+                                         if (!focused && targetIdx in pagedSeries.indices) {
+                                             seriesGridState.scrollToItem(targetIdx)
+                                             for (d in listOf(30L, 60L, 100L)) {
+                                                 kotlinx.coroutines.delay(d)
+                                                 try {
+                                                     req?.requestFocus()
+                                                     focused = true
+                                                     break
+                                                 } catch (_: Exception) {}
+                                             }
+                                         }
+                                         if (!focused) {
+                                             runCatching { contentFocusRequesters[TvNavTab.SERIES]?.requestFocus() }
+                                                 .onFailure { runCatching { seriesCategoryChipsFocusRequester.requestFocus() } }
+                                         }
+                                     }
+                                 }
                             )
                         }
                     }
@@ -832,7 +1042,7 @@ fun TvHomeScreen(
                         sessionManager = sessionManager,
                         focusRequester = contentFocusRequesters[TvNavTab.FAVORITES]!!,
                         onNavigateLeftToSidebar = {
-                            sidebarFocusRequesters[TvNavTab.FAVORITES]?.requestFocus()
+                            runCatching { sidebarFocusRequesters[TvNavTab.FAVORITES]?.requestFocus() }
                         },
                         onSelectChannel = onSelectChannel,
                         onSelectMovie = { selectedMovieDetail = it },
@@ -855,7 +1065,7 @@ fun TvHomeScreen(
                         sessionManager = sessionManager,
                         focusRequester = contentFocusRequesters[TvNavTab.FILTERS]!!,
                         onNavigateLeftToSidebar = {
-                            sidebarFocusRequesters[TvNavTab.FILTERS]?.requestFocus()
+                            runCatching { sidebarFocusRequesters[TvNavTab.FILTERS]?.requestFocus() }
                         },
                         onFiltersUpdated = {
                             activeProfile = sessionManager.getActiveProfile()
@@ -868,7 +1078,7 @@ fun TvHomeScreen(
                     TvSettingsContent(
                         sessionManager = sessionManager,
                         focusRequester = contentFocusRequesters[TvNavTab.SETTINGS]!!,
-                        onNavigateLeft = { sidebarFocusRequesters[TvNavTab.SETTINGS]?.requestFocus() },
+                        onNavigateLeft = { runCatching { sidebarFocusRequesters[TvNavTab.SETTINGS]?.requestFocus() } },
                         onOpenLogin = onOpenLogin,
                         onLogout = onLogout,
                         onLanguageChanged = onLanguageChanged,
@@ -959,7 +1169,7 @@ fun TvSidebar(
     sidebarFocusRequesters: Map<TvNavTab, FocusRequester>,
     contentFocusRequester: FocusRequester? = null,
     onTabSelected: (TvNavTab) -> Unit,
-    onNavigateRight: () -> Unit
+    onNavigateRight: () -> Boolean
 ) {
     val strings = LocalStrings.current
     val tabList = remember { TvNavTab.values().toList() }
@@ -1024,33 +1234,12 @@ fun TvSidebar(
                         .width(58.dp)
                         .height(48.dp)
                         .scale(scale)
-                        .focusRequester(myRequester)
-                        .focusProperties {
-                            // Assure la continuité verticale stricte entre les onglets du volet sans déborder vers la droite
-                            if (nextTab != null) {
-                                sidebarFocusRequesters[nextTab]?.let { down = it }
-                            }
-                            if (prevTab != null) {
-                                sidebarFocusRequesters[prevTab]?.let { up = it }
-                            }
-                        }
-                        .onFocusChanged {
-                            isFocused = it.isFocused
-                            if (it.isFocused) {
-                                onTabSelected(tab)
-                            }
-                        }
-                        .focusable()
-                        .clickable {
-                            onTabSelected(tab)
-                            onNavigateRight()
-                        }
                         .onPreviewKeyEvent { keyEvent ->
                             if (keyEvent.type == KeyEventType.KeyDown) {
                                 when (keyEvent.key) {
                                     Key.DirectionRight, Key.Enter, Key.DirectionCenter -> {
-                                        onNavigateRight()
-                                        true
+                                        val handled = onNavigateRight()
+                                        handled
                                     }
                                     Key.DirectionDown -> {
                                         if (nextTab != null) {
@@ -1067,6 +1256,17 @@ fun TvSidebar(
                                     else -> false
                                 }
                             } else false
+                        }
+                        .focusRequester(myRequester)
+                        .onFocusChanged {
+                            isFocused = it.isFocused
+                            if (it.isFocused) {
+                                onTabSelected(tab)
+                            }
+                        }
+                        .clickable {
+                            onTabSelected(tab)
+                            onNavigateRight()
                         }
                         .shadow(
                             elevation = if (isFocused) 8.dp else 0.dp,
@@ -1303,6 +1503,25 @@ fun TvCategoryChipsRow(
 
             var chipMod = Modifier
                 .clip(RoundedCornerShape(50))
+                .onPreviewKeyEvent { keyEvent ->
+                    if (keyEvent.type == KeyEventType.KeyDown) {
+                        when (keyEvent.key) {
+                            Key.DirectionLeft -> {
+                                if (index == 0 && onNavigateLeft != null) {
+                                    runCatching { onNavigateLeft() }
+                                    true
+                                } else false
+                            }
+                            Key.DirectionDown -> {
+                                if (onNavigateDown != null) {
+                                    runCatching { onNavigateDown() }
+                                    true
+                                } else false
+                            }
+                            else -> false
+                        }
+                    } else false
+                }
 
             if (focusRequester != null && index == 0) {
                 chipMod = chipMod.focusRequester(focusRequester)
@@ -1310,33 +1529,8 @@ fun TvCategoryChipsRow(
 
             Box(
                 modifier = chipMod
-                    .focusProperties {
-                        if (index == 0 && leftFocusRequester != null) {
-                            left = leftFocusRequester
-                        }
-                    }
                     .onFocusChanged { isFocused = it.isFocused }
-                    .focusable()
                     .clickable { onSelectCategory(category) }
-                    .onPreviewKeyEvent { keyEvent ->
-                        if (keyEvent.type == KeyEventType.KeyDown) {
-                            when (keyEvent.key) {
-                                Key.DirectionLeft -> {
-                                    if (index == 0 && onNavigateLeft != null) {
-                                        onNavigateLeft()
-                                        true
-                                    } else false
-                                }
-                                Key.DirectionDown -> {
-                                    if (onNavigateDown != null) {
-                                        onNavigateDown()
-                                        true
-                                    } else false
-                                }
-                                else -> false
-                            }
-                        } else false
-                    }
                     .background(
                         when {
                             isFocused -> Color.White
@@ -1588,6 +1782,42 @@ fun TvMovieGridCard(
         .aspectRatio(2f / 3f) // Ratio standard d'affiche de film (ex: 200x300, 500x750)
         .scale(scale)
         .clip(RoundedCornerShape(18.dp))
+        .onPreviewKeyEvent { keyEvent ->
+            if (keyEvent.type == KeyEventType.KeyDown) {
+                when (keyEvent.key) {
+                    Key.DirectionLeft -> {
+                        if (onNavigateLeft != null) {
+                            runCatching { onNavigateLeft() }
+                            true
+                        } else false
+                    }
+                    Key.DirectionRight -> {
+                        if (onNavigateRight != null) {
+                            runCatching { onNavigateRight() }
+                            true
+                        } else false
+                    }
+                    Key.DirectionUp -> {
+                        if (onNavigateUp != null) {
+                            runCatching { onNavigateUp() }
+                            true
+                        } else false
+                    }
+                    Key.DirectionDown -> {
+                        if (onNavigateDown != null) {
+                            runCatching { onNavigateDown() }
+                            true
+                        } else false
+                    }
+                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                        soundManager?.playSelect()
+                        onClick()
+                        true
+                    }
+                    else -> false
+                }
+            } else false
+        }
 
     if (focusRequester != null) {
         cardModifier = cardModifier.focusRequester(focusRequester)
@@ -1595,20 +1825,6 @@ fun TvMovieGridCard(
 
     Box(
         modifier = cardModifier
-            .focusProperties {
-                if (upFocusRequester != null) {
-                    up = upFocusRequester
-                }
-                if (downFocusRequester != null) {
-                    down = downFocusRequester
-                }
-                if (leftFocusRequester != null) {
-                    left = leftFocusRequester
-                }
-                if (rightFocusRequester != null) {
-                    right = rightFocusRequester
-                }
-            }
             .onFocusChanged {
                 if (it.isFocused && !isFocused) {
                     soundManager?.playFocus()
@@ -1617,40 +1833,12 @@ fun TvMovieGridCard(
                 isFocused = it.isFocused
             }
             .focusable()
-            .clickable {
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {
                 soundManager?.playSelect()
                 onClick()
-            }
-            .onPreviewKeyEvent { keyEvent ->
-                if (keyEvent.type == KeyEventType.KeyDown) {
-                    when (keyEvent.key) {
-                        Key.DirectionLeft -> {
-                            if (onNavigateLeft != null) {
-                                onNavigateLeft()
-                                true
-                            } else false
-                        }
-                        Key.DirectionRight -> {
-                            if (onNavigateRight != null) {
-                                onNavigateRight()
-                                true
-                            } else false
-                        }
-                        Key.DirectionUp -> {
-                            if (onNavigateUp != null) {
-                                onNavigateUp()
-                                true
-                            } else false
-                        }
-                        Key.DirectionDown -> {
-                            if (onNavigateDown != null) {
-                                onNavigateDown()
-                                true
-                            } else false
-                        }
-                        else -> false
-                    }
-                } else false
             }
             .background(if (isFocused) Color(0xFF1E2838) else CardBackground)
             .border(
@@ -1767,6 +1955,42 @@ fun TvSeriesGridCard(
         .aspectRatio(2f / 3f) // Ratio standard d'affiche de série (ex: 200x300, 500x750)
         .scale(scale)
         .clip(RoundedCornerShape(18.dp))
+        .onPreviewKeyEvent { keyEvent ->
+            if (keyEvent.type == KeyEventType.KeyDown) {
+                when (keyEvent.key) {
+                    Key.DirectionLeft -> {
+                        if (onNavigateLeft != null) {
+                            runCatching { onNavigateLeft() }
+                            true
+                        } else false
+                    }
+                    Key.DirectionRight -> {
+                        if (onNavigateRight != null) {
+                            runCatching { onNavigateRight() }
+                            true
+                        } else false
+                    }
+                    Key.DirectionUp -> {
+                        if (onNavigateUp != null) {
+                            runCatching { onNavigateUp() }
+                            true
+                        } else false
+                    }
+                    Key.DirectionDown -> {
+                        if (onNavigateDown != null) {
+                            runCatching { onNavigateDown() }
+                            true
+                        } else false
+                    }
+                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                        soundManager?.playSelect()
+                        onClick()
+                        true
+                    }
+                    else -> false
+                }
+            } else false
+        }
 
     if (focusRequester != null) {
         cardModifier = cardModifier.focusRequester(focusRequester)
@@ -1774,20 +1998,6 @@ fun TvSeriesGridCard(
 
     Box(
         modifier = cardModifier
-            .focusProperties {
-                if (upFocusRequester != null) {
-                    up = upFocusRequester
-                }
-                if (downFocusRequester != null) {
-                    down = downFocusRequester
-                }
-                if (leftFocusRequester != null) {
-                    left = leftFocusRequester
-                }
-                if (rightFocusRequester != null) {
-                    right = rightFocusRequester
-                }
-            }
             .onFocusChanged {
                 if (it.isFocused && !isFocused) {
                     soundManager?.playFocus()
@@ -1796,40 +2006,12 @@ fun TvSeriesGridCard(
                 isFocused = it.isFocused
             }
             .focusable()
-            .clickable {
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {
                 soundManager?.playSelect()
                 onClick()
-            }
-            .onPreviewKeyEvent { keyEvent ->
-                if (keyEvent.type == KeyEventType.KeyDown) {
-                    when (keyEvent.key) {
-                        Key.DirectionLeft -> {
-                            if (onNavigateLeft != null) {
-                                onNavigateLeft()
-                                true
-                            } else false
-                        }
-                        Key.DirectionRight -> {
-                            if (onNavigateRight != null) {
-                                onNavigateRight()
-                                true
-                            } else false
-                        }
-                        Key.DirectionUp -> {
-                            if (onNavigateUp != null) {
-                                onNavigateUp()
-                                true
-                            } else false
-                        }
-                        Key.DirectionDown -> {
-                            if (onNavigateDown != null) {
-                                onNavigateDown()
-                                true
-                            } else false
-                        }
-                        else -> false
-                    }
-                } else false
             }
             .background(if (isFocused) Color(0xFF1E2838) else CardBackground)
             .border(
@@ -2396,14 +2578,11 @@ fun TvMovieDetailModal(
                                     .clip(CircleShape)
                                     .focusRequester(closeFocusRequester)
                                     .onFocusChanged { isCloseIconFocused = it.isFocused }
-                                    .focusProperties {
-                                        down = playFocusRequester
-                                    }
                                     .onPreviewKeyEvent { event ->
                                         if (event.type == KeyEventType.KeyDown) {
                                             when (event.key) {
                                                 Key.DirectionDown -> {
-                                                    view.post { playFocusRequester.requestFocus() }
+                                                    view.post { runCatching { playFocusRequester.requestFocus() } }
                                                     true
                                                 }
                                                 Key.Enter, Key.DirectionCenter -> {
@@ -2578,13 +2757,9 @@ fun TvMovieDetailModal(
                             modifier = Modifier
                                 .focusRequester(playFocusRequester)
                                 .onFocusChanged { isPlayFocused = it.isFocused }
-                                .focusProperties {
-                                    up = closeFocusRequester
-                                    right = if (resumePoint != null) restartFocusRequester else favFocusRequester
-                                }
                                 .onPreviewKeyEvent { event ->
                                     if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
-                                        view.post { closeFocusRequester.requestFocus() }
+                                        view.post { runCatching { closeFocusRequester.requestFocus() } }
                                         true
                                     } else false
                                 }
@@ -2613,14 +2788,9 @@ fun TvMovieDetailModal(
                                 modifier = Modifier
                                     .focusRequester(restartFocusRequester)
                                     .onFocusChanged { isRestartFocused = it.isFocused }
-                                    .focusProperties {
-                                        up = closeFocusRequester
-                                        left = playFocusRequester
-                                        right = favFocusRequester
-                                    }
                                     .onPreviewKeyEvent { event ->
                                         if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
-                                            view.post { closeFocusRequester.requestFocus() }
+                                            view.post { runCatching { closeFocusRequester.requestFocus() } }
                                             true
                                         } else false
                                     }
@@ -2652,14 +2822,9 @@ fun TvMovieDetailModal(
                             modifier = Modifier
                                 .focusRequester(favFocusRequester)
                                 .onFocusChanged { isFavFocused = it.isFocused }
-                                .focusProperties {
-                                    up = closeFocusRequester
-                                    left = if (resumePoint != null) restartFocusRequester else playFocusRequester
-                                    right = bottomCloseFocusRequester
-                                }
                                 .onPreviewKeyEvent { event ->
                                     if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
-                                        view.post { closeFocusRequester.requestFocus() }
+                                        view.post { runCatching { closeFocusRequester.requestFocus() } }
                                         true
                                     } else false
                                 }
@@ -2683,13 +2848,9 @@ fun TvMovieDetailModal(
                             modifier = Modifier
                                 .focusRequester(bottomCloseFocusRequester)
                                 .onFocusChanged { isCloseFocused = it.isFocused }
-                                .focusProperties {
-                                    up = closeFocusRequester
-                                    left = favFocusRequester
-                                }
                                 .onPreviewKeyEvent { event ->
                                     if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
-                                        view.post { closeFocusRequester.requestFocus() }
+                                        view.post { runCatching { closeFocusRequester.requestFocus() } }
                                         true
                                     } else false
                                 }
@@ -2844,14 +3005,19 @@ fun TvSeriesDetailModal(
                                 .weight(1f)
                                 .focusRequester(favBtnFocusRequester)
                                 .onFocusChanged { isFavFocused = it.isFocused }
-                                .focusProperties {
-                                    up = closeFocusRequester
-                                    right = closeBtnUnderPosterFocusRequester
-                                }
                                 .onPreviewKeyEvent { event ->
-                                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
-                                        view.post { closeFocusRequester.requestFocus() }
-                                        true
+                                    if (event.type == KeyEventType.KeyDown) {
+                                        when (event.key) {
+                                            Key.DirectionUp -> {
+                                                view.post { runCatching { closeFocusRequester.requestFocus() } }
+                                                true
+                                            }
+                                            Key.DirectionRight -> {
+                                                view.post { runCatching { closeBtnUnderPosterFocusRequester.requestFocus() } }
+                                                true
+                                            }
+                                            else -> false
+                                        }
                                     } else false
                                 }
                                 .focusable(),
@@ -2875,15 +3041,28 @@ fun TvSeriesDetailModal(
                                 .weight(1f)
                                 .focusRequester(closeBtnUnderPosterFocusRequester)
                                 .onFocusChanged { isCloseBtnFocused = it.isFocused }
-                                .focusProperties {
-                                    up = closeFocusRequester
-                                    left = favBtnFocusRequester
-                                    right = if (seasons.isNotEmpty()) seasonFocusRequester else directPlayFocusRequester
-                                }
                                 .onPreviewKeyEvent { event ->
-                                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
-                                        view.post { closeFocusRequester.requestFocus() }
-                                        true
+                                    if (event.type == KeyEventType.KeyDown) {
+                                        when (event.key) {
+                                            Key.DirectionUp -> {
+                                                view.post { runCatching { closeFocusRequester.requestFocus() } }
+                                                true
+                                            }
+                                            Key.DirectionLeft -> {
+                                                view.post { runCatching { favBtnFocusRequester.requestFocus() } }
+                                                true
+                                            }
+                                            Key.DirectionRight -> {
+                                                view.post {
+                                                    runCatching {
+                                                        if (seasons.isNotEmpty()) seasonFocusRequester.requestFocus()
+                                                        else directPlayFocusRequester.requestFocus()
+                                                    }
+                                                }
+                                                true
+                                            }
+                                            else -> false
+                                        }
                                     } else false
                                 }
                                 .focusable(),
@@ -2945,10 +3124,6 @@ fun TvSeriesDetailModal(
                                 .size(42.dp)
                                 .clip(CircleShape)
                                 .focusRequester(closeFocusRequester)
-                                .focusProperties {
-                                    down = if (seasons.isNotEmpty()) seasonFocusRequester else directPlayFocusRequester
-                                    left = closeBtnUnderPosterFocusRequester
-                                }
                                 .onFocusChanged {
                                     isCloseIconFocused = it.isFocused
                                     android.util.Log.d("TV_NAV", "Series Close icon isFocused=${it.isFocused}")
@@ -2959,15 +3134,17 @@ fun TvSeriesDetailModal(
                                             Key.DirectionDown -> {
                                                 coroutineScope.launch {
                                                     kotlinx.coroutines.delay(50)
-                                                    if (seasons.isNotEmpty()) seasonFocusRequester.requestFocus()
-                                                    else directPlayFocusRequester.requestFocus()
+                                                    runCatching {
+                                                        if (seasons.isNotEmpty()) seasonFocusRequester.requestFocus()
+                                                        else directPlayFocusRequester.requestFocus()
+                                                    }
                                                 }
                                                 true
                                             }
                                             Key.DirectionLeft -> {
                                                 coroutineScope.launch {
                                                     kotlinx.coroutines.delay(50)
-                                                    closeBtnUnderPosterFocusRequester.requestFocus()
+                                                    runCatching { closeBtnUnderPosterFocusRequester.requestFocus() }
                                                 }
                                                 true
                                             }
@@ -3056,14 +3233,19 @@ fun TvSeriesDetailModal(
                                     modifier = Modifier
                                         .focusRequester(directPlayFocusRequester)
                                         .onFocusChanged { isDirectPlayFocused = it.isFocused }
-                                        .focusProperties {
-                                            up = closeFocusRequester
-                                            left = closeBtnUnderPosterFocusRequester
-                                        }
                                         .onPreviewKeyEvent { event ->
-                                            if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
-                                                view.post { closeFocusRequester.requestFocus() }
-                                                true
+                                            if (event.type == KeyEventType.KeyDown) {
+                                                when (event.key) {
+                                                    Key.DirectionUp -> {
+                                                        view.post { runCatching { closeFocusRequester.requestFocus() } }
+                                                        true
+                                                    }
+                                                    Key.DirectionLeft -> {
+                                                        view.post { runCatching { closeBtnUnderPosterFocusRequester.requestFocus() } }
+                                                        true
+                                                    }
+                                                    else -> false
+                                                }
                                             } else false
                                         }
                                         .focusable(),
@@ -3081,13 +3263,7 @@ fun TvSeriesDetailModal(
                     } else {
                         // Sélecteur de Saisons
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .focusProperties {
-                                    up = closeFocusRequester
-                                    down = episodeFocusRequester
-                                    left = closeBtnUnderPosterFocusRequester
-                                },
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             seasons.forEachIndexed { idx, s ->
@@ -3096,13 +3272,6 @@ fun TvSeriesDetailModal(
 
                                 Box(
                                     modifier = (if (idx == 0) Modifier.focusRequester(seasonFocusRequester) else Modifier)
-                                        .focusProperties {
-                                            up = closeFocusRequester
-                                            if (idx == 0) {
-                                                left = closeBtnUnderPosterFocusRequester
-                                            }
-                                            down = episodeFocusRequester
-                                        }
                                         .onFocusChanged {
                                             isChipFocused = it.isFocused
                                             android.util.Log.d("TV_NAV", "Season chip idx=$idx isFocused=${it.isFocused}")
@@ -3116,8 +3285,7 @@ fun TvSeriesDetailModal(
                                                     Key.DirectionUp -> {
                                                         coroutineScope.launch {
                                                             kotlinx.coroutines.delay(50)
-                                                            val r = runCatching { closeFocusRequester.requestFocus() }
-                                                            android.util.Log.d("TV_NAV", "Season chip coroutine closeFocusRequester: $r")
+                                                            runCatching { closeFocusRequester.requestFocus() }
                                                         }
                                                         true
                                                     }
@@ -3125,7 +3293,7 @@ fun TvSeriesDetailModal(
                                                         if (idx == 0) {
                                                             coroutineScope.launch {
                                                                 kotlinx.coroutines.delay(50)
-                                                                closeBtnUnderPosterFocusRequester.requestFocus()
+                                                                runCatching { closeBtnUnderPosterFocusRequester.requestFocus() }
                                                             }
                                                             true
                                                         } else false
@@ -3133,7 +3301,7 @@ fun TvSeriesDetailModal(
                                                     Key.DirectionDown -> {
                                                         coroutineScope.launch {
                                                             kotlinx.coroutines.delay(50)
-                                                            episodeFocusRequester.requestFocus()
+                                                            runCatching { episodeFocusRequester.requestFocus() }
                                                         }
                                                         true
                                                     }
@@ -3174,11 +3342,7 @@ fun TvSeriesDetailModal(
                         LazyColumn(
                             modifier = Modifier
                                 .weight(1f)
-                                .fillMaxWidth()
-                                .focusProperties {
-                                    up = seasonFocusRequester
-                                    left = closeBtnUnderPosterFocusRequester
-                                },
+                                .fillMaxWidth(),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             contentPadding = PaddingValues(bottom = 8.dp)
                         ) {
@@ -3192,12 +3356,6 @@ fun TvSeriesDetailModal(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .then(if (epIndex == 0) Modifier.focusRequester(episodeFocusRequester) else Modifier)
-                                        .focusProperties {
-                                            if (epIndex == 0) {
-                                                up = seasonFocusRequester
-                                            }
-                                            left = closeBtnUnderPosterFocusRequester
-                                        }
                                         .onFocusChanged { isEpFocused = it.isFocused }
                                         .onPreviewKeyEvent { event ->
                                             if (event.type == KeyEventType.KeyDown) {
@@ -3206,8 +3364,10 @@ fun TvSeriesDetailModal(
                                                         if (epIndex == 0) {
                                                             coroutineScope.launch {
                                                                 kotlinx.coroutines.delay(50)
-                                                                if (seasons.isNotEmpty()) seasonFocusRequester.requestFocus()
-                                                                else closeFocusRequester.requestFocus()
+                                                                runCatching {
+                                                                    if (seasons.isNotEmpty()) seasonFocusRequester.requestFocus()
+                                                                    else closeFocusRequester.requestFocus()
+                                                                }
                                                             }
                                                             true
                                                         } else false
@@ -3215,7 +3375,7 @@ fun TvSeriesDetailModal(
                                                     Key.DirectionLeft -> {
                                                         coroutineScope.launch {
                                                             kotlinx.coroutines.delay(50)
-                                                            closeBtnUnderPosterFocusRequester.requestFocus()
+                                                            runCatching { closeBtnUnderPosterFocusRequester.requestFocus() }
                                                         }
                                                         true
                                                     }

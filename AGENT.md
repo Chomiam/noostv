@@ -31,6 +31,25 @@ Ce document définit les règles impératives, les consignes d'architecture et l
 
 ---
 
+## 🚨 RÈGLE FONDAMENTALE N°2 : SÉCURITÉ DU FOCUS COMPOSE SUR ANDROID TV
+
+> [!CAUTION]
+> ### 🛑 INTERDICTION STRICTE DE `focusProperties { up = dynamicRequester }` SUR LES LISTES DYNAMIQUES / LAZY
+> Dans Jetpack Compose Android TV, lier un `FocusRequester` dynamique (appartenant à un item de `LazyVerticalGrid`, `LazyColumn` ou composant externe) dans un bloc `.focusProperties { up = ...; down = ... }` provoque **UN CRASH INSTANTANÉ DE L'APPLICATION** :
+> `java.lang.IllegalStateException: FocusRequester is not initialized`
+> dès que l'élément ciblé se retrouve hors-champ ou non encore recomposé !
+>
+> **Règle absolue :**
+> 1. Ne JAMAIS utiliser `focusProperties { up = ..., down = ... }` pour naviguer vers ou depuis des éléments de listes virtuelles (`LazyVerticalGrid`, `LazyColumn`).
+> 2. Gérer TOUJOURS la navigation D-Pad via `.onPreviewKeyEvent { event -> when (event.key) { Key.DirectionUp -> ... true } }`.
+> 3. Scroller d'abord vers l'item si nécessaire (`gridState.scrollToItem(index)`), attendre un délai minimal (`delay(60)`), et TOUJOURS envelopper les appels de focus dans un bloc sécurisé :
+>    ```kotlin
+>    runCatching { targetFocusRequester?.requestFocus() }
+>    ```
+
+
+---
+
 ## 🛠️ Environnement & Commandes de Build
 
 > [!CAUTION]

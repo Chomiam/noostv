@@ -51,6 +51,50 @@ class EncryptedCatalogStore(
         return catId.replace(Regex("[^a-zA-Z0-9_\\-]"), "_").take(32)
     }
 
+    private fun gzipCompress(data: ByteArray): ByteArray {
+        val bos = java.io.ByteArrayOutputStream(data.size / 4)
+        java.util.zip.GZIPOutputStream(bos).use { it.write(data) }
+        return bos.toByteArray()
+    }
+
+    private fun gzipDecompress(compressed: ByteArray): ByteArray {
+        val bis = java.io.ByteArrayInputStream(compressed)
+        val gis = java.util.zip.GZIPInputStream(bis)
+        val bos = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        var len: Int
+        while (gis.read(buffer).also { len = it } > 0) {
+            bos.write(buffer, 0, len)
+        }
+        return bos.toByteArray()
+    }
+
+    private fun compressAndEncrypt(plainBytes: ByteArray): ByteArray {
+        val compressed = gzipCompress(plainBytes)
+        return CryptoManager.encryptBytes(compressed)
+    }
+
+    private fun decryptAndDecompress(encryptedBytes: ByteArray): ByteArray {
+        val decrypted = CryptoManager.decryptBytes(encryptedBytes)
+        if (decrypted.isEmpty()) return decrypted
+        return if (decrypted.size >= 2 && decrypted[0] == 0x1f.toByte() && decrypted[1] == 0x8b.toByte()) {
+            runCatching { gzipDecompress(decrypted) }.getOrDefault(decrypted)
+        } else {
+            decrypted
+        }
+    }
+
+    fun hasLiveCatalog(serverUrl: String, username: String): Boolean {
+        if (serverUrl.isBlank()) return false
+        val dir = getAccountDir(serverUrl, username)
+        val file = File(dir, "live_catalog.enc")
+        if (file.exists() && file.length() > 2_500_000L) {
+            runCatching { file.delete() }
+            return false
+        }
+        return file.exists() && file.length() > 0L
+    }
+
     // ==================== LIVE CHANNELS & CATEGORIES ====================
 
     fun saveLiveCatalog(serverUrl: String, username: String, channels: List<Channel>, categories: List<Category>) {
@@ -60,7 +104,7 @@ class EncryptedCatalogStore(
             val file = File(dir, "live_catalog.enc")
             val payload = CachedLiveCatalog(channels = channels, categories = categories)
             val json = gson.toJson(payload)
-            val encrypted = CryptoManager.encryptBytes(json.toByteArray(Charsets.UTF_8))
+            val encrypted = compressAndEncrypt(json.toByteArray(Charsets.UTF_8))
             file.writeBytes(encrypted)
         }
     }
@@ -71,9 +115,13 @@ class EncryptedCatalogStore(
             val dir = getAccountDir(serverUrl, username)
             val file = File(dir, "live_catalog.enc")
             if (!file.exists() || file.length() == 0L) return null
+            if (file.length() > 2_500_000L) {
+                runCatching { file.delete() }
+                return null
+            }
 
             val encrypted = file.readBytes()
-            val decrypted = CryptoManager.decryptBytes(encrypted)
+            val decrypted = decryptAndDecompress(encrypted)
             if (decrypted.isEmpty()) return null
 
             val json = String(decrypted, Charsets.UTF_8)
@@ -89,7 +137,7 @@ class EncryptedCatalogStore(
             val dir = getAccountDir(serverUrl, username)
             val file = File(dir, "vod_categories.enc")
             val json = gson.toJson(categories)
-            val encrypted = CryptoManager.encryptBytes(json.toByteArray(Charsets.UTF_8))
+            val encrypted = compressAndEncrypt(json.toByteArray(Charsets.UTF_8))
             file.writeBytes(encrypted)
         }
     }
@@ -102,7 +150,7 @@ class EncryptedCatalogStore(
             if (!file.exists() || file.length() == 0L) return null
 
             val encrypted = file.readBytes()
-            val decrypted = CryptoManager.decryptBytes(encrypted)
+            val decrypted = decryptAndDecompress(encrypted)
             if (decrypted.isEmpty()) return null
 
             val json = String(decrypted, Charsets.UTF_8)
@@ -118,7 +166,7 @@ class EncryptedCatalogStore(
             val safeCat = sanitizeCatId(categoryId)
             val file = File(dir, "vod_${safeCat}.enc")
             val json = gson.toJson(movies)
-            val encrypted = CryptoManager.encryptBytes(json.toByteArray(Charsets.UTF_8))
+            val encrypted = compressAndEncrypt(json.toByteArray(Charsets.UTF_8))
             file.writeBytes(encrypted)
         }
     }
@@ -132,7 +180,7 @@ class EncryptedCatalogStore(
             if (!file.exists() || file.length() == 0L) return null
 
             val encrypted = file.readBytes()
-            val decrypted = CryptoManager.decryptBytes(encrypted)
+            val decrypted = decryptAndDecompress(encrypted)
             if (decrypted.isEmpty()) return null
 
             val json = String(decrypted, Charsets.UTF_8)
@@ -149,7 +197,7 @@ class EncryptedCatalogStore(
             val dir = getAccountDir(serverUrl, username)
             val file = File(dir, "series_categories.enc")
             val json = gson.toJson(categories)
-            val encrypted = CryptoManager.encryptBytes(json.toByteArray(Charsets.UTF_8))
+            val encrypted = compressAndEncrypt(json.toByteArray(Charsets.UTF_8))
             file.writeBytes(encrypted)
         }
     }
@@ -162,7 +210,7 @@ class EncryptedCatalogStore(
             if (!file.exists() || file.length() == 0L) return null
 
             val encrypted = file.readBytes()
-            val decrypted = CryptoManager.decryptBytes(encrypted)
+            val decrypted = decryptAndDecompress(encrypted)
             if (decrypted.isEmpty()) return null
 
             val json = String(decrypted, Charsets.UTF_8)
@@ -178,7 +226,7 @@ class EncryptedCatalogStore(
             val safeCat = sanitizeCatId(categoryId)
             val file = File(dir, "series_${safeCat}.enc")
             val json = gson.toJson(seriesList)
-            val encrypted = CryptoManager.encryptBytes(json.toByteArray(Charsets.UTF_8))
+            val encrypted = compressAndEncrypt(json.toByteArray(Charsets.UTF_8))
             file.writeBytes(encrypted)
         }
     }
@@ -192,7 +240,7 @@ class EncryptedCatalogStore(
             if (!file.exists() || file.length() == 0L) return null
 
             val encrypted = file.readBytes()
-            val decrypted = CryptoManager.decryptBytes(encrypted)
+            val decrypted = decryptAndDecompress(encrypted)
             if (decrypted.isEmpty()) return null
 
             val json = String(decrypted, Charsets.UTF_8)
