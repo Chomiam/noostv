@@ -15,6 +15,15 @@ import coil.size.Precision
  */
 class NoosApplication : Application(), ImageLoaderFactory {
 
+    override fun onCreate() {
+        super.onCreate()
+        // Évaluation de l'intégrité de l'environnement (détection Frida, hooking, débogage)
+        val report = io.noostv.core.security.AppIntegrityChecker.checkIntegrity(this)
+        if (report.isCompromised) {
+            android.util.Log.w("NoosApplication", "Environnement non sécurisé détecté: ${report.issues}")
+        }
+    }
+
     override fun newImageLoader(): ImageLoader {
         return ImageLoader.Builder(this)
             .memoryCache {

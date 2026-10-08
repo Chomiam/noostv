@@ -220,9 +220,31 @@ class UpdateManager(private val context: Context) {
     }
 
     /**
-     * Lance l'installateur de paquets d'Android pour mettre à jour l'APK
+     * Valide l'intégrité de l'archive APK téléchargée puis lance l'installateur de paquets d'Android.
+     * Rejette et supprime les fichiers corrompus, incomplets ou dont l'applicationId ne correspond pas.
      */
-    fun installApk(apkFile: File) {
+    fun installApk(apkFile: File): Boolean {
+        if (!apkFile.exists() || apkFile.length() < 1024 * 100) {
+            android.util.Log.e("UpdateManager", "Fichier APK manquant ou taille invalide (< 100 Ko)")
+            return false
+        }
+
+        // Vérification de la structure du paquet via l'analyseur natif du PackageManager
+        val pm = context.packageManager
+        val archiveInfo = pm.getPackageArchiveInfo(apkFile.absolutePath, 0)
+        if (archiveInfo == null) {
+            android.util.Log.e("UpdateManager", "PackageArchiveInfo nul : APK corrompu ou altéré")
+            apkFile.delete()
+            return false
+        }
+
+        // Vérification stricte du package applicatif
+        if (archiveInfo.packageName != context.packageName) {
+            android.util.Log.e("UpdateManager", "Alerte sécurité : PackageName de l'APK rejeté (${archiveInfo.packageName} != ${context.packageName})")
+            apkFile.delete()
+            return false
+        }
+
         val uri: Uri = FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",
@@ -235,6 +257,7 @@ class UpdateManager(private val context: Context) {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(intent)
+        return true
     }
 
     /**

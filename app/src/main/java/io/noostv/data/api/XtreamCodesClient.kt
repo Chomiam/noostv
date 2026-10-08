@@ -6,6 +6,7 @@ import io.noostv.data.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.ConnectionPool
+import okhttp3.ConnectionSpec
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.UUID
@@ -34,9 +35,28 @@ class XtreamCodesClient(
         .retryOnConnectionFailure(true)
         .connectTimeout(6, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
+        .connectionSpecs(listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.COMPATIBLE_TLS, ConnectionSpec.CLEARTEXT))
+        .addInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .header("User-Agent", USER_AGENT)
+                .build()
+            chain.proceed(request)
+        }
         .build(),
     private val gson: Gson = Gson()
 ) {
+
+    companion object {
+        const val USER_AGENT = "NoosTV/1.2.6 (Android TV; ExoPlayer)"
+
+        /**
+         * Masque les identifiants et mots de passe dans les URLs pour éviter toute fuite dans les logs.
+         */
+        fun sanitizeUrl(url: String): String {
+            return url.replace(Regex("password=[^&\\s]+"), "password=***")
+                .replace(Regex("/(live|movie|series)/([^/]+)/([^/]+)/"), "/$1/$2/***/")
+        }
+    }
 
     /**
      * Lit et désérialise le JSON directement depuis le flux réseau sans allouer de String intermédiaire géante
