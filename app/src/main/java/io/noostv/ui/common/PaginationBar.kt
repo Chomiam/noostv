@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -199,27 +200,30 @@ private fun PaginationButton(
         .clip(RoundedCornerShape(10.dp))
         .background(bg)
         .border(if (isFocused) 2.dp else 1.dp, borderColor, RoundedCornerShape(10.dp))
-        .clickable(enabled = enabled) {
-            soundManager?.playSelect()
-            onClick()
-        }
-
-    if (focusRequester != null) {
-        buttonModifier = buttonModifier.focusRequester(focusRequester)
-    }
 
     if (isTv && enabled) {
+        if (focusRequester != null) {
+            buttonModifier = buttonModifier.focusRequester(focusRequester)
+        }
         buttonModifier = buttonModifier
             .focusProperties {
                 if (leftFocusRequester != null) left = leftFocusRequester
                 if (rightFocusRequester != null) right = rightFocusRequester
             }
-            .focusable()
             .onFocusChanged {
                 if (it.isFocused && !isFocused) {
                     soundManager?.playFocus()
                 }
                 isFocused = it.isFocused
+            }
+            .focusable(enabled = enabled)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                enabled = enabled
+            ) {
+                soundManager?.playSelect()
+                onClick()
             }
             .onPreviewKeyEvent { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyDown) {
@@ -250,6 +254,12 @@ private fun PaginationButton(
                         else -> false
                     }
                 } else false
+            }
+    } else {
+        buttonModifier = buttonModifier
+            .clickable(enabled = enabled) {
+                soundManager?.playSelect()
+                onClick()
             }
     }
 

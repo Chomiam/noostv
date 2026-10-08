@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -124,15 +125,32 @@ fun MobileHomeScreen(
     onFetchSeriesInfo: (suspend (String) -> Series?)? = null,
     onLanguageChanged: (AppLanguage) -> Unit = {},
     onLoadChannelEpg: ((Channel) -> Unit)? = null,
-    onLoadChannelsBatch: ((List<Channel>) -> Unit)? = null
+    onLoadChannelsBatch: ((List<Channel>) -> Unit)? = null,
+    initialTab: MobileBottomTab = MobileBottomTab.TV,
+    onTabSelected: (MobileBottomTab) -> Unit = {},
+    initialVodCategory: String = "Toutes",
+    onVodCategorySelected: (String) -> Unit = {},
+    initialSeriesCategory: String = "Toutes",
+    onSeriesCategorySelected: (String) -> Unit = {},
+    initialMoviePage: Int = 1,
+    onMoviePageChange: (Int) -> Unit = {},
+    initialSeriesPage: Int = 1,
+    onSeriesPageChange: (Int) -> Unit = {}
 ) {
     val strings = LocalStrings.current
+    val coroutineScope = rememberCoroutineScope()
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    var selectedTab by remember { mutableStateOf(MobileBottomTab.TV) }
+    var selectedTab by remember { mutableStateOf(initialTab) }
     var selectedLiveCategory by remember { mutableStateOf("Toutes") }
-    var selectedVodCategory by remember { mutableStateOf("Toutes") }
-    var selectedSeriesCategory by remember { mutableStateOf("Toutes") }
+    var selectedVodCategory by remember { mutableStateOf(initialVodCategory) }
+    var selectedSeriesCategory by remember { mutableStateOf(initialSeriesCategory) }
+
+    var moviePage by remember { mutableIntStateOf(initialMoviePage) }
+    var seriesPage by remember { mutableIntStateOf(initialSeriesPage) }
+
+    val moviesGridState = rememberLazyGridState()
+    val seriesGridState = rememberLazyGridState()
 
     var activeDetailMovie by remember { mutableStateOf<VodMovie?>(null) }
     var activeDetailSeries by remember { mutableStateOf<Series?>(null) }
@@ -154,9 +172,6 @@ fun MobileHomeScreen(
         hiddenVodIds = sessionManager.getHiddenVodCategoryIds()
         hiddenSeriesIds = sessionManager.getHiddenSeriesCategoryIds()
     }
-
-    var moviePage by remember(selectedVodCategory) { mutableIntStateOf(1) }
-    var seriesPage by remember(selectedSeriesCategory) { mutableIntStateOf(1) }
 
     val subscription by entitlementManager.subscription.collectAsState()
 
@@ -225,7 +240,10 @@ fun MobileHomeScreen(
                         val tabLabel = tab.getLabel(strings)
                         NavigationBarItem(
                             selected = isSelected,
-                            onClick = { selectedTab = tab },
+                            onClick = {
+                                selectedTab = tab
+                                onTabSelected(tab)
+                            },
                             alwaysShowLabel = false,
                             icon = {
                                 Icon(
@@ -418,9 +436,14 @@ fun MobileHomeScreen(
                             categories = vodCatNames,
                             selectedCategory = selectedVodCategory,
                             onSelect = { catName ->
-                                selectedVodCategory = catName
-                                val target = visibleVodCategories.firstOrNull { it.name == catName }
-                                if (target != null) onSelectVodCategory(target)
+                                if (selectedVodCategory != catName) {
+                                    selectedVodCategory = catName
+                                    onVodCategorySelected(catName)
+                                    moviePage = 1
+                                    onMoviePageChange(1)
+                                    val target = visibleVodCategories.firstOrNull { it.name == catName }
+                                    if (target != null) onSelectVodCategory(target)
+                                }
                             }
                         )
 
@@ -437,6 +460,7 @@ fun MobileHomeScreen(
                         } else {
                             Column(modifier = Modifier.fillMaxSize()) {
                                 LazyVerticalGrid(
+                                    state = moviesGridState,
                                     columns = GridCells.Fixed(2),
                                     modifier = Modifier.weight(1f),
                                     contentPadding = PaddingValues(16.dp),
@@ -459,7 +483,13 @@ fun MobileHomeScreen(
                                     totalPages = totalMoviePages,
                                     totalItems = movies.size,
                                     itemLabel = "films",
-                                    onPageChange = { moviePage = it }
+                                    onPageChange = {
+                                        moviePage = it
+                                        onMoviePageChange(it)
+                                        coroutineScope.launch {
+                                            runCatching { moviesGridState.scrollToItem(0) }
+                                        }
+                                    }
                                 )
                             }
                         }
@@ -482,9 +512,14 @@ fun MobileHomeScreen(
                             categories = seriesCatNames,
                             selectedCategory = selectedSeriesCategory,
                             onSelect = { catName ->
-                                selectedSeriesCategory = catName
-                                val target = visibleSeriesCategories.firstOrNull { it.name == catName }
-                                if (target != null) onSelectSeriesCategory(target)
+                                if (selectedSeriesCategory != catName) {
+                                    selectedSeriesCategory = catName
+                                    onSeriesCategorySelected(catName)
+                                    seriesPage = 1
+                                    onSeriesPageChange(1)
+                                    val target = visibleSeriesCategories.firstOrNull { it.name == catName }
+                                    if (target != null) onSelectSeriesCategory(target)
+                                }
                             }
                         )
 
@@ -501,6 +536,7 @@ fun MobileHomeScreen(
                         } else {
                             Column(modifier = Modifier.fillMaxSize()) {
                                 LazyVerticalGrid(
+                                    state = seriesGridState,
                                     columns = GridCells.Fixed(2),
                                     modifier = Modifier.weight(1f),
                                     contentPadding = PaddingValues(16.dp),
@@ -524,7 +560,13 @@ fun MobileHomeScreen(
                                     totalPages = totalSeriesPages,
                                     totalItems = series.size,
                                     itemLabel = "séries",
-                                    onPageChange = { seriesPage = it }
+                                    onPageChange = {
+                                        seriesPage = it
+                                        onSeriesPageChange(it)
+                                        coroutineScope.launch {
+                                            runCatching { seriesGridState.scrollToItem(0) }
+                                        }
+                                    }
                                 )
                             }
                         }

@@ -105,6 +105,10 @@ interface AppStrings {
     val audioTracks: String
     val subtitles: String
     val upgradePremium: String
+    val exitConfirmTitle: String
+    val exitConfirmMsg: String
+    val exitQuitButton: String
+    val pressBackAgainToExit: String
 
     companion object {
         fun get(language: AppLanguage): AppStrings = when (language) {
@@ -213,6 +217,10 @@ object FrenchStrings : AppStrings {
     override val audioTracks = "Pistes audio"
     override val subtitles = "Sous-titres"
     override val upgradePremium = "Passer à NoosTV Premium"
+    override val exitConfirmTitle = "Quitter NoosTV ?"
+    override val exitConfirmMsg = "Voulez-vous vraiment fermer complètement l'application ?"
+    override val exitQuitButton = "Quitter"
+    override val pressBackAgainToExit = "Appuyez de nouveau sur Retour pour quitter"
 }
 
 object EnglishStrings : AppStrings {
@@ -309,6 +317,10 @@ object EnglishStrings : AppStrings {
     override val audioTracks = "Audio tracks"
     override val subtitles = "Subtitles"
     override val upgradePremium = "Upgrade to NoosTV Premium"
+    override val exitConfirmTitle = "Exit NoosTV?"
+    override val exitConfirmMsg = "Are you sure you want to completely close the application?"
+    override val exitQuitButton = "Exit"
+    override val pressBackAgainToExit = "Press Back again to exit"
 }
 
 object SpanishStrings : AppStrings {
@@ -405,6 +417,10 @@ object SpanishStrings : AppStrings {
     override val audioTracks = "Pistas de audio"
     override val subtitles = "Subtítulos"
     override val upgradePremium = "Pasar a NoosTV Premium"
+    override val exitConfirmTitle = "¿Salir de NoosTV?"
+    override val exitConfirmMsg = "¿Está seguro de que desea cerrar completamente la aplicación?"
+    override val exitQuitButton = "Salir"
+    override val pressBackAgainToExit = "Presione Atrás de nuevo para salir"
 }
 
 object GermanStrings : AppStrings {
@@ -501,6 +517,10 @@ object GermanStrings : AppStrings {
     override val audioTracks = "Tonspuren"
     override val subtitles = "Untertitel"
     override val upgradePremium = "Auf NoosTV Premium upgraden"
+    override val exitConfirmTitle = "NoosTV beenden?"
+    override val exitConfirmMsg = "Möchten Sie die Anwendung wirklich vollständig beenden?"
+    override val exitQuitButton = "Beenden"
+    override val pressBackAgainToExit = "Drücken Sie erneut Zurück zum Beenden"
 }
 
 object ItalianStrings : AppStrings {
@@ -597,6 +617,10 @@ object ItalianStrings : AppStrings {
     override val audioTracks = "Tracce audio"
     override val subtitles = "Sottotitoli"
     override val upgradePremium = "Passa a NoosTV Premium"
+    override val exitConfirmTitle = "Uscire da NoosTV?"
+    override val exitConfirmMsg = "Sei sicuro di voler chiudere completamente l'applicazione?"
+    override val exitQuitButton = "Esci"
+    override val pressBackAgainToExit = "Premi di nuovo Indietro per uscire"
 }
 
 object ArabicStrings : AppStrings {
@@ -693,6 +717,10 @@ object ArabicStrings : AppStrings {
     override val audioTracks = "المسارات الصوتية"
     override val subtitles = "الترجمة"
     override val upgradePremium = "الترقية إلى NoosTV Premium"
+    override val exitConfirmTitle = "الخروج من NoosTV؟"
+    override val exitConfirmMsg = "هل أنت متأكد من رغبتك في إغلاق التطبيق تمامًا؟"
+    override val exitQuitButton = "خروج"
+    override val pressBackAgainToExit = "اضغط على رجوع مرة أخرى للخروج"
 }
 
 object PortugueseStrings : AppStrings {
@@ -789,4 +817,8 @@ object PortugueseStrings : AppStrings {
     override val audioTracks = "Faixas de áudio"
     override val subtitles = "Legendas"
     override val upgradePremium = "Atualizar para NoosTV Premium"
+    override val exitConfirmTitle = "Sair do NoosTV?"
+    override val exitConfirmMsg = "Tem certeza de que deseja fechar completamente a aplicação?"
+    override val exitQuitButton = "Sair"
+    override val pressBackAgainToExit = "Pressione Voltar novamente para sair"
 }
