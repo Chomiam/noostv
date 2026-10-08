@@ -106,7 +106,7 @@ class MainActivity : ComponentActivity() {
             )
         }
         entitlementManager = EntitlementManager(initialSub)
-        repository = IptvRepository()
+        repository = IptvRepository(catalogStore = io.noostv.data.cache.EncryptedCatalogStore(this))
         playerEngine = PlayerEngine(this, entitlementManager)
 
         setContent {
@@ -143,7 +143,25 @@ class MainActivity : ComponentActivity() {
 
                 var currentChannel by remember { mutableStateOf<Channel?>(null) }
                 var currentMovie by remember { mutableStateOf<VodMovie?>(null) }
+                var currentContentId by remember { mutableStateOf<String?>(null) }
+                var currentStartPositionMs by remember { mutableStateOf(0L) }
                 var isMiniPlayerActive by remember { mutableStateOf(false) }
+
+                // État de navigation & exploration persistant (survit au lecteur, à la recherche et à l'EPG)
+                var savedTvNavTab by remember { mutableStateOf(io.noostv.ui.tv.TvNavTab.TV) }
+                var savedMobileTab by remember { mutableStateOf(io.noostv.ui.mobile.MobileBottomTab.TV) }
+
+                var savedTvVodCategory by remember { mutableStateOf("Toutes") }
+                var savedTvSeriesCategory by remember { mutableStateOf("Toutes") }
+                var savedTvMoviePage by remember { mutableIntStateOf(1) }
+                var savedTvSeriesPage by remember { mutableIntStateOf(1) }
+                var savedTvFocusedMovieId by remember { mutableStateOf<String?>(null) }
+                var savedTvFocusedSeriesId by remember { mutableStateOf<String?>(null) }
+
+                var savedMobileVodCategory by remember { mutableStateOf("Toutes") }
+                var savedMobileSeriesCategory by remember { mutableStateOf("Toutes") }
+                var savedMobileMoviePage by remember { mutableIntStateOf(1) }
+                var savedMobileSeriesPage by remember { mutableIntStateOf(1) }
 
                 // Mobile : dès qu'on est dans le lecteur, presser Home met automatiquement la
                 // lecture en mini-fenêtre PiP (déclenché par onUserLeaveHint → requestPip).
@@ -161,7 +179,14 @@ class MainActivity : ComponentActivity() {
                     if (success) {
                         currentChannel = channel
                         currentMovie = null
+                        currentContentId = null
+                        currentStartPositionMs = 0L
                         isMiniPlayerActive = false
+                        if (deviceDetector.isTv) {
+                            savedTvNavTab = io.noostv.ui.tv.TvNavTab.TV
+                        } else {
+                            savedMobileTab = io.noostv.ui.mobile.MobileBottomTab.TV
+                        }
                         currentScreen = CurrentScreen.PLAYER
                     } else {
                         showUpgradeDialog = true
@@ -186,29 +211,50 @@ class MainActivity : ComponentActivity() {
                     customStreamTitle = null
                     customStreamSubtitle = null
                     isMiniPlayerActive = false
+                    savedTvNavTab = io.noostv.ui.tv.TvNavTab.TV
+                    savedMobileTab = io.noostv.ui.mobile.MobileBottomTab.TV
+                    savedTvVodCategory = "Toutes"
+                    savedTvSeriesCategory = "Toutes"
+                    savedTvMoviePage = 1
+                    savedTvSeriesPage = 1
+                    savedTvFocusedMovieId = null
+                    savedTvFocusedSeriesId = null
+                    savedMobileVodCategory = "Toutes"
+                    savedMobileSeriesCategory = "Toutes"
+                    savedMobileMoviePage = 1
+                    savedMobileSeriesPage = 1
                     currentScreen = CurrentScreen.LOGIN
                 }
 
-                fun startPlayMovie(movie: VodMovie) {
+                fun startPlayMovie(movie: VodMovie, startPositionMs: Long = 0L) {
                     val success = playerEngine.playStream(
                         url = movie.streamUrl,
                         title = movie.title,
                         isHdrStream = movie.isHdr,
-                        is4K = movie.resolution.contains("4K")
+                        is4K = movie.resolution.contains("4K"),
+                        startPositionMs = startPositionMs
                     )
                     if (success) {
                         currentMovie = movie
                         currentChannel = null
+                        currentContentId = "movie_${movie.id}"
+                        currentStartPositionMs = startPositionMs
                         customStreamTitle = null
                         customStreamSubtitle = null
                         isMiniPlayerActive = false
+                        if (deviceDetector.isTv) {
+                            savedTvNavTab = io.noostv.ui.tv.TvNavTab.MOVIES
+                            savedTvFocusedMovieId = movie.id
+                        } else {
+                            savedMobileTab = io.noostv.ui.mobile.MobileBottomTab.MOVIES
+                        }
                         currentScreen = CurrentScreen.PLAYER
                     } else {
                         showUpgradeDialog = true
                     }
                 }
 
-                fun startPlayEpisode(ser: Series, ep: io.noostv.data.model.Episode) {
+                fun startPlayEpisode(ser: Series, ep: io.noostv.data.model.Episode, startPositionMs: Long = 0L) {
                     val ext = if (ep.containerExtension.isNotBlank()) ep.containerExtension else "mp4"
                     val streamUrl = if (ep.streamUrl.isNotBlank()) ep.streamUrl else "${sessionManager.serverUrl.trimEnd('/')}/series/${sessionManager.username}/${sessionManager.password}/${ep.id}.$ext"
                     val epSubtitle = "S${ep.seasonNumber}E${ep.episodeNumber}: ${ep.title}"
@@ -216,14 +262,23 @@ class MainActivity : ComponentActivity() {
                         url = streamUrl,
                         title = "${ser.title} - $epSubtitle",
                         isHdrStream = false,
-                        is4K = false
+                        is4K = false,
+                        startPositionMs = startPositionMs
                     )
                     if (success) {
                         currentMovie = null
                         currentChannel = null
+                        currentContentId = "ep_${ep.id}"
+                        currentStartPositionMs = startPositionMs
                         customStreamTitle = ser.title
                         customStreamSubtitle = epSubtitle
                         isMiniPlayerActive = false
+                        if (deviceDetector.isTv) {
+                            savedTvNavTab = io.noostv.ui.tv.TvNavTab.SERIES
+                            savedTvFocusedSeriesId = ser.id
+                        } else {
+                            savedMobileTab = io.noostv.ui.mobile.MobileBottomTab.SERIES
+                        }
                         currentScreen = CurrentScreen.PLAYER
                     } else {
                         showUpgradeDialog = true
@@ -246,22 +301,33 @@ class MainActivity : ComponentActivity() {
                         }
                         val ep = targetSeries.seasons.firstOrNull()?.episodes?.firstOrNull()
                         if (ep != null) {
-                            startPlayEpisode(targetSeries, ep)
+                            val epResume = sessionManager.getPlaybackResume("ep_${ep.id}")
+                            startPlayEpisode(targetSeries, ep, epResume?.positionMs ?: 0L)
                         } else {
                             val ext = "mp4"
                             val streamUrl = "${sessionManager.serverUrl.trimEnd('/')}/series/${sessionManager.username}/${sessionManager.password}/${targetSeries.id}.$ext"
+                            val serResume = sessionManager.getPlaybackResume("ser_${targetSeries.id}")
                             val success = playerEngine.playStream(
                                 url = streamUrl,
                                 title = targetSeries.title,
                                 isHdrStream = false,
-                                is4K = false
+                                is4K = false,
+                                startPositionMs = serResume?.positionMs ?: 0L
                             )
                             if (success) {
                                 currentMovie = null
                                 currentChannel = null
+                                currentContentId = "ser_${targetSeries.id}"
+                                currentStartPositionMs = serResume?.positionMs ?: 0L
                                 customStreamTitle = targetSeries.title
                                 customStreamSubtitle = "Série"
                                 isMiniPlayerActive = false
+                                if (deviceDetector.isTv) {
+                                    savedTvNavTab = io.noostv.ui.tv.TvNavTab.SERIES
+                                    savedTvFocusedSeriesId = targetSeries.id
+                                } else {
+                                    savedMobileTab = io.noostv.ui.mobile.MobileBottomTab.SERIES
+                                }
                                 currentScreen = CurrentScreen.PLAYER
                             } else {
                                 showUpgradeDialog = true
@@ -293,6 +359,14 @@ class MainActivity : ComponentActivity() {
                         playerEngine.stop()
                     }
                     currentScreen = CurrentScreen.HOME
+                }
+
+                val refreshCatalogAction: () -> Unit = {
+                    coroutineScope.launch {
+                        Toast.makeText(this@MainActivity, "Actualisation et indexation chiffrée...", Toast.LENGTH_SHORT).show()
+                        repository.loadFromXtream(sessionManager.serverUrl, sessionManager.username, sessionManager.password)
+                        Toast.makeText(this@MainActivity, "Catalogue synchronisé !", Toast.LENGTH_SHORT).show()
+                    }
                 }
 
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -357,9 +431,9 @@ class MainActivity : ComponentActivity() {
                                         )
                                     }
                                 },
-                                onSelectMovie = { startPlayMovie(it) },
+                                onSelectMovie = { movie, startPos -> startPlayMovie(movie, startPos) },
                                 onSelectSeries = { startPlaySeries(it) },
-                                onSelectEpisode = { ser, ep -> startPlayEpisode(ser, ep) },
+                                onSelectEpisode = { ser, ep, startPos -> startPlayEpisode(ser, ep, startPos) },
                                 onFetchVodInfo = { movieId ->
                                     repository.getOrFetchVodInfo(
                                         sessionManager.serverUrl,
@@ -403,7 +477,22 @@ class MainActivity : ComponentActivity() {
                                 onLanguageChanged = { newLang ->
                                     currentLanguage = newLang
                                     sessionManager.appLanguage = newLang.code
-                                }
+                                },
+                                initialTab = savedTvNavTab,
+                                onTabSelected = { savedTvNavTab = it },
+                                initialVodCategory = savedTvVodCategory,
+                                onVodCategorySelected = { savedTvVodCategory = it },
+                                initialSeriesCategory = savedTvSeriesCategory,
+                                onSeriesCategorySelected = { savedTvSeriesCategory = it },
+                                initialMoviePage = savedTvMoviePage,
+                                onMoviePageChange = { savedTvMoviePage = it },
+                                initialSeriesPage = savedTvSeriesPage,
+                                onSeriesPageChange = { savedTvSeriesPage = it },
+                                initialFocusedMovieId = savedTvFocusedMovieId,
+                                onMovieFocused = { savedTvFocusedMovieId = it },
+                                initialFocusedSeriesId = savedTvFocusedSeriesId,
+                                onSeriesFocused = { savedTvFocusedSeriesId = it },
+                                onRefreshCatalog = refreshCatalogAction
                             )
                         } else {
                             MobileHomeScreen(
@@ -486,7 +575,18 @@ class MainActivity : ComponentActivity() {
                                 onLanguageChanged = { newLang ->
                                     currentLanguage = newLang
                                     sessionManager.appLanguage = newLang.code
-                                }
+                                },
+                                initialTab = savedMobileTab,
+                                onTabSelected = { savedMobileTab = it },
+                                initialVodCategory = savedMobileVodCategory,
+                                onVodCategorySelected = { savedMobileVodCategory = it },
+                                initialSeriesCategory = savedMobileSeriesCategory,
+                                onSeriesCategorySelected = { savedMobileSeriesCategory = it },
+                                initialMoviePage = savedMobileMoviePage,
+                                onMoviePageChange = { savedMobileMoviePage = it },
+                                initialSeriesPage = savedMobileSeriesPage,
+                                onSeriesPageChange = { savedMobileSeriesPage = it },
+                                onRefreshCatalog = refreshCatalogAction
                             )
                         }
                     }
@@ -533,6 +633,9 @@ class MainActivity : ComponentActivity() {
                             channel = currentChannel,
                             channels = channels,
                             epgPrograms = epgPrograms,
+                            contentId = currentContentId,
+                            sessionManager = sessionManager,
+                            initialPositionMs = currentStartPositionMs,
                             onBack = {
                                 if (!deviceDetector.isTv) {
                                     // Mobile : retour depuis le lecteur → bandeau mini-lecteur,

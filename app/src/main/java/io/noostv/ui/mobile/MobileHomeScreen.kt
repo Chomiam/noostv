@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -65,7 +66,6 @@ import io.noostv.ui.common.NoosPaginationBar
 import io.noostv.ui.common.PremiumVipBadge
 import io.noostv.ui.common.ResolutionBadge
 import io.noostv.ui.theme.*
-import io.noostv.ui.common.GithubTokenField
 import io.noostv.ui.tv.EpgProvider
 import io.noostv.ui.tv.TvCategoryFiltersContent
 import io.noostv.ui.tv.TvFavoritesContent
@@ -125,15 +125,33 @@ fun MobileHomeScreen(
     onFetchSeriesInfo: (suspend (String) -> Series?)? = null,
     onLanguageChanged: (AppLanguage) -> Unit = {},
     onLoadChannelEpg: ((Channel) -> Unit)? = null,
-    onLoadChannelsBatch: ((List<Channel>) -> Unit)? = null
+    onLoadChannelsBatch: ((List<Channel>) -> Unit)? = null,
+    initialTab: MobileBottomTab = MobileBottomTab.TV,
+    onTabSelected: (MobileBottomTab) -> Unit = {},
+    initialVodCategory: String = "Toutes",
+    onVodCategorySelected: (String) -> Unit = {},
+    initialSeriesCategory: String = "Toutes",
+    onSeriesCategorySelected: (String) -> Unit = {},
+    initialMoviePage: Int = 1,
+    onMoviePageChange: (Int) -> Unit = {},
+    initialSeriesPage: Int = 1,
+    onSeriesPageChange: (Int) -> Unit = {},
+    onRefreshCatalog: () -> Unit = {}
 ) {
     val strings = LocalStrings.current
+    val coroutineScope = rememberCoroutineScope()
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    var selectedTab by remember { mutableStateOf(MobileBottomTab.TV) }
+    var selectedTab by remember { mutableStateOf(initialTab) }
     var selectedLiveCategory by remember { mutableStateOf("Toutes") }
-    var selectedVodCategory by remember { mutableStateOf("Toutes") }
-    var selectedSeriesCategory by remember { mutableStateOf("Toutes") }
+    var selectedVodCategory by remember { mutableStateOf(initialVodCategory) }
+    var selectedSeriesCategory by remember { mutableStateOf(initialSeriesCategory) }
+
+    var moviePage by remember { mutableIntStateOf(initialMoviePage) }
+    var seriesPage by remember { mutableIntStateOf(initialSeriesPage) }
+
+    val moviesGridState = rememberLazyGridState()
+    val seriesGridState = rememberLazyGridState()
 
     var activeDetailMovie by remember { mutableStateOf<VodMovie?>(null) }
     var activeDetailSeries by remember { mutableStateOf<Series?>(null) }
@@ -155,9 +173,6 @@ fun MobileHomeScreen(
         hiddenVodIds = sessionManager.getHiddenVodCategoryIds()
         hiddenSeriesIds = sessionManager.getHiddenSeriesCategoryIds()
     }
-
-    var moviePage by remember(selectedVodCategory) { mutableIntStateOf(1) }
-    var seriesPage by remember(selectedSeriesCategory) { mutableIntStateOf(1) }
 
     val subscription by entitlementManager.subscription.collectAsState()
 
@@ -226,7 +241,10 @@ fun MobileHomeScreen(
                         val tabLabel = tab.getLabel(strings)
                         NavigationBarItem(
                             selected = isSelected,
-                            onClick = { selectedTab = tab },
+                            onClick = {
+                                selectedTab = tab
+                                onTabSelected(tab)
+                            },
                             alwaysShowLabel = false,
                             icon = {
                                 Icon(
@@ -356,6 +374,12 @@ fun MobileHomeScreen(
                                 epgPrograms = epgPrograms,
                                 playerEngine = playerEngine,
                                 sessionManager = sessionManager,
+                                favoriteChannelIds = favoriteChannelIds,
+                                onToggleFavoriteChannel = { chId ->
+                                    sessionManager.toggleFavoriteChannel(chId)
+                                    val prof = sessionManager.getActiveProfile()
+                                    refreshProfileData(prof)
+                                },
                                 onSelectChannel = onSelectChannel,
                                 onLoadChannelEpg = onLoadChannelEpg
                             )
@@ -378,9 +402,16 @@ fun MobileHomeScreen(
                                     ) {
                                         items(filteredChannels, key = { it.id }) { channel ->
                                             val currentProg = EpgProvider.getCurrentProgram(channel, epgPrograms)
+                                            val isFav = favoriteChannelIds.contains(channel.id)
                                             MobileChannelCard(
                                                 channel = channel,
                                                 currentProgram = currentProg,
+                                                isFavorite = isFav,
+                                                onToggleFavorite = {
+                                                    sessionManager.toggleFavoriteChannel(channel.id)
+                                                    val prof = sessionManager.getActiveProfile()
+                                                    refreshProfileData(prof)
+                                                },
                                                 onClick = { onSelectChannel(channel) }
                                             )
                                         }
@@ -406,9 +437,14 @@ fun MobileHomeScreen(
                             categories = vodCatNames,
                             selectedCategory = selectedVodCategory,
                             onSelect = { catName ->
-                                selectedVodCategory = catName
-                                val target = visibleVodCategories.firstOrNull { it.name == catName }
-                                if (target != null) onSelectVodCategory(target)
+                                if (selectedVodCategory != catName) {
+                                    selectedVodCategory = catName
+                                    onVodCategorySelected(catName)
+                                    moviePage = 1
+                                    onMoviePageChange(1)
+                                    val target = visibleVodCategories.firstOrNull { it.name == catName }
+                                    if (target != null) onSelectVodCategory(target)
+                                }
                             }
                         )
 
@@ -425,6 +461,7 @@ fun MobileHomeScreen(
                         } else {
                             Column(modifier = Modifier.fillMaxSize()) {
                                 LazyVerticalGrid(
+                                    state = moviesGridState,
                                     columns = GridCells.Fixed(2),
                                     modifier = Modifier.weight(1f),
                                     contentPadding = PaddingValues(16.dp),
@@ -447,7 +484,13 @@ fun MobileHomeScreen(
                                     totalPages = totalMoviePages,
                                     totalItems = movies.size,
                                     itemLabel = "films",
-                                    onPageChange = { moviePage = it }
+                                    onPageChange = {
+                                        moviePage = it
+                                        onMoviePageChange(it)
+                                        coroutineScope.launch {
+                                            runCatching { moviesGridState.scrollToItem(0) }
+                                        }
+                                    }
                                 )
                             }
                         }
@@ -470,9 +513,14 @@ fun MobileHomeScreen(
                             categories = seriesCatNames,
                             selectedCategory = selectedSeriesCategory,
                             onSelect = { catName ->
-                                selectedSeriesCategory = catName
-                                val target = visibleSeriesCategories.firstOrNull { it.name == catName }
-                                if (target != null) onSelectSeriesCategory(target)
+                                if (selectedSeriesCategory != catName) {
+                                    selectedSeriesCategory = catName
+                                    onSeriesCategorySelected(catName)
+                                    seriesPage = 1
+                                    onSeriesPageChange(1)
+                                    val target = visibleSeriesCategories.firstOrNull { it.name == catName }
+                                    if (target != null) onSelectSeriesCategory(target)
+                                }
                             }
                         )
 
@@ -489,6 +537,7 @@ fun MobileHomeScreen(
                         } else {
                             Column(modifier = Modifier.fillMaxSize()) {
                                 LazyVerticalGrid(
+                                    state = seriesGridState,
                                     columns = GridCells.Fixed(2),
                                     modifier = Modifier.weight(1f),
                                     contentPadding = PaddingValues(16.dp),
@@ -512,7 +561,13 @@ fun MobileHomeScreen(
                                     totalPages = totalSeriesPages,
                                     totalItems = series.size,
                                     itemLabel = "séries",
-                                    onPageChange = { seriesPage = it }
+                                    onPageChange = {
+                                        seriesPage = it
+                                        onSeriesPageChange(it)
+                                        coroutineScope.launch {
+                                            runCatching { seriesGridState.scrollToItem(0) }
+                                        }
+                                    }
                                 )
                             }
                         }
@@ -564,7 +619,8 @@ fun MobileHomeScreen(
                         sessionManager = sessionManager,
                         onOpenLogin = onOpenLogin,
                         onLogout = onLogout,
-                        onLanguageChanged = onLanguageChanged
+                        onLanguageChanged = onLanguageChanged,
+                        onRefreshCatalog = onRefreshCatalog
                     )
                 }
             }
@@ -735,6 +791,8 @@ private fun MobileCategoryChips(
 private fun MobileChannelCard(
     channel: Channel,
     currentProgram: EpgProgram,
+    isFavorite: Boolean = false,
+    onToggleFavorite: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -877,13 +935,32 @@ private fun MobileChannelCard(
                 }
             }
 
-            // Bouton play
-            Icon(
-                imageVector = Icons.Default.PlayCircle,
-                contentDescription = "Lecture",
-                tint = NoosBlue,
-                modifier = Modifier.size(32.dp)
-            )
+            // Boutons Favori et Play
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (onToggleFavorite != null) {
+                    IconButton(
+                        onClick = onToggleFavorite,
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                            contentDescription = "Favori",
+                            tint = if (isFavorite) GoldVip else TextSecondary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+
+                Icon(
+                    imageVector = Icons.Default.PlayCircle,
+                    contentDescription = "Lecture",
+                    tint = NoosBlue,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
         }
     }
 }
@@ -1101,7 +1178,8 @@ private fun MobileSettingsView(
     sessionManager: SessionManager,
     onOpenLogin: () -> Unit,
     onLogout: () -> Unit,
-    onLanguageChanged: (AppLanguage) -> Unit = {}
+    onLanguageChanged: (AppLanguage) -> Unit = {},
+    onRefreshCatalog: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -1118,7 +1196,6 @@ private fun MobileSettingsView(
         coroutineScope.launch {
             val state = updateManager.checkForUpdates(
                 channel = channel,
-                token = sessionManager.githubToken,
                 currentVersion = currentAppVersion
             )
             updateState = state
@@ -1219,7 +1296,6 @@ private fun MobileSettingsView(
                     Text("${strings.checkUpdates} ($selectedChannel)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
 
-                GithubTokenField(sessionManager = sessionManager)
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // Statut de la vérification
@@ -1242,7 +1318,6 @@ private fun MobileSettingsView(
                                         updateState = UpdateState.Downloading(0, 0, state.release.apkSizeBytes)
                                         val dlResult = updateManager.downloadApk(
                                             release = state.release,
-                                            token = sessionManager.githubToken,
                                             onProgress = { pct, dl, tot ->
                                                 updateState = UpdateState.Downloading(pct, dl, tot)
                                             }
@@ -1357,7 +1432,23 @@ private fun MobileSettingsView(
                     Text(sessionManager.getMaskedUsername(), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Indexation", color = TextSecondary, fontSize = 12.sp)
+                    Text("Chiffrée AES-256-GCM KeyStore", color = GreenLive, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+
                 Spacer(modifier = Modifier.height(6.dp))
+
+                Button(
+                    onClick = onRefreshCatalog,
+                    modifier = Modifier.fillMaxWidth().height(42.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = SurfaceDarkVariant)
+                ) {
+                    Icon(imageVector = Icons.Default.Refresh, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Actualiser le catalogue", color = NoosCyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
 
                 OutlinedButton(
                     onClick = onLogout,
@@ -1415,6 +1506,8 @@ private fun MobileLandscapeTvContent(
     epgPrograms: List<EpgProgram>,
     playerEngine: PlayerEngine,
     sessionManager: SessionManager? = null,
+    favoriteChannelIds: Set<String> = emptySet(),
+    onToggleFavoriteChannel: ((String) -> Unit)? = null,
     onSelectChannel: (Channel) -> Unit,
     onLoadChannelEpg: ((Channel) -> Unit)? = null
 ) {
@@ -1498,11 +1591,13 @@ private fun MobileLandscapeTvContent(
                 ) {
                     items(channels, key = { it.id }) { channel ->
                         val isSelected = channel.id == activeChannel?.id
+                        val isFav = favoriteChannelIds.contains(channel.id)
                         val currentProg = EpgProvider.getCurrentProgram(channel, epgPrograms)
                         MobileLandscapeChannelListItem(
                             channel = channel,
                             currentProgram = currentProg,
                             isSelected = isSelected,
+                            isFavorite = isFav,
                             onClick = {
                                 if (isSelected) {
                                     onSelectChannel(channel)
@@ -1572,7 +1667,7 @@ private fun MobileLandscapeTvContent(
                             )
                             .padding(8.dp)
                     ) {
-                        // En-tête : Badge Live + Nom + Résolution
+                        // En-tête : Badge Live + Nom + Favori + Résolution
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1590,10 +1685,29 @@ private fun MobileLandscapeTvContent(
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.widthIn(max = 160.dp)
+                                    modifier = Modifier.widthIn(max = 140.dp)
                                 )
                             }
-                            if (activeChannel.isHdr) HdrBadge() else ResolutionBadge(resolution = activeChannel.resolution)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                val isFav = favoriteChannelIds.contains(activeChannel.id)
+                                if (onToggleFavoriteChannel != null) {
+                                    IconButton(
+                                        onClick = { onToggleFavoriteChannel(activeChannel.id) },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isFav) Icons.Default.Star else Icons.Default.StarBorder,
+                                            contentDescription = "Favori",
+                                            tint = if (isFav) GoldVip else Color.White,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                if (activeChannel.isHdr) HdrBadge() else ResolutionBadge(resolution = activeChannel.resolution)
+                            }
                         }
 
                         // Bas : Bouton Plein écran cliquable
@@ -1697,6 +1811,7 @@ private fun MobileLandscapeChannelListItem(
     channel: Channel,
     currentProgram: EpgProgram,
     isSelected: Boolean,
+    isFavorite: Boolean = false,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1758,14 +1873,28 @@ private fun MobileLandscapeChannelListItem(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = channel.name,
-                    color = if (isSelected) Color.White else TextPrimary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
+                    Text(
+                        text = channel.name,
+                        color = if (isSelected) Color.White else TextPrimary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (isFavorite) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = "Favori",
+                            tint = GoldVip,
+                            modifier = Modifier.size(11.dp)
+                        )
+                    }
+                }
                 if (isSelected) {
                     Text(
                         text = "EN VUE",

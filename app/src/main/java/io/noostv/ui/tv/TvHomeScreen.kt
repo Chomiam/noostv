@@ -2,6 +2,8 @@
 
 package io.noostv.ui.tv
 
+import android.app.Activity
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -18,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -30,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -52,8 +56,10 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import io.noostv.R
+import io.noostv.core.audio.LocalSoundEffectManager
 import io.noostv.core.entitlement.EntitlementManager
 import io.noostv.core.player.PlayerEngine
+import io.noostv.core.player.formatDuration
 import io.noostv.core.storage.SessionManager
 import io.noostv.data.model.Category
 import io.noostv.data.model.Channel
@@ -124,9 +130,9 @@ fun TvHomeScreen(
     onSelectChannel: (Channel) -> Unit,
     onLoadChannelEpg: ((Channel) -> Unit)? = null,
     onLoadChannelsBatch: ((List<Channel>) -> Unit)? = null,
-    onSelectMovie: (VodMovie) -> Unit,
+    onSelectMovie: (VodMovie, Long) -> Unit = { _, _ -> },
     onSelectSeries: (Series) -> Unit,
-    onSelectEpisode: (Series, io.noostv.data.model.Episode) -> Unit = { ser, _ -> onSelectSeries(ser) },
+    onSelectEpisode: (Series, io.noostv.data.model.Episode, Long) -> Unit = { ser, _, _ -> onSelectSeries(ser) },
     onSelectVodCategory: (Category) -> Unit,
     onSelectSeriesCategory: (Category) -> Unit,
     onOpenSearch: () -> Unit,
@@ -135,14 +141,39 @@ fun TvHomeScreen(
     onLogout: () -> Unit,
     onFetchVodInfo: (suspend (String) -> VodMovie?)? = null,
     onFetchSeriesInfo: (suspend (String) -> Series?)? = null,
-    onLanguageChanged: (AppLanguage) -> Unit = {}
+    onLanguageChanged: (AppLanguage) -> Unit = {},
+    initialTab: TvNavTab = TvNavTab.TV,
+    onTabSelected: (TvNavTab) -> Unit = {},
+    initialVodCategory: String = "Toutes",
+    onVodCategorySelected: (String) -> Unit = {},
+    initialSeriesCategory: String = "Toutes",
+    onSeriesCategorySelected: (String) -> Unit = {},
+    initialMoviePage: Int = 1,
+    onMoviePageChange: (Int) -> Unit = {},
+    initialSeriesPage: Int = 1,
+    onSeriesPageChange: (Int) -> Unit = {},
+    initialFocusedMovieId: String? = null,
+    onMovieFocused: (String) -> Unit = {},
+    initialFocusedSeriesId: String? = null,
+    onSeriesFocused: (String) -> Unit = {},
+    onRefreshCatalog: () -> Unit = {}
 ) {
     val strings = LocalStrings.current
-    var selectedTab by remember { mutableStateOf(TvNavTab.TV) }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var selectedTab by remember { mutableStateOf(initialTab) }
     var selectedLiveCategory by remember { mutableStateOf("Toutes") }
-    var selectedVodCategory by remember { mutableStateOf("Toutes") }
-    var selectedSeriesCategory by remember { mutableStateOf("Toutes") }
+    var selectedVodCategory by remember { mutableStateOf(initialVodCategory) }
+    var selectedSeriesCategory by remember { mutableStateOf(initialSeriesCategory) }
     var previewChannel by remember { mutableStateOf(initialPreviewChannel) }
+
+    var moviePage by remember { mutableIntStateOf(initialMoviePage) }
+    var seriesPage by remember { mutableIntStateOf(initialSeriesPage) }
+    var lastFocusedMovieId by remember { mutableStateOf(initialFocusedMovieId) }
+    var lastFocusedSeriesId by remember { mutableStateOf(initialFocusedSeriesId) }
+
+    var showExitDialog by remember { mutableStateOf(false) }
+    var lastBackPressTime by remember { mutableLongStateOf(0L) }
 
     var activeProfile by remember { mutableStateOf(sessionManager.getActiveProfile()) }
     var isProfileModalOpen by remember { mutableStateOf(false) }
@@ -151,21 +182,6 @@ fun TvHomeScreen(
     var selectedSeriesDetail by remember { mutableStateOf<Series?>(null) }
     var favoriteMovieIds by remember { mutableStateOf(sessionManager.getFavoriteMovieIds()) }
     var favoriteSeriesIds by remember { mutableStateOf(sessionManager.getFavoriteSeriesIds()) }
-
-    // Interception de la touche Retour télécommande pour fermer les modales de détail, modale profil ou le mode prévisualisation
-    BackHandler(enabled = isProfileModalOpen || selectedMovieDetail != null || selectedSeriesDetail != null || previewChannel != null) {
-        if (isProfileModalOpen) {
-            isProfileModalOpen = false
-        } else if (selectedMovieDetail != null) {
-            selectedMovieDetail = null
-        } else if (selectedSeriesDetail != null) {
-            selectedSeriesDetail = null
-        } else if (previewChannel != null) {
-            playerEngine?.stop()
-            previewChannel = null
-            onClearCurrentChannel?.invoke()
-        }
-    }
 
     val subscription by entitlementManager.subscription.collectAsState()
 
@@ -197,7 +213,38 @@ fun TvHomeScreen(
     val seriesCategoryChipsFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
-        sidebarFocusRequesters[TvNavTab.TV]?.requestFocus()
+        if (initialTab == TvNavTab.TV) {
+            sidebarFocusRequesters[TvNavTab.TV]?.requestFocus()
+        }
+    }
+
+    // Interception de la touche Retour télécommande :
+    // 1. Fermer les modales (dialogue de confirmation de sortie, profil, détails film/série) ou le mode prévisualisation.
+    // 2. Si au menu principal / accueil : double-clic sur Retour affiche le dialogue de confirmation de fermeture complète.
+    BackHandler(enabled = true) {
+        if (showExitDialog) {
+            showExitDialog = false
+        } else if (isProfileModalOpen) {
+            isProfileModalOpen = false
+        } else if (selectedMovieDetail != null) {
+            selectedMovieDetail = null
+        } else if (selectedSeriesDetail != null) {
+            selectedSeriesDetail = null
+        } else if (previewChannel != null) {
+            playerEngine?.stop()
+            previewChannel = null
+            onClearCurrentChannel?.invoke()
+        } else {
+            val now = System.currentTimeMillis()
+            if (now - lastBackPressTime < 2500L) {
+                showExitDialog = true
+                lastBackPressTime = 0L
+            } else {
+                lastBackPressTime = now
+                Toast.makeText(context, strings.pressBackAgainToExit, Toast.LENGTH_SHORT).show()
+                runCatching { sidebarFocusRequesters[selectedTab]?.requestFocus() }
+            }
+        }
     }
 
     LaunchedEffect(selectedTab) {
@@ -216,12 +263,12 @@ fun TvHomeScreen(
     // Persistance et suivi des chaînes favorites
     var favoriteIds by remember { mutableStateOf(sessionManager.getFavoriteChannelIds()) }
 
-    // Filtrage des chaînes en direct selon la catégorie sélectionnée
-    val filteredChannels = remember(channels, selectedLiveCategory, favoriteIds) {
+    // Filtrage des chaînes en direct selon la catégorie sélectionnée et les filtres de visibilité
+    val filteredChannels = remember(channels, selectedLiveCategory, favoriteIds, activeProfile) {
         if (selectedLiveCategory.startsWith("⭐ Favoris")) {
             channels.filter { favoriteIds.contains(it.id) }
         } else if (selectedLiveCategory == "Toutes") {
-            channels
+            channels.filter { sessionManager.isLiveCategoryVisible(it.categoryId) }
         } else {
             channels.filter { it.categoryName.equals(selectedLiveCategory, ignoreCase = true) || it.categoryId == selectedLiveCategory }
         }
@@ -234,7 +281,7 @@ fun TvHomeScreen(
         }
     }
 
-    val isAnyModalOpen = selectedMovieDetail != null || selectedSeriesDetail != null || isProfileModalOpen
+    val isAnyModalOpen = selectedMovieDetail != null || selectedSeriesDetail != null || isProfileModalOpen || showExitDialog
 
     Box(
         modifier = Modifier
@@ -259,6 +306,7 @@ fun TvHomeScreen(
             },
             onTabSelected = { tab ->
                 selectedTab = tab
+                onTabSelected(tab)
             },
             onNavigateRight = {
                 when (selectedTab) {
@@ -305,12 +353,17 @@ fun TvHomeScreen(
             when (selectedTab) {
                 // ==================== 1. ONGLET TV (DIRECT) ====================
                 TvNavTab.TV -> {
-                    val liveCatNames = remember(categories, channels, favoriteIds) {
+                    val liveCatNames = remember(categories, channels, favoriteIds, activeProfile) {
                         val list = mutableListOf("Toutes")
                         if (favoriteIds.isNotEmpty()) {
                             list.add("⭐ Favoris (${favoriteIds.size})")
                         }
-                        list.addAll(if (categories.isNotEmpty()) categories.map { it.name } else channels.map { it.categoryName }.distinct())
+                        val visibleCats = if (categories.isNotEmpty()) {
+                            categories.filter { sessionManager.isLiveCategoryVisible(it.id) }.map { it.name }
+                        } else {
+                            channels.map { it.categoryName }.distinct()
+                        }
+                        list.addAll(visibleCats)
                         list
                     }
 
@@ -397,10 +450,16 @@ fun TvHomeScreen(
                             }
                         },
                         onSelectCategory = { catName ->
-                            selectedVodCategory = catName
-                            val found = vodCategories.find { it.name == catName }
-                            if (found != null) {
-                                onSelectVodCategory(found)
+                            if (selectedVodCategory != catName) {
+                                selectedVodCategory = catName
+                                onVodCategorySelected(catName)
+                                moviePage = 1
+                                onMoviePageChange(1)
+                                lastFocusedMovieId = null
+                                val found = vodCategories.find { it.name == catName }
+                                if (found != null) {
+                                    onSelectVodCategory(found)
+                                }
                             }
                         }
                     )
@@ -408,7 +467,6 @@ fun TvHomeScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     val moviePageSize = 36
-                    var moviePage by remember(selectedVodCategory) { mutableIntStateOf(1) }
                     val totalMoviePages = maxOf(1, ceil(movies.size.toDouble() / moviePageSize).toInt())
                     val pagedMovies = remember(movies, moviePage) {
                         movies.drop((moviePage - 1) * moviePageSize).take(moviePageSize)
@@ -420,7 +478,50 @@ fun TvHomeScreen(
                         TvEmptyState(message = "Aucun film disponible dans cette catégorie")
                     } else {
                         Column(modifier = Modifier.fillMaxSize()) {
+                            val moviesGridState = rememberLazyGridState()
+                            val moviePaginationPrevFocusRequester = remember { FocusRequester() }
+                            val moviePaginationNextFocusRequester = remember { FocusRequester() }
+
+                            val movieCardFocusRequesters = remember(moviePage, selectedVodCategory, pagedMovies.size) {
+                                List(pagedMovies.size) { FocusRequester() }
+                            }
+
+                            // Restauration du focus et du scroll quand le dialogue de détail de film se ferme
+                            var previousMovieDetailWasOpen by remember { mutableStateOf(false) }
+                            LaunchedEffect(selectedMovieDetail) {
+                                if (selectedMovieDetail != null) {
+                                    previousMovieDetailWasOpen = true
+                                } else if (previousMovieDetailWasOpen) {
+                                    previousMovieDetailWasOpen = false
+                                    val targetIdx = if (lastFocusedMovieId != null) {
+                                        pagedMovies.indexOfFirst { it.id == lastFocusedMovieId }.takeIf { it >= 0 } ?: 0
+                                    } else 0
+                                    if (targetIdx in pagedMovies.indices) {
+                                        moviesGridState.scrollToItem(targetIdx)
+                                        kotlinx.coroutines.delay(80)
+                                        val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.MOVIES] else movieCardFocusRequesters.getOrNull(targetIdx)
+                                        runCatching { req?.requestFocus() }
+                                    }
+                                }
+                            }
+
+                            // Restauration du focus au montage initial si retour du lecteur
+                            var hasRestoredMovieMountFocus by remember { mutableStateOf(false) }
+                            LaunchedEffect(pagedMovies.size, selectedTab) {
+                                if (!hasRestoredMovieMountFocus && initialTab == TvNavTab.MOVIES && selectedTab == TvNavTab.MOVIES && pagedMovies.isNotEmpty() && lastFocusedMovieId != null) {
+                                    hasRestoredMovieMountFocus = true
+                                    val targetIdx = pagedMovies.indexOfFirst { it.id == lastFocusedMovieId }.takeIf { it >= 0 } ?: 0
+                                    if (targetIdx in pagedMovies.indices) {
+                                        moviesGridState.scrollToItem(targetIdx)
+                                        kotlinx.coroutines.delay(100)
+                                        val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.MOVIES] else movieCardFocusRequesters.getOrNull(targetIdx)
+                                        runCatching { req?.requestFocus() }
+                                    }
+                                }
+                            }
+
                             LazyVerticalGrid(
+                                state = moviesGridState,
                                 columns = GridCells.Fixed(6),
                                 modifier = Modifier.weight(1f),
                                 horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -433,10 +534,19 @@ fun TvHomeScreen(
                                     contentType = { "movie_card" }
                                 ) { index ->
                                     val movie = pagedMovies[index]
+                                    val isBottomEdge = (index + 6 >= pagedMovies.size)
+                                    val targetPaginationFocusRequester = when {
+                                        moviePage == 1 -> moviePaginationNextFocusRequester
+                                        moviePage >= totalMoviePages -> moviePaginationPrevFocusRequester
+                                        (index % 6) < 3 -> moviePaginationPrevFocusRequester
+                                        else -> moviePaginationNextFocusRequester
+                                    }
+
                                     TvMovieGridCard(
                                         movie = movie,
-                                        focusRequester = if (index == 0) contentFocusRequesters[TvNavTab.MOVIES] else null,
+                                        focusRequester = if (index == 0) contentFocusRequesters[TvNavTab.MOVIES] else movieCardFocusRequesters.getOrNull(index),
                                         upFocusRequester = if (index < 6) moviesCategoryChipsFocusRequester else null,
+                                        downFocusRequester = if (isBottomEdge) targetPaginationFocusRequester else null,
                                         leftFocusRequester = if (index % 6 == 0) sidebarFocusRequesters[TvNavTab.MOVIES] else null,
                                         onNavigateLeft = if (index % 6 == 0) {
                                             { sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus() }
@@ -444,7 +554,18 @@ fun TvHomeScreen(
                                         onNavigateUp = if (index < 6) {
                                             { runCatching { moviesCategoryChipsFocusRequester.requestFocus() } }
                                         } else null,
-                                        onClick = { selectedMovieDetail = movie }
+                                        onNavigateDown = if (isBottomEdge) {
+                                            { runCatching { targetPaginationFocusRequester.requestFocus() } }
+                                        } else null,
+                                        onFocus = {
+                                            lastFocusedMovieId = movie.id
+                                            onMovieFocused(movie.id)
+                                        },
+                                        onClick = {
+                                            lastFocusedMovieId = movie.id
+                                            onMovieFocused(movie.id)
+                                            selectedMovieDetail = movie
+                                        }
                                     )
                                 }
                             }
@@ -454,8 +575,50 @@ fun TvHomeScreen(
                                 totalPages = totalMoviePages,
                                 totalItems = movies.size,
                                 itemLabel = "films",
-                                onPageChange = { moviePage = it },
-                                isTv = true
+                                onPageChange = {
+                                    moviePage = it
+                                    onMoviePageChange(it)
+                                    lastFocusedMovieId = null
+                                    coroutineScope.launch {
+                                        runCatching { moviesGridState.scrollToItem(0) }
+                                    }
+                                },
+                                isTv = true,
+                                prevFocusRequester = moviePaginationPrevFocusRequester,
+                                nextFocusRequester = moviePaginationNextFocusRequester,
+                                onNavigateUpFromPrev = {
+                                    coroutineScope.launch {
+                                        val targetIdx = if (lastFocusedMovieId != null) {
+                                            pagedMovies.indexOfFirst { it.id == lastFocusedMovieId }.takeIf { it >= 0 }
+                                                ?: maxOf(0, (pagedMovies.size - 1) / 6 * 6)
+                                        } else {
+                                            0
+                                        }
+                                        moviesGridState.scrollToItem(targetIdx)
+                                        kotlinx.coroutines.delay(60)
+                                        val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.MOVIES] else movieCardFocusRequesters.getOrNull(targetIdx)
+                                        runCatching { req?.requestFocus() }
+                                    }
+                                },
+                                onNavigateUpFromNext = {
+                                    coroutineScope.launch {
+                                        val targetIdx = if (lastFocusedMovieId != null) {
+                                            pagedMovies.indexOfFirst { it.id == lastFocusedMovieId }.takeIf { it >= 0 }
+                                                ?: (pagedMovies.size - 1)
+                                        } else {
+                                            0
+                                        }
+                                        moviesGridState.scrollToItem(targetIdx)
+                                        kotlinx.coroutines.delay(60)
+                                        val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.MOVIES] else movieCardFocusRequesters.getOrNull(targetIdx)
+                                        runCatching { req?.requestFocus() }
+                                    }
+                                },
+                                onNavigateLeftToSidebar = {
+                                    sidebarFocusRequesters[TvNavTab.MOVIES]?.requestFocus()
+                                },
+                                upFocusRequester = movieCardFocusRequesters.firstOrNull(),
+                                sidebarFocusRequester = sidebarFocusRequesters[TvNavTab.MOVIES]
                             )
                         }
                     }
@@ -483,10 +646,16 @@ fun TvHomeScreen(
                             }
                         },
                         onSelectCategory = { catName ->
-                            selectedSeriesCategory = catName
-                            val found = seriesCategories.find { it.name == catName }
-                            if (found != null) {
-                                onSelectSeriesCategory(found)
+                            if (selectedSeriesCategory != catName) {
+                                selectedSeriesCategory = catName
+                                onSeriesCategorySelected(catName)
+                                seriesPage = 1
+                                onSeriesPageChange(1)
+                                lastFocusedSeriesId = null
+                                val found = seriesCategories.find { it.name == catName }
+                                if (found != null) {
+                                    onSelectSeriesCategory(found)
+                                }
                             }
                         }
                     )
@@ -494,7 +663,6 @@ fun TvHomeScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     val seriesPageSize = 36
-                    var seriesPage by remember(selectedSeriesCategory) { mutableIntStateOf(1) }
                     val totalSeriesPages = maxOf(1, ceil(series.size.toDouble() / seriesPageSize).toInt())
                     val pagedSeries = remember(series, seriesPage) {
                         series.drop((seriesPage - 1) * seriesPageSize).take(seriesPageSize)
@@ -506,7 +674,50 @@ fun TvHomeScreen(
                         TvEmptyState(message = "Aucune série disponible dans cette catégorie")
                     } else {
                         Column(modifier = Modifier.fillMaxSize()) {
+                            val seriesGridState = rememberLazyGridState()
+                            val seriesPaginationPrevFocusRequester = remember { FocusRequester() }
+                            val seriesPaginationNextFocusRequester = remember { FocusRequester() }
+
+                            val seriesCardFocusRequesters = remember(seriesPage, selectedSeriesCategory, pagedSeries.size) {
+                                List(pagedSeries.size) { FocusRequester() }
+                            }
+
+                            // Restauration du focus et du scroll quand le dialogue de détail de série se ferme
+                            var previousSeriesDetailWasOpen by remember { mutableStateOf(false) }
+                            LaunchedEffect(selectedSeriesDetail) {
+                                if (selectedSeriesDetail != null) {
+                                    previousSeriesDetailWasOpen = true
+                                } else if (previousSeriesDetailWasOpen) {
+                                    previousSeriesDetailWasOpen = false
+                                    val targetIdx = if (lastFocusedSeriesId != null) {
+                                        pagedSeries.indexOfFirst { it.id == lastFocusedSeriesId }.takeIf { it >= 0 } ?: 0
+                                    } else 0
+                                    if (targetIdx in pagedSeries.indices) {
+                                        seriesGridState.scrollToItem(targetIdx)
+                                        kotlinx.coroutines.delay(80)
+                                        val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.SERIES] else seriesCardFocusRequesters.getOrNull(targetIdx)
+                                        runCatching { req?.requestFocus() }
+                                    }
+                                }
+                            }
+
+                            // Restauration du focus au montage initial si retour du lecteur
+                            var hasRestoredSeriesMountFocus by remember { mutableStateOf(false) }
+                            LaunchedEffect(pagedSeries.size, selectedTab) {
+                                if (!hasRestoredSeriesMountFocus && initialTab == TvNavTab.SERIES && selectedTab == TvNavTab.SERIES && pagedSeries.isNotEmpty() && lastFocusedSeriesId != null) {
+                                    hasRestoredSeriesMountFocus = true
+                                    val targetIdx = pagedSeries.indexOfFirst { it.id == lastFocusedSeriesId }.takeIf { it >= 0 } ?: 0
+                                    if (targetIdx in pagedSeries.indices) {
+                                        seriesGridState.scrollToItem(targetIdx)
+                                        kotlinx.coroutines.delay(100)
+                                        val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.SERIES] else seriesCardFocusRequesters.getOrNull(targetIdx)
+                                        runCatching { req?.requestFocus() }
+                                    }
+                                }
+                            }
+
                             LazyVerticalGrid(
+                                state = seriesGridState,
                                 columns = GridCells.Fixed(6),
                                 modifier = Modifier.weight(1f),
                                 horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -519,10 +730,19 @@ fun TvHomeScreen(
                                     contentType = { "series_card" }
                                 ) { index ->
                                     val ser = pagedSeries[index]
+                                    val isBottomEdge = (index + 6 >= pagedSeries.size)
+                                    val targetPaginationFocusRequester = when {
+                                        seriesPage == 1 -> seriesPaginationNextFocusRequester
+                                        seriesPage >= totalSeriesPages -> seriesPaginationPrevFocusRequester
+                                        (index % 6) < 3 -> seriesPaginationPrevFocusRequester
+                                        else -> seriesPaginationNextFocusRequester
+                                    }
+
                                     TvSeriesGridCard(
                                         series = ser,
-                                        focusRequester = if (index == 0) contentFocusRequesters[TvNavTab.SERIES] else null,
+                                        focusRequester = if (index == 0) contentFocusRequesters[TvNavTab.SERIES] else seriesCardFocusRequesters.getOrNull(index),
                                         upFocusRequester = if (index < 6) seriesCategoryChipsFocusRequester else null,
+                                        downFocusRequester = if (isBottomEdge) targetPaginationFocusRequester else null,
                                         leftFocusRequester = if (index % 6 == 0) sidebarFocusRequesters[TvNavTab.SERIES] else null,
                                         onNavigateLeft = if (index % 6 == 0) {
                                             { sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus() }
@@ -530,7 +750,18 @@ fun TvHomeScreen(
                                         onNavigateUp = if (index < 6) {
                                             { runCatching { seriesCategoryChipsFocusRequester.requestFocus() } }
                                         } else null,
-                                        onClick = { selectedSeriesDetail = ser }
+                                        onNavigateDown = if (isBottomEdge) {
+                                            { runCatching { targetPaginationFocusRequester.requestFocus() } }
+                                        } else null,
+                                        onFocus = {
+                                            lastFocusedSeriesId = ser.id
+                                            onSeriesFocused(ser.id)
+                                        },
+                                        onClick = {
+                                            lastFocusedSeriesId = ser.id
+                                            onSeriesFocused(ser.id)
+                                            selectedSeriesDetail = ser
+                                        }
                                     )
                                 }
                             }
@@ -540,8 +771,50 @@ fun TvHomeScreen(
                                 totalPages = totalSeriesPages,
                                 totalItems = series.size,
                                 itemLabel = "séries",
-                                onPageChange = { seriesPage = it },
-                                isTv = true
+                                onPageChange = {
+                                    seriesPage = it
+                                    onSeriesPageChange(it)
+                                    lastFocusedSeriesId = null
+                                    coroutineScope.launch {
+                                        runCatching { seriesGridState.scrollToItem(0) }
+                                    }
+                                },
+                                isTv = true,
+                                prevFocusRequester = seriesPaginationPrevFocusRequester,
+                                nextFocusRequester = seriesPaginationNextFocusRequester,
+                                onNavigateUpFromPrev = {
+                                    coroutineScope.launch {
+                                        val targetIdx = if (lastFocusedSeriesId != null) {
+                                            pagedSeries.indexOfFirst { it.id == lastFocusedSeriesId }.takeIf { it >= 0 }
+                                                ?: maxOf(0, (pagedSeries.size - 1) / 6 * 6)
+                                        } else {
+                                            0
+                                        }
+                                        seriesGridState.scrollToItem(targetIdx)
+                                        kotlinx.coroutines.delay(60)
+                                        val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.SERIES] else seriesCardFocusRequesters.getOrNull(targetIdx)
+                                        runCatching { req?.requestFocus() }
+                                    }
+                                },
+                                onNavigateUpFromNext = {
+                                    coroutineScope.launch {
+                                        val targetIdx = if (lastFocusedSeriesId != null) {
+                                            pagedSeries.indexOfFirst { it.id == lastFocusedSeriesId }.takeIf { it >= 0 }
+                                                ?: (pagedSeries.size - 1)
+                                        } else {
+                                            0
+                                        }
+                                        seriesGridState.scrollToItem(targetIdx)
+                                        kotlinx.coroutines.delay(60)
+                                        val req = if (targetIdx == 0) contentFocusRequesters[TvNavTab.SERIES] else seriesCardFocusRequesters.getOrNull(targetIdx)
+                                        runCatching { req?.requestFocus() }
+                                    }
+                                },
+                                onNavigateLeftToSidebar = {
+                                    sidebarFocusRequesters[TvNavTab.SERIES]?.requestFocus()
+                                },
+                                upFocusRequester = seriesCardFocusRequesters.firstOrNull(),
+                                sidebarFocusRequester = sidebarFocusRequesters[TvNavTab.SERIES]
                             )
                         }
                     }
@@ -553,6 +826,9 @@ fun TvHomeScreen(
                         channels = channels,
                         movies = movies,
                         series = series,
+                        categories = categories,
+                        vodCategories = vodCategories,
+                        seriesCategories = seriesCategories,
                         sessionManager = sessionManager,
                         focusRequester = contentFocusRequesters[TvNavTab.FAVORITES]!!,
                         onNavigateLeftToSidebar = {
@@ -573,6 +849,7 @@ fun TvHomeScreen(
                 // ==================== 6. ONGLET FILTRES DE CATÉGORIES ====================
                 TvNavTab.FILTERS -> {
                     TvCategoryFiltersContent(
+                        liveCategories = categories,
                         vodCategories = vodCategories,
                         seriesCategories = seriesCategories,
                         sessionManager = sessionManager,
@@ -594,7 +871,8 @@ fun TvHomeScreen(
                         onNavigateLeft = { sidebarFocusRequesters[TvNavTab.SETTINGS]?.requestFocus() },
                         onOpenLogin = onOpenLogin,
                         onLogout = onLogout,
-                        onLanguageChanged = onLanguageChanged
+                        onLanguageChanged = onLanguageChanged,
+                        onRefreshCatalog = onRefreshCatalog
                     )
                 }
             }
@@ -606,9 +884,10 @@ fun TvHomeScreen(
             TvMovieDetailModal(
                 movie = selectedMovieDetail!!,
                 isFavorite = favoriteMovieIds.contains(selectedMovieDetail!!.id),
-                onPlay = { m ->
+                sessionManager = sessionManager,
+                onPlay = { m, startPos ->
                     selectedMovieDetail = null
-                    onSelectMovie(m)
+                    onSelectMovie(m, startPos)
                 },
                 onToggleFavorite = {
                     val id = selectedMovieDetail!!.id
@@ -625,10 +904,11 @@ fun TvHomeScreen(
             TvSeriesDetailModal(
                 series = selectedSeriesDetail!!,
                 isFavorite = favoriteSeriesIds.contains(selectedSeriesDetail!!.id),
-                onPlayEpisode = { ep ->
+                sessionManager = sessionManager,
+                onPlayEpisode = { ep, startPos ->
                     val s = selectedSeriesDetail!!
                     selectedSeriesDetail = null
-                    onSelectEpisode(s, ep)
+                    onSelectEpisode(s, ep, startPos)
                 },
                 onToggleFavorite = {
                     val id = selectedSeriesDetail!!.id
@@ -655,11 +935,23 @@ fun TvHomeScreen(
                 }
             )
         }
+
+        // ==================== DIALOGUE DE CONFIRMATION DE FERMETURE COMPLÈTE ====================
+        if (showExitDialog) {
+            TvExitConfirmDialog(
+                onDismiss = { showExitDialog = false },
+                onConfirmExit = {
+                    showExitDialog = false
+                    playerEngine?.stop()
+                    (context as? Activity)?.finishAffinity()
+                }
+            )
+        }
     }
 }
 
 /**
- * Barre latérale avec 7 onglets au style Glassy Frosted Blur
+ * Barre latérale avec 7 onglets au style Glassy Apple (Dock capsule flottante, centré verticalement)
  */
 @Composable
 fun TvSidebar(
@@ -672,107 +964,177 @@ fun TvSidebar(
     val strings = LocalStrings.current
     val tabList = remember { TvNavTab.values().toList() }
 
-    Column(
+    Box(
         modifier = Modifier
-            .width(88.dp)
             .fillMaxHeight()
-            .background(GlassSurface)
-            .border(androidx.compose.foundation.BorderStroke(1.dp, GlassBorder))
-            .padding(vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(start = 12.dp, end = 10.dp),
+        contentAlignment = Alignment.Center
     ) {
-        tabList.forEachIndexed { index, tab ->
-            val isSelected = tab == selectedTab
-            var isFocused by remember { mutableStateOf(false) }
+        val dockShape = RoundedCornerShape(28.dp)
 
-            val scale by animateFloatAsState(
-                targetValue = if (isFocused) 1.08f else 1.0f,
-                label = "sidebar_scale"
-            )
-
-            val myRequester = sidebarFocusRequesters[tab] ?: remember { FocusRequester() }
-            val nextTab = tabList.getOrNull(index + 1)
-            val prevTab = tabList.getOrNull(index - 1)
-
-            Box(
-                modifier = Modifier
-                    .size(54.dp)
-                    .scale(scale)
-                    .clip(RoundedCornerShape(18.dp))
-                    .focusRequester(myRequester)
-                    .focusProperties {
-                        if (contentFocusRequester != null) {
-                            right = contentFocusRequester
-                        }
-                    }
-                    .onFocusChanged {
-                        isFocused = it.isFocused
-                        if (it.isFocused) {
-                            onTabSelected(tab)
-                        }
-                    }
-                    .focusable()
-                    .clickable {
-                        onTabSelected(tab)
-                        onNavigateRight()
-                    }
-                    .onPreviewKeyEvent { keyEvent ->
-                        if (keyEvent.type == KeyEventType.KeyDown) {
-                            when (keyEvent.key) {
-                                Key.DirectionRight, Key.Enter, Key.DirectionCenter -> {
-                                    onNavigateRight()
-                                    true
-                                }
-                                Key.DirectionDown -> {
-                                    if (nextTab != null) {
-                                        sidebarFocusRequesters[nextTab]?.requestFocus()
-                                        true
-                                    } else false
-                                }
-                                Key.DirectionUp -> {
-                                    if (prevTab != null) {
-                                        sidebarFocusRequesters[prevTab]?.requestFocus()
-                                        true
-                                    } else false
-                                }
-                                else -> false
-                            }
-                        } else false
-                    }
-                    .background(
-                        when {
-                            isFocused -> Color(0xFF24334D)
-                            isSelected -> NoosBlue.copy(alpha = 0.32f)
-                            else -> Color.Transparent
-                        }
-                    )
-                    .border(
-                        width = if (isFocused) 2.5.dp else if (isSelected) 1.dp else 0.dp,
-                        color = if (isFocused) FocusGlow else if (isSelected) NoosCyan.copy(alpha = 0.6f) else Color.Transparent,
-                        shape = RoundedCornerShape(18.dp)
+        Column(
+            modifier = Modifier
+                .width(68.dp)
+                .wrapContentHeight()
+                .shadow(
+                    elevation = 20.dp,
+                    shape = dockShape,
+                    clip = false,
+                    ambientColor = Color(0x66000000),
+                    spotColor = Color(0x99000000)
+                )
+                .background(
+                    brush = Brush.verticalGradient(
+                        0.0f to Color(0xCC1A2338), // Apple frosted glass top (80% opacity)
+                        0.45f to Color(0xB3111827), // Frosted translucent mid
+                        1.0f to Color(0xCC0B101D)  // Deep frosted bottom
                     ),
-                contentAlignment = Alignment.Center
-            ) {
-                val tabLabel = tab.getLabel(strings)
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                    shape = dockShape
+                )
+                .border(
+                    width = 1.2.dp,
+                    brush = Brush.verticalGradient(
+                        0.0f to Color.White.copy(alpha = 0.40f), // Apple specular rim reflection
+                        0.3f to Color.White.copy(alpha = 0.15f),
+                        0.7f to Color.White.copy(alpha = 0.05f),
+                        1.0f to Color.White.copy(alpha = 0.18f)
+                    ),
+                    shape = dockShape
+                )
+                .padding(horizontal = 5.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            tabList.forEachIndexed { index, tab ->
+                val isSelected = tab == selectedTab
+                var isFocused by remember { mutableStateOf(false) }
+
+                val scale by animateFloatAsState(
+                    targetValue = if (isFocused) 1.08f else 1.0f,
+                    label = "sidebar_scale"
+                )
+
+                val myRequester = sidebarFocusRequesters[tab] ?: remember { FocusRequester() }
+                val nextTab = tabList.getOrNull(index + 1)
+                val prevTab = tabList.getOrNull(index - 1)
+                val itemShape = RoundedCornerShape(14.dp)
+
+                Box(
+                    modifier = Modifier
+                        .width(58.dp)
+                        .height(48.dp)
+                        .scale(scale)
+                        .focusRequester(myRequester)
+                        .focusProperties {
+                            // Assure la continuité verticale stricte entre les onglets du volet sans déborder vers la droite
+                            if (nextTab != null) {
+                                sidebarFocusRequesters[nextTab]?.let { down = it }
+                            }
+                            if (prevTab != null) {
+                                sidebarFocusRequesters[prevTab]?.let { up = it }
+                            }
+                        }
+                        .onFocusChanged {
+                            isFocused = it.isFocused
+                            if (it.isFocused) {
+                                onTabSelected(tab)
+                            }
+                        }
+                        .focusable()
+                        .clickable {
+                            onTabSelected(tab)
+                            onNavigateRight()
+                        }
+                        .onPreviewKeyEvent { keyEvent ->
+                            if (keyEvent.type == KeyEventType.KeyDown) {
+                                when (keyEvent.key) {
+                                    Key.DirectionRight, Key.Enter, Key.DirectionCenter -> {
+                                        onNavigateRight()
+                                        true
+                                    }
+                                    Key.DirectionDown -> {
+                                        if (nextTab != null) {
+                                            runCatching { sidebarFocusRequesters[nextTab]?.requestFocus() }
+                                            true
+                                        } else false
+                                    }
+                                    Key.DirectionUp -> {
+                                        if (prevTab != null) {
+                                            runCatching { sidebarFocusRequesters[prevTab]?.requestFocus() }
+                                            true
+                                        } else false
+                                    }
+                                    else -> false
+                                }
+                            } else false
+                        }
+                        .shadow(
+                            elevation = if (isFocused) 8.dp else 0.dp,
+                            shape = itemShape,
+                            clip = false,
+                            ambientColor = Color(0x663888FF),
+                            spotColor = Color(0x993888FF)
+                        )
+                        .background(
+                            brush = when {
+                                isFocused -> Brush.verticalGradient(
+                                    listOf(
+                                        Color(0xFF3888FF),
+                                        Color(0xFF1E5BB8)
+                                    )
+                                )
+                                isSelected -> Brush.verticalGradient(
+                                    listOf(
+                                        Color(0x383888FF),
+                                        Color(0x1F3888FF)
+                                    )
+                                )
+                                else -> Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
+                            },
+                            shape = itemShape
+                        )
+                        .border(
+                            width = if (isFocused) 1.5.dp else if (isSelected) 1.dp else 0.dp,
+                            brush = when {
+                                isFocused -> Brush.verticalGradient(
+                                    listOf(
+                                        Color.White.copy(alpha = 0.85f),
+                                        Color(0xFF93C5FD).copy(alpha = 0.5f)
+                                    )
+                                )
+                                isSelected -> Brush.verticalGradient(
+                                    listOf(
+                                        NoosCyan.copy(alpha = 0.6f),
+                                        NoosBlue.copy(alpha = 0.3f)
+                                    )
+                                )
+                                else -> Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
+                            },
+                            shape = itemShape
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = tab.icon,
-                        contentDescription = tabLabel,
-                        tint = if (isFocused) Color.White else if (isSelected) NoosCyan else TextSecondary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = tabLabel,
-                        color = if (isFocused) Color.White else if (isSelected) NoosCyan else TextSecondary,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
-                    )
+                    val tabLabel = tab.getLabel(strings)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = tab.icon,
+                            contentDescription = tabLabel,
+                            tint = if (isFocused) Color.White else if (isSelected) NoosCyan else TextSecondary,
+                            modifier = Modifier.size(19.dp)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = tabLabel,
+                            color = if (isFocused) Color.White else if (isSelected) NoosCyan else TextSecondary,
+                            fontSize = 8.5.sp,
+                            fontWeight = if (isFocused || isSelected) FontWeight.Bold else FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }
@@ -949,9 +1311,6 @@ fun TvCategoryChipsRow(
             Box(
                 modifier = chipMod
                     .focusProperties {
-                        if (downFocusRequester != null) {
-                            down = downFocusRequester
-                        }
                         if (index == 0 && leftFocusRequester != null) {
                             left = leftFocusRequester
                         }
@@ -1209,12 +1568,18 @@ fun TvMovieGridCard(
     movie: VodMovie,
     focusRequester: FocusRequester? = null,
     upFocusRequester: FocusRequester? = null,
+    downFocusRequester: FocusRequester? = null,
     leftFocusRequester: FocusRequester? = null,
+    rightFocusRequester: FocusRequester? = null,
     onNavigateLeft: (() -> Unit)? = null,
+    onNavigateRight: (() -> Unit)? = null,
     onNavigateUp: (() -> Unit)? = null,
+    onNavigateDown: (() -> Unit)? = null,
+    onFocus: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val soundManager = LocalSoundEffectManager.current
     var isFocused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(targetValue = if (isFocused) 1.06f else 1.0f, label = "vod_scale")
 
@@ -1234,13 +1599,28 @@ fun TvMovieGridCard(
                 if (upFocusRequester != null) {
                     up = upFocusRequester
                 }
+                if (downFocusRequester != null) {
+                    down = downFocusRequester
+                }
                 if (leftFocusRequester != null) {
                     left = leftFocusRequester
                 }
+                if (rightFocusRequester != null) {
+                    right = rightFocusRequester
+                }
             }
-            .onFocusChanged { isFocused = it.isFocused }
+            .onFocusChanged {
+                if (it.isFocused && !isFocused) {
+                    soundManager?.playFocus()
+                    onFocus?.invoke()
+                }
+                isFocused = it.isFocused
+            }
             .focusable()
-            .clickable { onClick() }
+            .clickable {
+                soundManager?.playSelect()
+                onClick()
+            }
             .onPreviewKeyEvent { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyDown) {
                     when (keyEvent.key) {
@@ -1250,9 +1630,21 @@ fun TvMovieGridCard(
                                 true
                             } else false
                         }
+                        Key.DirectionRight -> {
+                            if (onNavigateRight != null) {
+                                onNavigateRight()
+                                true
+                            } else false
+                        }
                         Key.DirectionUp -> {
                             if (onNavigateUp != null) {
                                 onNavigateUp()
+                                true
+                            } else false
+                        }
+                        Key.DirectionDown -> {
+                            if (onNavigateDown != null) {
+                                onNavigateDown()
                                 true
                             } else false
                         }
@@ -1355,12 +1747,18 @@ fun TvSeriesGridCard(
     series: Series,
     focusRequester: FocusRequester? = null,
     upFocusRequester: FocusRequester? = null,
+    downFocusRequester: FocusRequester? = null,
     leftFocusRequester: FocusRequester? = null,
+    rightFocusRequester: FocusRequester? = null,
     onNavigateLeft: (() -> Unit)? = null,
+    onNavigateRight: (() -> Unit)? = null,
     onNavigateUp: (() -> Unit)? = null,
+    onNavigateDown: (() -> Unit)? = null,
+    onFocus: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val soundManager = LocalSoundEffectManager.current
     var isFocused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(targetValue = if (isFocused) 1.06f else 1.0f, label = "series_scale")
 
@@ -1380,13 +1778,28 @@ fun TvSeriesGridCard(
                 if (upFocusRequester != null) {
                     up = upFocusRequester
                 }
+                if (downFocusRequester != null) {
+                    down = downFocusRequester
+                }
                 if (leftFocusRequester != null) {
                     left = leftFocusRequester
                 }
+                if (rightFocusRequester != null) {
+                    right = rightFocusRequester
+                }
             }
-            .onFocusChanged { isFocused = it.isFocused }
+            .onFocusChanged {
+                if (it.isFocused && !isFocused) {
+                    soundManager?.playFocus()
+                    onFocus?.invoke()
+                }
+                isFocused = it.isFocused
+            }
             .focusable()
-            .clickable { onClick() }
+            .clickable {
+                soundManager?.playSelect()
+                onClick()
+            }
             .onPreviewKeyEvent { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyDown) {
                     when (keyEvent.key) {
@@ -1396,9 +1809,21 @@ fun TvSeriesGridCard(
                                 true
                             } else false
                         }
+                        Key.DirectionRight -> {
+                            if (onNavigateRight != null) {
+                                onNavigateRight()
+                                true
+                            } else false
+                        }
                         Key.DirectionUp -> {
                             if (onNavigateUp != null) {
                                 onNavigateUp()
+                                true
+                            } else false
+                        }
+                        Key.DirectionDown -> {
+                            if (onNavigateDown != null) {
+                                onNavigateDown()
                                 true
                             } else false
                         }
@@ -1808,12 +2233,14 @@ fun TvEmptyState(message: String) {
 fun TvMovieDetailModal(
     movie: VodMovie,
     isFavorite: Boolean,
-    onPlay: (VodMovie) -> Unit,
+    sessionManager: SessionManager? = null,
+    onPlay: (VodMovie, Long) -> Unit,
     onToggleFavorite: () -> Unit,
     onDismiss: () -> Unit,
     onFetchFullInfo: (suspend (String) -> VodMovie?)? = null
 ) {
     val playFocusRequester = remember { FocusRequester() }
+    val restartFocusRequester = remember { FocusRequester() }
     val closeFocusRequester = remember { FocusRequester() }
     val favFocusRequester = remember { FocusRequester() }
     val bottomCloseFocusRequester = remember { FocusRequester() }
@@ -1821,6 +2248,9 @@ fun TvMovieDetailModal(
     val view = LocalView.current
     var fullMovie by remember(movie.id) { mutableStateOf(movie) }
     var isFetchingInfo by remember(movie.id) { mutableStateOf(onFetchFullInfo != null && movie.plot.isNullOrBlank()) }
+    val resumePoint = remember(movie.id) {
+        sessionManager?.getPlaybackResume("movie_${movie.id}")
+    }
 
     BackHandler {
         onDismiss()
@@ -2087,6 +2517,44 @@ fun TvMovieDetailModal(
                         }
                     }
 
+                    if (resumePoint != null) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(SurfaceDarkVariant.copy(alpha = 0.6f))
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "▶ Reprise de lecture à ${resumePoint.formattedPosition}",
+                                    color = NoosCyan,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "${resumePoint.progressPercent}% terminé",
+                                    color = TextSecondary,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            LinearProgressIndicator(
+                                progress = resumePoint.progressFraction,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp)),
+                                color = NoosCyan,
+                                trackColor = Color(0xFF233045)
+                            )
+                        }
+                    }
+
                     // Boutons d'action TV
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -2094,18 +2562,25 @@ fun TvMovieDetailModal(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         var isPlayFocused by remember { mutableStateOf(false) }
+                        var isRestartFocused by remember { mutableStateOf(false) }
                         var isFavFocused by remember { mutableStateOf(false) }
                         var isCloseFocused by remember { mutableStateOf(false) }
 
-                        // Bouton Play (Focus initial)
+                        // Bouton Play / Reprendre (Focus initial)
                         Button(
-                            onClick = { onPlay(fullMovie) },
+                            onClick = {
+                                if (resumePoint != null) {
+                                    onPlay(fullMovie, resumePoint.positionMs)
+                                } else {
+                                    onPlay(fullMovie, 0L)
+                                }
+                            },
                             modifier = Modifier
                                 .focusRequester(playFocusRequester)
                                 .onFocusChanged { isPlayFocused = it.isFocused }
                                 .focusProperties {
                                     up = closeFocusRequester
-                                    right = favFocusRequester
+                                    right = if (resumePoint != null) restartFocusRequester else favFocusRequester
                                 }
                                 .onPreviewKeyEvent { event ->
                                     if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
@@ -2116,11 +2591,59 @@ fun TvMovieDetailModal(
                                 .focusable(),
                             colors = ButtonDefaults.buttonColors(containerColor = if (isPlayFocused) NoosCyan else NoosBlue),
                             shape = RoundedCornerShape(14.dp),
-                            contentPadding = PaddingValues(horizontal = 22.dp, vertical = 12.dp)
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
                         ) {
                             Icon(Icons.Default.PlayArrow, contentDescription = null, tint = if (isPlayFocused) Color.Black else Color.White)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Lancer le film", color = if (isPlayFocused) Color.Black else Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(
+                                text = if (resumePoint != null) "Reprendre (${resumePoint.formattedPosition})" else "Lancer le film",
+                                color = if (isPlayFocused) Color.Black else Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
+
+                        // Bouton Recommencer si reprise existante
+                        if (resumePoint != null) {
+                            OutlinedButton(
+                                onClick = {
+                                    sessionManager?.clearPlaybackResume("movie_${fullMovie.id}")
+                                    onPlay(fullMovie, 0L)
+                                },
+                                modifier = Modifier
+                                    .focusRequester(restartFocusRequester)
+                                    .onFocusChanged { isRestartFocused = it.isFocused }
+                                    .focusProperties {
+                                        up = closeFocusRequester
+                                        left = playFocusRequester
+                                        right = favFocusRequester
+                                    }
+                                    .onPreviewKeyEvent { event ->
+                                        if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
+                                            view.post { closeFocusRequester.requestFocus() }
+                                            true
+                                        } else false
+                                    }
+                                    .focusable(),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (isRestartFocused) Color(0xFF1E2838) else Color.Transparent
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    width = if (isRestartFocused) 2.dp else 1.dp,
+                                    color = if (isRestartFocused) FocusGlow else CardBorderUnfocused
+                                ),
+                                shape = RoundedCornerShape(14.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Replay,
+                                    contentDescription = null,
+                                    tint = if (isRestartFocused) FocusGlow else TextSecondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Recommencer", color = if (isRestartFocused) Color.White else TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
                         }
 
                         // Bouton Favoris
@@ -2131,7 +2654,7 @@ fun TvMovieDetailModal(
                                 .onFocusChanged { isFavFocused = it.isFocused }
                                 .focusProperties {
                                     up = closeFocusRequester
-                                    left = playFocusRequester
+                                    left = if (resumePoint != null) restartFocusRequester else playFocusRequester
                                     right = bottomCloseFocusRequester
                                 }
                                 .onPreviewKeyEvent { event ->
@@ -2197,7 +2720,8 @@ fun TvMovieDetailModal(
 fun TvSeriesDetailModal(
     series: Series,
     isFavorite: Boolean,
-    onPlayEpisode: (Episode) -> Unit,
+    sessionManager: SessionManager? = null,
+    onPlayEpisode: (Episode, Long) -> Unit,
     onToggleFavorite: () -> Unit,
     onDismiss: () -> Unit,
     onFetchFullInfo: (suspend (String) -> Series?)? = null
@@ -2527,7 +3051,7 @@ fun TvSeriesDetailModal(
                                             title = "Épisode 1",
                                             streamUrl = ""
                                         )
-                                         onPlayEpisode(fallbackEp)
+                                         onPlayEpisode(fallbackEp, 0L)
                                     },
                                     modifier = Modifier
                                         .focusRequester(directPlayFocusRequester)
@@ -2660,6 +3184,9 @@ fun TvSeriesDetailModal(
                         ) {
                             itemsIndexed(episodeList, key = { _, ep -> "${ep.seasonNumber}_${ep.episodeNumber}_${ep.id}" }) { epIndex, ep ->
                                 var isEpFocused by remember { mutableStateOf(false) }
+                                val epResume = remember(ep.id) {
+                                    sessionManager?.getPlaybackResume("ep_${ep.id}")
+                                }
 
                                 Box(
                                     modifier = Modifier
@@ -2697,7 +3224,7 @@ fun TvSeriesDetailModal(
                                             } else false
                                         }
                                         .focusable()
-                                        .clickable { onPlayEpisode(ep) }
+                                        .clickable { onPlayEpisode(ep, epResume?.positionMs ?: 0L) }
                                         .clip(RoundedCornerShape(12.dp))
                                         .background(if (isEpFocused) Color(0xFF1E2838) else SurfaceDarkVariant)
                                         .border(
@@ -2747,11 +3274,32 @@ fun TvSeriesDetailModal(
                                                     if (ep.containerExtension.isNotBlank()) {
                                                         Text(ep.containerExtension.uppercase(), color = NoosCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                                     }
+                                                    if (epResume != null) {
+                                                        Text("•", color = TextSecondary, fontSize = 10.sp)
+                                                        Text("Reprise ${epResume.formattedPosition} (${epResume.progressPercent}%)", color = NoosCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
+                                                if (epResume != null) {
+                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                    LinearProgressIndicator(
+                                                        progress = epResume.progressFraction,
+                                                        modifier = Modifier
+                                                            .width(160.dp)
+                                                            .height(3.dp)
+                                                            .clip(RoundedCornerShape(2.dp)),
+                                                        color = NoosCyan,
+                                                        trackColor = Color(0xFF233045)
+                                                    )
                                                 }
                                             }
                                         }
 
-                                        Text("▶ Lire", color = if (isEpFocused) NoosCyan else TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        Text(
+                                            text = if (epResume != null) "▶ Reprendre" else "▶ Lire",
+                                            color = if (isEpFocused || epResume != null) NoosCyan else TextSecondary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
                                     }
                                 }
                             }

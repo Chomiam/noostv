@@ -55,11 +55,12 @@ class UpdateManager(private val context: Context) {
     }
 
     /**
-     * Vérifie la disponibilité d'une nouvelle version sur GitHub selon le canal sélectionné (stable ou testing)
+     * Vérifie la disponibilité d'une nouvelle version sur GitHub selon le canal sélectionné (stable ou testing).
+     * Le dépôt étant public, aucun jeton n'est requis par défaut.
      */
     suspend fun checkForUpdates(
         channel: String,
-        token: String,
+        token: String = "",
         currentVersion: String = io.noostv.BuildConfig.VERSION_NAME
     ): UpdateState = withContext(Dispatchers.IO) {
         try {
@@ -119,7 +120,7 @@ class UpdateManager(private val context: Context) {
             }
 
             if (matches) {
-                // Recherche de l'asset APK
+                // Recherche de l'asset APK (privilégie browser_download_url pour téléchargement public direct)
                 var apkUrl: String? = null
                 var apkName: String? = null
                 var apkSize: Long = 0
@@ -132,8 +133,9 @@ class UpdateManager(private val context: Context) {
                         if (aName.endsWith(".apk", ignoreCase = true)) {
                             apkName = aName
                             apkSize = assetObj.get("size")?.asLong ?: 0
-                            // URL de téléchargement de l'asset
-                            apkUrl = assetObj.get("url")?.asString ?: assetObj.get("browser_download_url")?.asString
+                            val browserUrl = assetObj.get("browser_download_url")?.asString
+                            val apiUrl = assetObj.get("url")?.asString
+                            apkUrl = if (!browserUrl.isNullOrBlank()) browserUrl else apiUrl
                             break
                         }
                     }
@@ -158,11 +160,11 @@ class UpdateManager(private val context: Context) {
     }
 
     /**
-     * Télécharge l'APK de mise à jour depuis GitHub
+     * Télécharge l'APK de mise à jour depuis GitHub (public ou privé).
      */
     suspend fun downloadApk(
         release: ReleaseInfo,
-        token: String,
+        token: String = "",
         onProgress: (percent: Int, downloaded: Long, total: Long) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         val downloadUrl = release.apkDownloadUrl 
@@ -171,10 +173,15 @@ class UpdateManager(private val context: Context) {
         try {
             val reqBuilder = Request.Builder()
                 .url(downloadUrl)
-                .header("Accept", "application/octet-stream")
 
-            if (token.isNotBlank()) {
-                reqBuilder.header("Authorization", "Bearer $token")
+            // Si c'est une URL de l'API REST privée, on spécifie l'accept octet-stream et le token.
+            // Si c'est un browser_download_url public (github.com/releases/download/...),
+            // AUCUN header d'authentification ne doit être envoyé (sinon rejet HTTP 400 par AWS S3 après redirection).
+            if (downloadUrl.contains("api.github.com")) {
+                reqBuilder.header("Accept", "application/octet-stream")
+                if (token.isNotBlank()) {
+                    reqBuilder.header("Authorization", "Bearer $token")
+                }
             }
 
             val response = httpClient.newCall(reqBuilder.build()).execute()
@@ -213,9 +220,70 @@ class UpdateManager(private val context: Context) {
     }
 
     /**
-     * Lance l'installateur de paquets d'Android pour mettre à jour l'APK
+     * Vérifie si l'application dispose de l'autorisation d'installer des paquets inconnus (Android 8.0+).
      */
-    fun installApk(apkFile: File) {
+    fun canInstallPackages(): Boolean {
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            context.packageManager.canRequestPackageInstalls()
+        } else {
+            true
+        }
+    }
+
+    /**
+     * Ouvre directement la page des paramètres système pour autoriser l'installation d'applications inconnues pour NoosTV.
+     */
+    fun openInstallPermissionSettings() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val intent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                data = Uri.parse("package:${context.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                // Fallback pour les ROMs Android TV ne supportant pas l'URI direct
+                val fallbackIntent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(fallbackIntent)
+            }
+        }
+    }
+
+    /**
+     * Valide l'intégrité de l'archive APK téléchargée puis lance l'installateur de paquets d'Android.
+     * Rejette et supprime les fichiers corrompus, incomplets ou dont l'applicationId ne correspond pas.
+     */
+    fun installApk(apkFile: File): Boolean {
+        if (!apkFile.exists() || apkFile.length() < 1024 * 100) {
+            android.util.Log.e("UpdateManager", "Fichier APK manquant ou taille invalide (< 100 Ko)")
+            return false
+        }
+
+        // Vérification de la structure du paquet via l'analyseur natif du PackageManager
+        val pm = context.packageManager
+        val archiveInfo = pm.getPackageArchiveInfo(apkFile.absolutePath, 0)
+        if (archiveInfo == null) {
+            android.util.Log.e("UpdateManager", "PackageArchiveInfo nul : APK corrompu ou altéré")
+            apkFile.delete()
+            return false
+        }
+
+        // Vérification stricte du package applicatif
+        if (archiveInfo.packageName != context.packageName) {
+            android.util.Log.e("UpdateManager", "Alerte sécurité : PackageName de l'APK rejeté (${archiveInfo.packageName} != ${context.packageName})")
+            apkFile.delete()
+            return false
+        }
+
+        // Si l'autorisation d'installer des sources inconnues n'est pas encore accordée sur Android 8+, ouvrir les paramètres
+        if (!canInstallPackages()) {
+            android.util.Log.w("UpdateManager", "Permission REQUEST_INSTALL_PACKAGES manquante, redirection vers les paramètres")
+            openInstallPermissionSettings()
+            return false
+        }
+
         val uri: Uri = FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",
@@ -226,8 +294,10 @@ class UpdateManager(private val context: Context) {
             setDataAndType(uri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
         }
         context.startActivity(intent)
+        return true
     }
 
     /**
@@ -244,6 +314,11 @@ class UpdateManager(private val context: Context) {
                 val c = cParts.getOrElse(i) { 0 }
                 if (r > c) return true
                 if (r < c) return false
+            }
+            // Si la version numérique de base est identique (ex: 1.2.6 vs 1.2.6-beta.5),
+            // la version finale stable (sans tiret) est plus récente que la pré-release
+            if (!remoteVersion.contains("-") && currentVersion.contains("-")) {
+                return true
             }
             return false
         } catch (e: Exception) {

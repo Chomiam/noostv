@@ -5,8 +5,10 @@ import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import io.noostv.core.security.CryptoManager
+import io.noostv.data.model.PlaybackResumePoint
 import io.noostv.data.model.SavedAccount
 import io.noostv.data.model.UserProfile
+import java.io.File
 import java.util.UUID
 
 /**
@@ -16,6 +18,7 @@ import java.util.UUID
  */
 class SessionManager(context: Context) {
 
+    private val appContext: Context = context.applicationContext
     private val prefs: SharedPreferences =
         context.getSharedPreferences("noostv_session", Context.MODE_PRIVATE)
     private val gson = Gson()
@@ -128,10 +131,27 @@ class SessionManager(context: Context) {
         saveAccountToHistory(server, user, pass, name)
     }
 
-    // ==================== GESTION MULTI-PROFILS ====================
+    // ==================== GESTION MULTI-PROFILS & PERSISTANCE ULTRA-FIABLE ====================
+
+    private val profilesBackupFile: File
+        get() = File(appContext.filesDir, "noostv_profiles_backup.json")
 
     fun getProfiles(): List<UserProfile> {
-        val json = prefs.getString(KEY_PROFILES_JSON, null)
+        var json = prefs.getString(KEY_PROFILES_JSON, null)
+
+        // Si SharedPreferences est vide, restaurer depuis le fichier de sauvegarde miroir
+        if (json.isNullOrBlank() && profilesBackupFile.exists()) {
+            try {
+                val backupJson = profilesBackupFile.readText()
+                if (backupJson.isNotBlank()) {
+                    json = backupJson
+                    prefs.edit().putString(KEY_PROFILES_JSON, backupJson).commit()
+                }
+            } catch (e: Exception) {
+                // Ignore backup read failure
+            }
+        }
+
         if (json.isNullOrBlank()) {
             // Migration rétrocompatible : créer le profil Principal avec les favoris existants
             val legacyChannels = prefs.getStringSet("favorite_channel_ids", emptySet()) ?: emptySet()
@@ -152,17 +172,76 @@ class SessionManager(context: Context) {
             setActiveProfileId("profile_default")
             return list
         }
-        return try {
-            val type = object : TypeToken<List<UserProfile>>() {}.type
-            gson.fromJson<List<UserProfile>>(json, type) ?: listOf(UserProfile.DEFAULT_PROFILE)
+
+        val type = object : TypeToken<List<UserProfile>>() {}.type
+        val parsed: List<UserProfile>? = try {
+            gson.fromJson<List<UserProfile>>(json, type)
         } catch (e: Exception) {
-            listOf(UserProfile.DEFAULT_PROFILE)
+            null
         }
+
+        if (!parsed.isNullOrEmpty()) {
+            val sanitized = parsed.map { prof ->
+                prof.copy(
+                    favoriteChannelIds = prof.favoriteChannelIds ?: emptySet(),
+                    favoriteMovieIds = prof.favoriteMovieIds ?: emptySet(),
+                    favoriteSeriesIds = prof.favoriteSeriesIds ?: emptySet(),
+                    hiddenVodCategoryIds = prof.hiddenVodCategoryIds ?: emptySet(),
+                    hiddenSeriesCategoryIds = prof.hiddenSeriesCategoryIds ?: emptySet(),
+                    hiddenLiveCategoryIds = prof.hiddenLiveCategoryIds ?: emptySet()
+                )
+            }
+            // S'assurer que le fichier miroir est toujours créé sur le disque
+            if (!profilesBackupFile.exists()) {
+                try {
+                    profilesBackupFile.writeText(json)
+                } catch (ignored: Exception) {}
+            }
+            return sanitized
+        }
+
+        // Tenter la sauvegarde miroir si le JSON de prefs était altéré
+        if (profilesBackupFile.exists()) {
+            try {
+                val backupJson = profilesBackupFile.readText()
+                val backupList: List<UserProfile>? = gson.fromJson(backupJson, type)
+                if (!backupList.isNullOrEmpty()) {
+                    val sanitizedBackup = backupList.map { prof ->
+                        prof.copy(
+                            favoriteChannelIds = prof.favoriteChannelIds ?: emptySet(),
+                            favoriteMovieIds = prof.favoriteMovieIds ?: emptySet(),
+                            favoriteSeriesIds = prof.favoriteSeriesIds ?: emptySet(),
+                            hiddenVodCategoryIds = prof.hiddenVodCategoryIds ?: emptySet(),
+                            hiddenSeriesCategoryIds = prof.hiddenSeriesCategoryIds ?: emptySet(),
+                            hiddenLiveCategoryIds = prof.hiddenLiveCategoryIds ?: emptySet()
+                        )
+                    }
+                    prefs.edit().putString(KEY_PROFILES_JSON, backupJson).commit()
+                    return sanitizedBackup
+                }
+            } catch (ignored: Exception) {}
+        }
+
+        val fallback = listOf(UserProfile.DEFAULT_PROFILE)
+        saveProfilesList(fallback)
+        return fallback
     }
 
     private fun saveProfilesList(list: List<UserProfile>) {
         val json = gson.toJson(list)
-        prefs.edit().putString(KEY_PROFILES_JSON, json).apply()
+        // 1. Commit synchrone immédiat dans SharedPreferences (résiste aux fermetures brutales de l'app)
+        prefs.edit().putString(KEY_PROFILES_JSON, json).commit()
+
+        // 2. Écriture atomique sur fichier interne privé (survit aux mises à jour APK et nettoyages de SharedPreferences)
+        try {
+            val tempFile = File(appContext.filesDir, "noostv_profiles_backup.json.tmp")
+            tempFile.writeText(json)
+            if (tempFile.exists()) {
+                tempFile.renameTo(profilesBackupFile)
+            }
+        } catch (e: Exception) {
+            // Ne bloque jamais l'application si l'écriture échoue
+        }
     }
 
     fun getActiveProfileId(): String {
@@ -170,7 +249,7 @@ class SessionManager(context: Context) {
     }
 
     fun setActiveProfileId(id: String) {
-        prefs.edit().putString(KEY_ACTIVE_PROFILE_ID, id).apply()
+        prefs.edit().putString(KEY_ACTIVE_PROFILE_ID, id).commit()
     }
 
     fun getActiveProfile(): UserProfile {
@@ -226,7 +305,11 @@ class SessionManager(context: Context) {
     fun updateActiveProfile(transform: (UserProfile) -> UserProfile) {
         val current = getProfiles().toMutableList()
         val activeId = getActiveProfileId()
-        val index = current.indexOfFirst { it.id == activeId }
+        var index = current.indexOfFirst { it.id == activeId }
+        if (index == -1 && current.isNotEmpty()) {
+            index = 0
+            setActiveProfileId(current[0].id)
+        }
         if (index != -1) {
             current[index] = transform(current[index])
             saveProfilesList(current)
@@ -235,12 +318,12 @@ class SessionManager(context: Context) {
 
     // ==================== FAVORIS PAR PROFIL ====================
 
-    fun getFavoriteChannelIds(): Set<String> = getActiveProfile().favoriteChannelIds
+    fun getFavoriteChannelIds(): Set<String> = getActiveProfile().favoriteChannelIds ?: emptySet()
 
     fun toggleFavoriteChannel(id: String): Boolean {
         var isFav = false
         updateActiveProfile { prof ->
-            val set = prof.favoriteChannelIds.toMutableSet()
+            val set = (prof.favoriteChannelIds ?: emptySet()).toMutableSet()
             if (set.contains(id)) {
                 set.remove(id)
                 isFav = false
@@ -255,12 +338,12 @@ class SessionManager(context: Context) {
 
     fun isFavoriteChannel(id: String): Boolean = getFavoriteChannelIds().contains(id)
 
-    fun getFavoriteMovieIds(): Set<String> = getActiveProfile().favoriteMovieIds
+    fun getFavoriteMovieIds(): Set<String> = getActiveProfile().favoriteMovieIds ?: emptySet()
 
     fun toggleFavoriteMovie(id: String): Boolean {
         var isFav = false
         updateActiveProfile { prof ->
-            val set = prof.favoriteMovieIds.toMutableSet()
+            val set = (prof.favoriteMovieIds ?: emptySet()).toMutableSet()
             if (set.contains(id)) {
                 set.remove(id)
                 isFav = false
@@ -275,12 +358,12 @@ class SessionManager(context: Context) {
 
     fun isFavoriteMovie(id: String): Boolean = getFavoriteMovieIds().contains(id)
 
-    fun getFavoriteSeriesIds(): Set<String> = getActiveProfile().favoriteSeriesIds
+    fun getFavoriteSeriesIds(): Set<String> = getActiveProfile().favoriteSeriesIds ?: emptySet()
 
     fun toggleFavoriteSeries(id: String): Boolean {
         var isFav = false
         updateActiveProfile { prof ->
-            val set = prof.favoriteSeriesIds.toMutableSet()
+            val set = (prof.favoriteSeriesIds ?: emptySet()).toMutableSet()
             if (set.contains(id)) {
                 set.remove(id)
                 isFav = false
@@ -297,14 +380,14 @@ class SessionManager(context: Context) {
 
     // ==================== FILTRES DE CATÉGORIES PAR PROFIL ====================
 
-    fun getHiddenVodCategoryIds(): Set<String> = getActiveProfile().hiddenVodCategoryIds
+    fun getHiddenVodCategoryIds(): Set<String> = getActiveProfile().hiddenVodCategoryIds ?: emptySet()
 
     fun isVodCategoryVisible(categoryId: String): Boolean = !getHiddenVodCategoryIds().contains(categoryId)
 
     fun toggleVodCategoryVisibility(categoryId: String): Boolean {
         var isNowVisible = false
         updateActiveProfile { prof ->
-            val set = prof.hiddenVodCategoryIds.toMutableSet()
+            val set = (prof.hiddenVodCategoryIds ?: emptySet()).toMutableSet()
             if (set.contains(categoryId)) {
                 set.remove(categoryId)
                 isNowVisible = true
@@ -319,7 +402,7 @@ class SessionManager(context: Context) {
 
     fun setVodCategoryVisibility(categoryId: String, isVisible: Boolean) {
         updateActiveProfile { prof ->
-            val set = prof.hiddenVodCategoryIds.toMutableSet()
+            val set = (prof.hiddenVodCategoryIds ?: emptySet()).toMutableSet()
             if (isVisible) set.remove(categoryId) else set.add(categoryId)
             prof.copy(hiddenVodCategoryIds = set)
         }
@@ -331,14 +414,14 @@ class SessionManager(context: Context) {
         }
     }
 
-    fun getHiddenSeriesCategoryIds(): Set<String> = getActiveProfile().hiddenSeriesCategoryIds
+    fun getHiddenSeriesCategoryIds(): Set<String> = getActiveProfile().hiddenSeriesCategoryIds ?: emptySet()
 
     fun isSeriesCategoryVisible(categoryId: String): Boolean = !getHiddenSeriesCategoryIds().contains(categoryId)
 
     fun toggleSeriesCategoryVisibility(categoryId: String): Boolean {
         var isNowVisible = false
         updateActiveProfile { prof ->
-            val set = prof.hiddenSeriesCategoryIds.toMutableSet()
+            val set = (prof.hiddenSeriesCategoryIds ?: emptySet()).toMutableSet()
             if (set.contains(categoryId)) {
                 set.remove(categoryId)
                 isNowVisible = true
@@ -353,7 +436,7 @@ class SessionManager(context: Context) {
 
     fun setSeriesCategoryVisibility(categoryId: String, isVisible: Boolean) {
         updateActiveProfile { prof ->
-            val set = prof.hiddenSeriesCategoryIds.toMutableSet()
+            val set = (prof.hiddenSeriesCategoryIds ?: emptySet()).toMutableSet()
             if (isVisible) set.remove(categoryId) else set.add(categoryId)
             prof.copy(hiddenSeriesCategoryIds = set)
         }
@@ -362,6 +445,40 @@ class SessionManager(context: Context) {
     fun showAllSeriesCategories() {
         updateActiveProfile { prof ->
             prof.copy(hiddenSeriesCategoryIds = emptySet())
+        }
+    }
+
+    fun getHiddenLiveCategoryIds(): Set<String> = getActiveProfile().hiddenLiveCategoryIds ?: emptySet()
+
+    fun isLiveCategoryVisible(categoryId: String): Boolean = !getHiddenLiveCategoryIds().contains(categoryId)
+
+    fun toggleLiveCategoryVisibility(categoryId: String): Boolean {
+        var isNowVisible = false
+        updateActiveProfile { prof ->
+            val set = (prof.hiddenLiveCategoryIds ?: emptySet()).toMutableSet()
+            if (set.contains(categoryId)) {
+                set.remove(categoryId)
+                isNowVisible = true
+            } else {
+                set.add(categoryId)
+                isNowVisible = false
+            }
+            prof.copy(hiddenLiveCategoryIds = set)
+        }
+        return isNowVisible
+    }
+
+    fun setLiveCategoryVisibility(categoryId: String, isVisible: Boolean) {
+        updateActiveProfile { prof ->
+            val set = (prof.hiddenLiveCategoryIds ?: emptySet()).toMutableSet()
+            if (isVisible) set.remove(categoryId) else set.add(categoryId)
+            prof.copy(hiddenLiveCategoryIds = set)
+        }
+    }
+
+    fun showAllLiveCategories() {
+        updateActiveProfile { prof ->
+            prof.copy(hiddenLiveCategoryIds = emptySet())
         }
     }
 
@@ -482,16 +599,129 @@ class SessionManager(context: Context) {
         prefs.edit().remove(KEY_SAVED_ACCOUNTS_ENCRYPTED).apply()
     }
 
+    // ==================== REPRISE DE LECTURE (PLAYBACK RESUME) ====================
+
+    private val KEY_PLAYBACK_RESUME_PREFIX = "playback_resume_"
+    private val playbackResumeBackupFile: File
+        get() = File(appContext.filesDir, "noostv_playback_resume.json")
+
+    private fun getResumeStorageKey(profileId: String): String = "$KEY_PLAYBACK_RESUME_PREFIX$profileId"
+
+    /**
+     * Récupère le point de reprise de lecture pour un film ou un épisode donné,
+     * selon le profil utilisateur actif.
+     */
+    fun getPlaybackResume(contentId: String): PlaybackResumePoint? {
+        if (contentId.isBlank()) return null
+        val profileId = getActiveProfileId()
+        val all = getAllPlaybackResumesInternal(profileId)
+        return all[contentId]
+    }
+
+    /**
+     * Récupère l'ensemble des points de reprise du profil.
+     */
+    fun getAllPlaybackResumes(profileId: String = getActiveProfileId()): Map<String, PlaybackResumePoint> {
+        return getAllPlaybackResumesInternal(profileId)
+    }
+
+    /**
+     * Enregistre la progression de lecture d'un contenu.
+     * Si la lecture a duré moins de 10 secondes, ou est à moins de 30 secondes de la fin,
+     * le point de reprise est automatiquement purgé.
+     */
+    fun savePlaybackResume(contentId: String, title: String, positionMs: Long, durationMs: Long) {
+        if (contentId.isBlank()) return
+        val profileId = getActiveProfileId()
+        val map = getAllPlaybackResumesInternal(profileId).toMutableMap()
+
+        if (positionMs < 10_000L || (durationMs > 0L && positionMs >= durationMs - 30_000L)) {
+            if (map.remove(contentId) != null) {
+                savePlaybackResumesInternal(profileId, map)
+            }
+        } else {
+            map[contentId] = PlaybackResumePoint(
+                contentId = contentId,
+                title = title,
+                positionMs = positionMs,
+                durationMs = durationMs,
+                updatedAt = System.currentTimeMillis()
+            )
+            savePlaybackResumesInternal(profileId, map)
+        }
+    }
+
+    /**
+     * Supprime manuellement le point de reprise (ex: clic sur "Recommencer").
+     */
+    fun clearPlaybackResume(contentId: String) {
+        if (contentId.isBlank()) return
+        val profileId = getActiveProfileId()
+        val map = getAllPlaybackResumesInternal(profileId).toMutableMap()
+        if (map.remove(contentId) != null) {
+            savePlaybackResumesInternal(profileId, map)
+        }
+    }
+
+    private fun getAllPlaybackResumesInternal(profileId: String): Map<String, PlaybackResumePoint> {
+        val key = getResumeStorageKey(profileId)
+        val json = prefs.getString(key, null)
+        val type = object : TypeToken<Map<String, PlaybackResumePoint>>() {}.type
+
+        if (!json.isNullOrBlank()) {
+            try {
+                val parsed: Map<String, PlaybackResumePoint>? = gson.fromJson(json, type)
+                if (parsed != null) return parsed
+            } catch (ignored: Exception) {}
+        }
+
+        // Tenter depuis le fichier miroir de secours
+        if (playbackResumeBackupFile.exists()) {
+            try {
+                val backupJson = playbackResumeBackupFile.readText()
+                val rootType = object : TypeToken<Map<String, Map<String, PlaybackResumePoint>>>() {}.type
+                val rootMap: Map<String, Map<String, PlaybackResumePoint>>? = gson.fromJson(backupJson, rootType)
+                val profileMap = rootMap?.get(profileId)
+                if (!profileMap.isNullOrEmpty()) {
+                    prefs.edit().putString(key, gson.toJson(profileMap)).commit()
+                    return profileMap
+                }
+            } catch (ignored: Exception) {}
+        }
+
+        return emptyMap()
+    }
+
+    private fun savePlaybackResumesInternal(profileId: String, map: Map<String, PlaybackResumePoint>) {
+        val json = gson.toJson(map)
+        val key = getResumeStorageKey(profileId)
+        prefs.edit().putString(key, json).commit()
+
+        try {
+            val rootType = object : TypeToken<Map<String, Map<String, PlaybackResumePoint>>>() {}.type
+            val currentRoot: MutableMap<String, Map<String, PlaybackResumePoint>> = if (playbackResumeBackupFile.exists()) {
+                runCatching {
+                    gson.fromJson<Map<String, Map<String, PlaybackResumePoint>>>(playbackResumeBackupFile.readText(), rootType)?.toMutableMap()
+                }.getOrNull() ?: mutableMapOf()
+            } else {
+                mutableMapOf()
+            }
+            currentRoot[profileId] = map
+
+            val tempFile = File(appContext.filesDir, "noostv_playback_resume.json.tmp")
+            tempFile.writeText(gson.toJson(currentRoot))
+            if (tempFile.exists()) {
+                tempFile.renameTo(playbackResumeBackupFile)
+            }
+        } catch (ignored: Exception) {}
+    }
+
     fun logout() {
-        val savedAccounts = prefs.getString(KEY_SAVED_ACCOUNTS_ENCRYPTED, null)
-        val appLang = prefs.getString(KEY_APP_LANGUAGE, "fr")
-        val updateChan = prefs.getString(KEY_UPDATE_CHANNEL, "stable")
         prefs.edit()
-            .clear()
             .putBoolean(KEY_IS_LOGGED_IN, false)
-            .putString(KEY_SAVED_ACCOUNTS_ENCRYPTED, savedAccounts)
-            .putString(KEY_APP_LANGUAGE, appLang)
-            .putString(KEY_UPDATE_CHANNEL, updateChan)
-            .apply()
+            .remove(KEY_SERVER_URL)
+            .remove(KEY_USERNAME)
+            .remove(KEY_PASSWORD)
+            .commit()
     }
 }
