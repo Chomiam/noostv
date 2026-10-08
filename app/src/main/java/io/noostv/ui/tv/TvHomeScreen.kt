@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -950,7 +951,7 @@ fun TvHomeScreen(
 }
 
 /**
- * Barre latérale avec 7 onglets au style Glassy Frosted Blur
+ * Barre latérale avec 7 onglets au style Glassy Apple (Dock capsule flottante, centré verticalement)
  */
 @Composable
 fun TvSidebar(
@@ -963,111 +964,177 @@ fun TvSidebar(
     val strings = LocalStrings.current
     val tabList = remember { TvNavTab.values().toList() }
 
-    Column(
+    Box(
         modifier = Modifier
-            .width(88.dp)
             .fillMaxHeight()
-            .background(GlassSurface)
-            .border(androidx.compose.foundation.BorderStroke(1.dp, GlassBorder))
-            .padding(vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(start = 12.dp, end = 10.dp),
+        contentAlignment = Alignment.Center
     ) {
-        tabList.forEachIndexed { index, tab ->
-            val isSelected = tab == selectedTab
-            var isFocused by remember { mutableStateOf(false) }
+        val dockShape = RoundedCornerShape(28.dp)
 
-            val scale by animateFloatAsState(
-                targetValue = if (isFocused) 1.08f else 1.0f,
-                label = "sidebar_scale"
-            )
-
-            val myRequester = sidebarFocusRequesters[tab] ?: remember { FocusRequester() }
-            val nextTab = tabList.getOrNull(index + 1)
-            val prevTab = tabList.getOrNull(index - 1)
-
-            Box(
-                modifier = Modifier
-                    .size(54.dp)
-                    .scale(scale)
-                    .clip(RoundedCornerShape(18.dp))
-                    .focusRequester(myRequester)
-                    .focusProperties {
-                        // Assure la continuité verticale stricte entre les onglets du volet sans déborder vers la droite
-                        if (nextTab != null) {
-                            sidebarFocusRequesters[nextTab]?.let { down = it }
-                        }
-                        if (prevTab != null) {
-                            sidebarFocusRequesters[prevTab]?.let { up = it }
-                        }
-                    }
-                    .onFocusChanged {
-                        isFocused = it.isFocused
-                        if (it.isFocused) {
-                            onTabSelected(tab)
-                        }
-                    }
-                    .focusable()
-                    .clickable {
-                        onTabSelected(tab)
-                        onNavigateRight()
-                    }
-                    .onPreviewKeyEvent { keyEvent ->
-                        if (keyEvent.type == KeyEventType.KeyDown) {
-                            when (keyEvent.key) {
-                                Key.DirectionRight, Key.Enter, Key.DirectionCenter -> {
-                                    onNavigateRight()
-                                    true
-                                }
-                                Key.DirectionDown -> {
-                                    if (nextTab != null) {
-                                        runCatching { sidebarFocusRequesters[nextTab]?.requestFocus() }
-                                        true
-                                    } else false
-                                }
-                                Key.DirectionUp -> {
-                                    if (prevTab != null) {
-                                        runCatching { sidebarFocusRequesters[prevTab]?.requestFocus() }
-                                        true
-                                    } else false
-                                }
-                                else -> false
-                            }
-                        } else false
-                    }
-                    .background(
-                        when {
-                            isFocused -> Color(0xFF24334D)
-                            isSelected -> NoosBlue.copy(alpha = 0.32f)
-                            else -> Color.Transparent
-                        }
-                    )
-                    .border(
-                        width = if (isFocused) 2.5.dp else if (isSelected) 1.dp else 0.dp,
-                        color = if (isFocused) FocusGlow else if (isSelected) NoosCyan.copy(alpha = 0.6f) else Color.Transparent,
-                        shape = RoundedCornerShape(18.dp)
+        Column(
+            modifier = Modifier
+                .width(68.dp)
+                .wrapContentHeight()
+                .shadow(
+                    elevation = 20.dp,
+                    shape = dockShape,
+                    clip = false,
+                    ambientColor = Color(0x66000000),
+                    spotColor = Color(0x99000000)
+                )
+                .background(
+                    brush = Brush.verticalGradient(
+                        0.0f to Color(0xCC1A2338), // Apple frosted glass top (80% opacity)
+                        0.45f to Color(0xB3111827), // Frosted translucent mid
+                        1.0f to Color(0xCC0B101D)  // Deep frosted bottom
                     ),
-                contentAlignment = Alignment.Center
-            ) {
-                val tabLabel = tab.getLabel(strings)
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                    shape = dockShape
+                )
+                .border(
+                    width = 1.2.dp,
+                    brush = Brush.verticalGradient(
+                        0.0f to Color.White.copy(alpha = 0.40f), // Apple specular rim reflection
+                        0.3f to Color.White.copy(alpha = 0.15f),
+                        0.7f to Color.White.copy(alpha = 0.05f),
+                        1.0f to Color.White.copy(alpha = 0.18f)
+                    ),
+                    shape = dockShape
+                )
+                .padding(horizontal = 5.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            tabList.forEachIndexed { index, tab ->
+                val isSelected = tab == selectedTab
+                var isFocused by remember { mutableStateOf(false) }
+
+                val scale by animateFloatAsState(
+                    targetValue = if (isFocused) 1.08f else 1.0f,
+                    label = "sidebar_scale"
+                )
+
+                val myRequester = sidebarFocusRequesters[tab] ?: remember { FocusRequester() }
+                val nextTab = tabList.getOrNull(index + 1)
+                val prevTab = tabList.getOrNull(index - 1)
+                val itemShape = RoundedCornerShape(14.dp)
+
+                Box(
+                    modifier = Modifier
+                        .width(58.dp)
+                        .height(48.dp)
+                        .scale(scale)
+                        .focusRequester(myRequester)
+                        .focusProperties {
+                            // Assure la continuité verticale stricte entre les onglets du volet sans déborder vers la droite
+                            if (nextTab != null) {
+                                sidebarFocusRequesters[nextTab]?.let { down = it }
+                            }
+                            if (prevTab != null) {
+                                sidebarFocusRequesters[prevTab]?.let { up = it }
+                            }
+                        }
+                        .onFocusChanged {
+                            isFocused = it.isFocused
+                            if (it.isFocused) {
+                                onTabSelected(tab)
+                            }
+                        }
+                        .focusable()
+                        .clickable {
+                            onTabSelected(tab)
+                            onNavigateRight()
+                        }
+                        .onPreviewKeyEvent { keyEvent ->
+                            if (keyEvent.type == KeyEventType.KeyDown) {
+                                when (keyEvent.key) {
+                                    Key.DirectionRight, Key.Enter, Key.DirectionCenter -> {
+                                        onNavigateRight()
+                                        true
+                                    }
+                                    Key.DirectionDown -> {
+                                        if (nextTab != null) {
+                                            runCatching { sidebarFocusRequesters[nextTab]?.requestFocus() }
+                                            true
+                                        } else false
+                                    }
+                                    Key.DirectionUp -> {
+                                        if (prevTab != null) {
+                                            runCatching { sidebarFocusRequesters[prevTab]?.requestFocus() }
+                                            true
+                                        } else false
+                                    }
+                                    else -> false
+                                }
+                            } else false
+                        }
+                        .shadow(
+                            elevation = if (isFocused) 8.dp else 0.dp,
+                            shape = itemShape,
+                            clip = false,
+                            ambientColor = Color(0x663888FF),
+                            spotColor = Color(0x993888FF)
+                        )
+                        .background(
+                            brush = when {
+                                isFocused -> Brush.verticalGradient(
+                                    listOf(
+                                        Color(0xFF3888FF),
+                                        Color(0xFF1E5BB8)
+                                    )
+                                )
+                                isSelected -> Brush.verticalGradient(
+                                    listOf(
+                                        Color(0x383888FF),
+                                        Color(0x1F3888FF)
+                                    )
+                                )
+                                else -> Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
+                            },
+                            shape = itemShape
+                        )
+                        .border(
+                            width = if (isFocused) 1.5.dp else if (isSelected) 1.dp else 0.dp,
+                            brush = when {
+                                isFocused -> Brush.verticalGradient(
+                                    listOf(
+                                        Color.White.copy(alpha = 0.85f),
+                                        Color(0xFF93C5FD).copy(alpha = 0.5f)
+                                    )
+                                )
+                                isSelected -> Brush.verticalGradient(
+                                    listOf(
+                                        NoosCyan.copy(alpha = 0.6f),
+                                        NoosBlue.copy(alpha = 0.3f)
+                                    )
+                                )
+                                else -> Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
+                            },
+                            shape = itemShape
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = tab.icon,
-                        contentDescription = tabLabel,
-                        tint = if (isFocused) Color.White else if (isSelected) NoosCyan else TextSecondary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = tabLabel,
-                        color = if (isFocused) Color.White else if (isSelected) NoosCyan else TextSecondary,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
-                    )
+                    val tabLabel = tab.getLabel(strings)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = tab.icon,
+                            contentDescription = tabLabel,
+                            tint = if (isFocused) Color.White else if (isSelected) NoosCyan else TextSecondary,
+                            modifier = Modifier.size(19.dp)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = tabLabel,
+                            color = if (isFocused) Color.White else if (isSelected) NoosCyan else TextSecondary,
+                            fontSize = 8.5.sp,
+                            fontWeight = if (isFocused || isSelected) FontWeight.Bold else FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }
