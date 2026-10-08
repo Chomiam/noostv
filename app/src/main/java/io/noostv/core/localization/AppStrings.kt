@@ -31,6 +31,8 @@ interface AppStrings {
     val downloadingUpdate: String
     val installerReady: String
     val reopenInstaller: String
+    val permissionRequired: String
+    val grantPermission: String
     val retry: String
     val activeBadge: String
     val channelTestingBadge: String
@@ -149,6 +151,8 @@ object FrenchStrings : AppStrings {
     override val downloadingUpdate = "Téléchargement de la mise à jour..."
     override val installerReady = "APK prêt ! L'installateur Android a été ouvert."
     override val reopenInstaller = "Réouvrir l'installateur"
+    override val permissionRequired = "Autorisation requise pour installer l'application"
+    override val grantPermission = "Autoriser & Installer"
     override val retry = "Réessayer"
     override val activeBadge = "ACTIF"
     override val channelTestingBadge = "Canal testing"
@@ -249,6 +253,8 @@ object EnglishStrings : AppStrings {
     override val downloadingUpdate = "Downloading update..."
     override val installerReady = "APK ready! Android installer has been opened."
     override val reopenInstaller = "Reopen installer"
+    override val permissionRequired = "Permission required to install the app"
+    override val grantPermission = "Authorize & Install"
     override val retry = "Retry"
     override val activeBadge = "ACTIVE"
     override val channelTestingBadge = "Testing channel"
@@ -349,6 +355,8 @@ object SpanishStrings : AppStrings {
     override val downloadingUpdate = "Descargando actualización..."
     override val installerReady = "¡APK listo! Se abrió el instalador de Android."
     override val reopenInstaller = "Reabrir instalador"
+    override val permissionRequired = "Se requiere permiso para instalar la aplicación"
+    override val grantPermission = "Autorizar e Instalar"
     override val retry = "Reintentar"
     override val activeBadge = "ACTIVO"
     override val channelTestingBadge = "Canal testing"
@@ -449,6 +457,8 @@ object GermanStrings : AppStrings {
     override val downloadingUpdate = "Update wird heruntergeladen..."
     override val installerReady = "APK bereit! Android-Installationsprogramm geöffnet."
     override val reopenInstaller = "Installer erneut öffnen"
+    override val permissionRequired = "Berechtigung zur App-Installation erforderlich"
+    override val grantPermission = "Autorisieren & Installieren"
     override val retry = "Wiederholen"
     override val activeBadge = "AKTIV"
     override val channelTestingBadge = "Testing-Kanal"
@@ -549,6 +559,8 @@ object ItalianStrings : AppStrings {
     override val downloadingUpdate = "Download aggiornamento in corso..."
     override val installerReady = "APK pronto! Il programma di installazione Android è stato aperto."
     override val reopenInstaller = "Riapri installer"
+    override val permissionRequired = "Autorizzazione richiesta per installare l'applicazione"
+    override val grantPermission = "Autorizza e Installa"
     override val retry = "Riprova"
     override val activeBadge = "ATTIVO"
     override val channelTestingBadge = "Canale testing"
@@ -649,6 +661,8 @@ object ArabicStrings : AppStrings {
     override val downloadingUpdate = "جاري تنزيل التحديث..."
     override val installerReady = "حزمة APK جاهزة! تم فتح مثبت Android."
     override val reopenInstaller = "إعادة فتح المثبت"
+    override val permissionRequired = "الإذن مطلوب لتثبيت التطبيق"
+    override val grantPermission = "السماح والتثبيت"
     override val retry = "إعادة المحاولة"
     override val activeBadge = "نشط"
     override val channelTestingBadge = "قناة التجريب"
@@ -749,6 +763,8 @@ object PortugueseStrings : AppStrings {
     override val downloadingUpdate = "A descarregar a atualização..."
     override val installerReady = "APK pronto! O instalador do Android foi aberto."
     override val reopenInstaller = "Reabrir instalador"
+    override val permissionRequired = "Permissão necessária para instalar a aplicação"
+    override val grantPermission = "Autorizar e Instalar"
     override val retry = "Tentar novamente"
     override val activeBadge = "ATIVO"
     override val channelTestingBadge = "Canal de testes"

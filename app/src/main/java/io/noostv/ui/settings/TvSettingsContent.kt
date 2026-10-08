@@ -26,6 +26,10 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -62,7 +66,6 @@ fun TvSettingsContent(
     val currentAppVersion = io.noostv.BuildConfig.VERSION_NAME
 
     // Focus requesters pour D-Pad télécommande
-    val stableBtnFocus = remember { FocusRequester() }
     val testingBtnFocus = remember { FocusRequester() }
     val checkBtnFocus = remember { FocusRequester() }
     val refreshCatalogBtnFocus = remember { FocusRequester() }
@@ -79,6 +82,50 @@ fun TvSettingsContent(
                 currentVersion = currentAppVersion
             )
             updateState = state
+        }
+    }
+
+    val view = LocalView.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // Reprise automatique de l'installation au retour des paramètres Android si l'autorisation a été accordée
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val state = updateState
+                if (state is UpdateState.ReadyToInstall && updateManager.canInstallPackages()) {
+                    updateManager.installApk(state.apkFile)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // Auto-focus sur le bouton de mise à jour dès qu'une action est requise (disponible ou prêt)
+    LaunchedEffect(updateState) {
+        if (updateState is UpdateState.UpdateAvailable || updateState is UpdateState.ReadyToInstall) {
+            kotlinx.coroutines.delay(100)
+            view.post {
+                try {
+                    checkBtnFocus.requestFocus()
+                } catch (e: Exception) {
+                    // Ignore si le composant n'est pas encore attaché
+                }
+            }
+        }
+    }
+
+    // Focus initial sur la carte de branche active au chargement
+    LaunchedEffect(Unit) {
+        view.post {
+            if (selectedChannel == "testing") {
+                testingBtnFocus.requestFocus()
+            } else {
+                focusRequester.requestFocus()
+            }
         }
     }
 
@@ -153,8 +200,16 @@ fun TvSettingsContent(
                 activeLabel = strings.activeBadge,
                 focusRequester = focusRequester,
                 onNavigateLeft = onNavigateLeft,
-                onNavigateRight = { testingBtnFocus.requestFocus() },
-                onNavigateDown = { checkBtnFocus.requestFocus() },
+                onNavigateRight = { view.post { testingBtnFocus.requestFocus() } },
+                onNavigateDown = {
+                    view.post {
+                        if (updateState is UpdateState.Checking || updateState is UpdateState.Downloading) {
+                            if (langFocusRequesters.isNotEmpty()) langFocusRequesters[0].requestFocus()
+                        } else {
+                            checkBtnFocus.requestFocus()
+                        }
+                    }
+                },
                 onSelect = {
                     selectedChannel = "stable"
                     sessionManager.updateChannel = "stable"
@@ -170,9 +225,17 @@ fun TvSettingsContent(
                 isSelected = selectedChannel == "testing",
                 activeLabel = strings.activeBadge,
                 focusRequester = testingBtnFocus,
-                onNavigateLeft = { focusRequester.requestFocus() },
+                onNavigateLeft = { view.post { focusRequester.requestFocus() } },
                 onNavigateRight = null,
-                onNavigateDown = { checkBtnFocus.requestFocus() },
+                onNavigateDown = {
+                    view.post {
+                        if (updateState is UpdateState.Checking || updateState is UpdateState.Downloading) {
+                            if (langFocusRequesters.isNotEmpty()) langFocusRequesters[0].requestFocus()
+                        } else {
+                            checkBtnFocus.requestFocus()
+                        }
+                    }
+                },
                 onSelect = {
                     selectedChannel = "testing"
                     sessionManager.updateChannel = "testing"
@@ -257,9 +320,15 @@ fun TvSettingsContent(
                                 icon = Icons.Default.Refresh,
                                 focusRequester = checkBtnFocus,
                                 onNavigateLeft = onNavigateLeft,
-                                onNavigateUp = { focusRequester.requestFocus() },
+                                onNavigateUp = {
+                                    view.post {
+                                        if (selectedChannel == "testing") testingBtnFocus.requestFocus() else focusRequester.requestFocus()
+                                    }
+                                },
                                 onNavigateDown = {
-                                    if (langFocusRequesters.isNotEmpty()) langFocusRequesters[0].requestFocus()
+                                    view.post {
+                                        if (langFocusRequesters.isNotEmpty()) langFocusRequesters[0].requestFocus()
+                                    }
                                 },
                                 onClick = { checkUpdates(selectedChannel) }
                             )
@@ -305,9 +374,15 @@ fun TvSettingsContent(
                                     isPrimary = true,
                                     focusRequester = checkBtnFocus,
                                     onNavigateLeft = onNavigateLeft,
-                                    onNavigateUp = { focusRequester.requestFocus() },
+                                    onNavigateUp = {
+                                        view.post {
+                                            if (selectedChannel == "testing") testingBtnFocus.requestFocus() else focusRequester.requestFocus()
+                                        }
+                                    },
                                     onNavigateDown = {
-                                        if (langFocusRequesters.isNotEmpty()) langFocusRequesters[0].requestFocus()
+                                        view.post {
+                                            if (langFocusRequesters.isNotEmpty()) langFocusRequesters[0].requestFocus()
+                                        }
                                     },
                                     onClick = {
                                         coroutineScope.launch {
@@ -373,23 +448,67 @@ fun TvSettingsContent(
                     }
 
                     is UpdateState.ReadyToInstall -> {
+                        val canInstall = updateManager.canInstallPackages()
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(strings.installerReady, color = TextPrimary, fontSize = 13.sp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(if (canInstall) GreenLive.copy(alpha = 0.2f) else NeonOrange.copy(alpha = 0.2f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (canInstall) Icons.Default.CheckCircle else Icons.Default.Security,
+                                        contentDescription = null,
+                                        tint = if (canInstall) GreenLive else NeonOrange,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Column {
+                                    Text(
+                                        text = if (canInstall) strings.installerReady else strings.permissionRequired,
+                                        color = TextPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = if (canInstall) "Prêt pour la mise à jour système" else "Sources inconnues requises pour NoosTV",
+                                        color = TextSecondary,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
                             SettingsActionButton(
-                                text = strings.reopenInstaller,
-                                icon = Icons.Default.InstallMobile,
+                                text = if (canInstall) strings.reopenInstaller else strings.grantPermission,
+                                icon = if (canInstall) Icons.Default.InstallMobile else Icons.Default.Security,
                                 isPrimary = true,
                                 focusRequester = checkBtnFocus,
                                 onNavigateLeft = onNavigateLeft,
-                                onNavigateUp = { focusRequester.requestFocus() },
-                                onNavigateDown = {
-                                    if (langFocusRequesters.isNotEmpty()) langFocusRequesters[0].requestFocus()
+                                onNavigateUp = {
+                                    view.post {
+                                        if (selectedChannel == "testing") testingBtnFocus.requestFocus() else focusRequester.requestFocus()
+                                    }
                                 },
-                                onClick = { updateManager.installApk(state.apkFile) }
+                                onNavigateDown = {
+                                    view.post {
+                                        if (langFocusRequesters.isNotEmpty()) langFocusRequesters[0].requestFocus()
+                                    }
+                                },
+                                onClick = {
+                                    if (!updateManager.canInstallPackages()) {
+                                        updateManager.openInstallPermissionSettings()
+                                    } else {
+                                        updateManager.installApk(state.apkFile)
+                                    }
+                                }
                             )
                         }
                     }
@@ -409,9 +528,15 @@ fun TvSettingsContent(
                                 icon = Icons.Default.Refresh,
                                 focusRequester = checkBtnFocus,
                                 onNavigateLeft = onNavigateLeft,
-                                onNavigateUp = { focusRequester.requestFocus() },
+                                onNavigateUp = {
+                                    view.post {
+                                        if (selectedChannel == "testing") testingBtnFocus.requestFocus() else focusRequester.requestFocus()
+                                    }
+                                },
                                 onNavigateDown = {
-                                    if (langFocusRequesters.isNotEmpty()) langFocusRequesters[0].requestFocus()
+                                    view.post {
+                                        if (langFocusRequesters.isNotEmpty()) langFocusRequesters[0].requestFocus()
+                                    }
                                 },
                                 onClick = { checkUpdates(selectedChannel) }
                             )
@@ -424,9 +549,15 @@ fun TvSettingsContent(
                             icon = Icons.Default.Refresh,
                             focusRequester = checkBtnFocus,
                             onNavigateLeft = onNavigateLeft,
-                            onNavigateUp = { focusRequester.requestFocus() },
+                            onNavigateUp = {
+                                view.post {
+                                    if (selectedChannel == "testing") testingBtnFocus.requestFocus() else focusRequester.requestFocus()
+                                }
+                            },
                             onNavigateDown = {
-                                if (langFocusRequesters.isNotEmpty()) langFocusRequesters[0].requestFocus()
+                                view.post {
+                                    if (langFocusRequesters.isNotEmpty()) langFocusRequesters[0].requestFocus()
+                                }
                             },
                             onClick = { checkUpdates(selectedChannel) }
                         )
@@ -464,12 +595,24 @@ fun TvSettingsContent(
                     language = lang,
                     isSelected = currentLanguage == lang,
                     focusRequester = langFocusRequesters[index],
-                    onNavigateLeft = if (index == 0) onNavigateLeft else { { langFocusRequesters[index - 1].requestFocus() } },
-                    onNavigateRight = if (index < row1.size - 1) { { langFocusRequesters[index + 1].requestFocus() } } else null,
-                    onNavigateUp = { checkBtnFocus.requestFocus() },
+                    onNavigateLeft = if (index == 0) onNavigateLeft else ({ view.post { langFocusRequesters[index - 1].requestFocus() }; Unit }),
+                    onNavigateRight = if (index < row1.size - 1) ({ view.post { langFocusRequesters[index + 1].requestFocus() }; Unit }) else null,
+                    onNavigateUp = {
+                        view.post {
+                            if (updateState is UpdateState.Checking || updateState is UpdateState.Downloading) {
+                                if (selectedChannel == "testing") testingBtnFocus.requestFocus() else focusRequester.requestFocus()
+                            } else {
+                                try {
+                                    checkBtnFocus.requestFocus()
+                                } catch (e: Exception) {
+                                    if (selectedChannel == "testing") testingBtnFocus.requestFocus() else focusRequester.requestFocus()
+                                }
+                            }
+                        }
+                    },
                     onNavigateDown = {
                         val nextIdx = 4 + index.coerceAtMost(2)
-                        langFocusRequesters[nextIdx].requestFocus()
+                        view.post { langFocusRequesters[nextIdx].requestFocus() }
                     },
                     onSelect = { onLanguageChanged(lang) },
                     modifier = Modifier.weight(1f)
@@ -491,10 +634,10 @@ fun TvSettingsContent(
                     language = lang,
                     isSelected = currentLanguage == lang,
                     focusRequester = langFocusRequesters[actualIndex],
-                    onNavigateLeft = if (index == 0) onNavigateLeft else { { langFocusRequesters[actualIndex - 1].requestFocus() } },
-                    onNavigateRight = if (index < row2.size - 1) { { langFocusRequesters[actualIndex + 1].requestFocus() } } else null,
-                    onNavigateUp = { langFocusRequesters[index].requestFocus() },
-                    onNavigateDown = { logoutBtnFocus.requestFocus() },
+                    onNavigateLeft = if (index == 0) onNavigateLeft else ({ view.post { langFocusRequesters[actualIndex - 1].requestFocus() }; Unit }),
+                    onNavigateRight = if (index < row2.size - 1) ({ view.post { langFocusRequesters[actualIndex + 1].requestFocus() }; Unit }) else null,
+                    onNavigateUp = { view.post { langFocusRequesters[index].requestFocus() } },
+                    onNavigateDown = { view.post { logoutBtnFocus.requestFocus() } },
                     onSelect = { onLanguageChanged(lang) },
                     modifier = Modifier.weight(1f)
                 )
@@ -930,7 +1073,7 @@ fun SettingsActionButton(
     onClick: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(targetValue = if (isFocused) 1.05f else 1.0f, label = "btn_scale")
+    val scale by animateFloatAsState(targetValue = if (isFocused) 1.08f else 1.0f, label = "btn_scale")
 
     Button(
         onClick = onClick,
@@ -959,22 +1102,40 @@ fun SettingsActionButton(
                                 true
                             } else false
                         }
+                        Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.Spacebar -> {
+                            onClick()
+                            true
+                        }
                         else -> false
                     }
                 } else false
             },
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (isPrimary) NoosBlue else SurfaceDarkVariant,
-            contentColor = if (isPrimary) Color.White else TextPrimary
+            containerColor = when {
+                isFocused && isPrimary -> Color(0xFF0072FF)
+                isPrimary -> NoosBlue
+                isFocused -> Color(0xFF243248)
+                else -> SurfaceDarkVariant
+            },
+            contentColor = if (isPrimary || isFocused) Color.White else TextPrimary
         ),
         shape = RoundedCornerShape(50),
         border = androidx.compose.foundation.BorderStroke(
-            width = if (isFocused) 2.dp else 1.dp,
-            color = if (isFocused) FocusGlow else CardBorderUnfocused
+            width = if (isFocused) 3.dp else 1.dp,
+            color = when {
+                isFocused && isPrimary -> Color.White
+                isFocused -> FocusGlow
+                else -> CardBorderUnfocused
+            }
         ),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        Icon(imageVector = icon, contentDescription = null, tint = if (isPrimary) Color.White else NoosCyan, modifier = Modifier.size(15.dp))
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (isPrimary || isFocused) Color.White else NoosCyan,
+            modifier = Modifier.size(16.dp)
+        )
         Spacer(modifier = Modifier.width(8.dp))
         Text(text = text, fontSize = 12.sp, fontWeight = FontWeight.Bold)
     }

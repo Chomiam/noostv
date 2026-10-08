@@ -220,6 +220,38 @@ class UpdateManager(private val context: Context) {
     }
 
     /**
+     * Vérifie si l'application dispose de l'autorisation d'installer des paquets inconnus (Android 8.0+).
+     */
+    fun canInstallPackages(): Boolean {
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            context.packageManager.canRequestPackageInstalls()
+        } else {
+            true
+        }
+    }
+
+    /**
+     * Ouvre directement la page des paramètres système pour autoriser l'installation d'applications inconnues pour NoosTV.
+     */
+    fun openInstallPermissionSettings() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val intent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                data = Uri.parse("package:${context.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                // Fallback pour les ROMs Android TV ne supportant pas l'URI direct
+                val fallbackIntent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(fallbackIntent)
+            }
+        }
+    }
+
+    /**
      * Valide l'intégrité de l'archive APK téléchargée puis lance l'installateur de paquets d'Android.
      * Rejette et supprime les fichiers corrompus, incomplets ou dont l'applicationId ne correspond pas.
      */
@@ -245,6 +277,13 @@ class UpdateManager(private val context: Context) {
             return false
         }
 
+        // Si l'autorisation d'installer des sources inconnues n'est pas encore accordée sur Android 8+, ouvrir les paramètres
+        if (!canInstallPackages()) {
+            android.util.Log.w("UpdateManager", "Permission REQUEST_INSTALL_PACKAGES manquante, redirection vers les paramètres")
+            openInstallPermissionSettings()
+            return false
+        }
+
         val uri: Uri = FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",
@@ -255,6 +294,7 @@ class UpdateManager(private val context: Context) {
             setDataAndType(uri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
         }
         context.startActivity(intent)
         return true
