@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -59,8 +60,8 @@ fun TvCategoryFiltersContent(
     val strings = LocalStrings.current
     var selectedType by remember {
         mutableStateOf(
-            if (vodCategories.isNotEmpty()) FilterCategoryType.MOVIES
-            else if (liveCategories.isNotEmpty()) FilterCategoryType.LIVE
+            if (liveCategories.isNotEmpty()) FilterCategoryType.LIVE
+            else if (vodCategories.isNotEmpty()) FilterCategoryType.MOVIES
             else FilterCategoryType.SERIES
         )
     }
@@ -130,14 +131,19 @@ fun TvCategoryFiltersContent(
 
             // Boutons d'action globale (Tout afficher / Tout masquer)
             Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 var isShowAllFocused by remember { mutableStateOf(false) }
+                val showAllScale by animateFloatAsState(
+                    targetValue = if (isShowAllFocused) 1.08f else 1.0f,
+                    label = "show_all_scale"
+                )
                 Box(
                     modifier = Modifier
+                        .scale(showAllScale)
                         .clip(RoundedCornerShape(50))
-                        .background(if (isShowAllFocused) Color(0xFF283652) else GlassSurfaceElevated)
+                        .background(if (isShowAllFocused) Color.White else GlassSurfaceElevated)
                         .border(
                             width = if (isShowAllFocused) 2.dp else 1.dp,
                             color = if (isShowAllFocused) FocusGlow else GlassBorder,
@@ -151,7 +157,7 @@ fun TvCategoryFiltersContent(
                                         runCatching { firstCategoryFocusRequester.requestFocus() }
                                         true
                                     }
-                                    Key.DirectionCenter, Key.Enter -> {
+                                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
                                         when (selectedType) {
                                             FilterCategoryType.LIVE -> {
                                                 sessionManager.showAllLiveCategories()
@@ -173,8 +179,10 @@ fun TvCategoryFiltersContent(
                                 }
                             } else false
                         }
-                        .focusable()
-                        .clickable {
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
                             when (selectedType) {
                                 FilterCategoryType.LIVE -> {
                                     sessionManager.showAllLiveCategories()
@@ -191,22 +199,37 @@ fun TvCategoryFiltersContent(
                             }
                             onFiltersUpdated()
                         }
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .padding(horizontal = 14.dp, vertical = 7.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Icon(Icons.Default.Visibility, contentDescription = null, tint = NoosCyan, modifier = Modifier.size(13.dp))
-                        Text("Tout afficher", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Visibility,
+                            contentDescription = null,
+                            tint = if (isShowAllFocused) Color(0xFF0B101D) else NoosCyan,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "Tout afficher",
+                            color = if (isShowAllFocused) Color(0xFF0B101D) else TextPrimary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
 
                 var isHideAllFocused by remember { mutableStateOf(false) }
+                val hideAllScale by animateFloatAsState(
+                    targetValue = if (isHideAllFocused) 1.08f else 1.0f,
+                    label = "hide_all_scale"
+                )
                 Box(
                     modifier = Modifier
+                        .scale(hideAllScale)
                         .clip(RoundedCornerShape(50))
-                        .background(if (isHideAllFocused) Color(0xFF283652) else GlassSurfaceElevated)
+                        .background(if (isHideAllFocused) Color.White else GlassSurfaceElevated)
                         .border(
                             width = if (isHideAllFocused) 2.dp else 1.dp,
-                            color = if (isHideAllFocused) FocusGlow else GlassBorder,
+                            color = if (isHideAllFocused) RedLive else GlassBorder,
                             shape = RoundedCornerShape(50)
                         )
                         .onFocusChanged { isHideAllFocused = it.isFocused }
@@ -217,7 +240,7 @@ fun TvCategoryFiltersContent(
                                         runCatching { firstCategoryFocusRequester.requestFocus() }
                                         true
                                     }
-                                    Key.DirectionCenter, Key.Enter -> {
+                                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
                                         when (selectedType) {
                                             FilterCategoryType.LIVE -> {
                                                 currentCategories.forEach { sessionManager.setLiveCategoryVisibility(it.id, false) }
@@ -239,8 +262,10 @@ fun TvCategoryFiltersContent(
                                 }
                             } else false
                         }
-                        .focusable()
-                        .clickable {
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
                             when (selectedType) {
                                 FilterCategoryType.LIVE -> {
                                     currentCategories.forEach { sessionManager.setLiveCategoryVisibility(it.id, false) }
@@ -257,11 +282,21 @@ fun TvCategoryFiltersContent(
                             }
                             onFiltersUpdated()
                         }
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .padding(horizontal = 14.dp, vertical = 7.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Icon(Icons.Default.VisibilityOff, contentDescription = null, tint = RedLive, modifier = Modifier.size(13.dp))
-                        Text("Tout masquer", color = RedLive, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.VisibilityOff,
+                            contentDescription = null,
+                            tint = if (isHideAllFocused) Color(0xFF0B101D) else RedLive,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "Tout masquer",
+                            color = if (isHideAllFocused) Color(0xFF0B101D) else RedLive,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
@@ -269,20 +304,23 @@ fun TvCategoryFiltersContent(
 
         // Sélecteur de type : Direct TV vs Films VOD vs Séries VOD
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val isLiveSelected = selectedType == FilterCategoryType.LIVE
+            val isMoviesSelected = selectedType == FilterCategoryType.MOVIES
+            val isSeriesSelected = selectedType == FilterCategoryType.SERIES
+
             if (liveCategories.isNotEmpty()) {
                 FilterTypeTabButton(
                     title = "Chaînes TV (${liveCategories.size})",
                     icon = Icons.Default.Tv,
-                    isSelected = selectedType == FilterCategoryType.LIVE,
-                    focusRequester = liveTabRequester,
+                    isSelected = isLiveSelected,
+                    focusRequester = if (isLiveSelected) mainTabRequester else liveTabRequester,
                     onNavigateLeft = onNavigateLeftToSidebar,
                     onNavigateDown = { runCatching { firstCategoryFocusRequester.requestFocus() } },
+                    onBack = onNavigateLeftToSidebar,
                     onClick = { selectedType = FilterCategoryType.LIVE }
                 )
             }
@@ -290,19 +328,22 @@ fun TvCategoryFiltersContent(
             FilterTypeTabButton(
                 title = "${strings.movieCategories} (${vodCategories.size})",
                 icon = Icons.Default.Movie,
-                isSelected = selectedType == FilterCategoryType.MOVIES,
-                focusRequester = if (liveCategories.isEmpty()) mainTabRequester else moviesTabRequester,
+                isSelected = isMoviesSelected,
+                focusRequester = if (isMoviesSelected || (liveCategories.isEmpty() && isLiveSelected)) mainTabRequester else moviesTabRequester,
                 onNavigateLeft = if (liveCategories.isEmpty()) onNavigateLeftToSidebar else null,
                 onNavigateDown = { runCatching { firstCategoryFocusRequester.requestFocus() } },
+                onBack = onNavigateLeftToSidebar,
                 onClick = { selectedType = FilterCategoryType.MOVIES }
             )
 
             FilterTypeTabButton(
                 title = "${strings.seriesCategories} (${seriesCategories.size})",
                 icon = Icons.Default.VideoLibrary,
-                isSelected = selectedType == FilterCategoryType.SERIES,
-                focusRequester = seriesTabRequester,
+                isSelected = isSeriesSelected,
+                focusRequester = if (isSeriesSelected || (liveCategories.isEmpty() && vodCategories.isEmpty())) mainTabRequester else seriesTabRequester,
+                onNavigateLeft = if (liveCategories.isEmpty() && vodCategories.isEmpty()) onNavigateLeftToSidebar else null,
                 onNavigateDown = { runCatching { firstCategoryFocusRequester.requestFocus() } },
+                onBack = onNavigateLeftToSidebar,
                 onClick = { selectedType = FilterCategoryType.SERIES }
             )
 
@@ -406,12 +447,14 @@ fun TvCategoryFiltersContent(
                                         Key.DirectionUp -> {
                                             if (isTopRow) {
                                                 runCatching {
-                                                    when (selectedType) {
-                                                        FilterCategoryType.LIVE -> liveTabRequester.requestFocus()
-                                                        FilterCategoryType.MOVIES -> moviesTabRequester.requestFocus()
-                                                        FilterCategoryType.SERIES -> seriesTabRequester.requestFocus()
-                                                    }
+                                                    mainTabRequester.requestFocus()
                                                 }
+                                                true
+                                            } else false
+                                        }
+                                        Key.Back -> {
+                                            if (onNavigateLeftToSidebar != null) {
+                                                onNavigateLeftToSidebar()
                                                 true
                                             } else false
                                         }
@@ -504,26 +547,20 @@ private fun FilterTypeTabButton(
     focusRequester: FocusRequester,
     onNavigateLeft: (() -> Unit)? = null,
     onNavigateDown: (() -> Unit)? = null,
+    onBack: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.08f else 1.0f,
+        label = "filter_tab_scale"
+    )
 
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(
-                when {
-                    isFocused -> Color(0xFF283652)
-                    isSelected -> NoosBlue.copy(alpha = 0.35f)
-                    else -> GlassSurface
-                }
-            )
-            .border(
-                width = if (isFocused) 2.5.dp else 1.dp,
-                color = if (isFocused) FocusGlow else if (isSelected) NoosCyan.copy(alpha = 0.6f) else GlassBorder,
-                shape = RoundedCornerShape(50)
-            )
+            .scale(scale)
             .focusRequester(focusRequester)
+            .onFocusChanged { isFocused = it.isFocused }
             .onPreviewKeyEvent { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyDown) {
                     when (keyEvent.key) {
@@ -539,13 +576,44 @@ private fun FilterTypeTabButton(
                                 true
                             } else false
                         }
+                        Key.Back -> {
+                            if (onBack != null) {
+                                onBack()
+                                true
+                            } else if (onNavigateLeft != null) {
+                                onNavigateLeft()
+                                true
+                            } else false
+                        }
+                        Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                            onClick()
+                            true
+                        }
                         else -> false
                     }
                 } else false
             }
-            .onFocusChanged { isFocused = it.isFocused }
-            .focusable()
-            .clickable { onClick() }
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onClick() }
+            .clip(RoundedCornerShape(50))
+            .background(
+                when {
+                    isFocused -> Color.White
+                    isSelected -> NoosBlue.copy(alpha = 0.35f)
+                    else -> GlassSurface
+                }
+            )
+            .border(
+                width = if (isFocused) 2.5.dp else 1.dp,
+                color = when {
+                    isFocused -> FocusGlow
+                    isSelected -> NoosCyan.copy(alpha = 0.7f)
+                    else -> GlassBorder
+                },
+                shape = RoundedCornerShape(50)
+            )
             .padding(horizontal = 16.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -556,12 +624,20 @@ private fun FilterTypeTabButton(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (isSelected || isFocused) NoosCyan else TextSecondary,
+                tint = when {
+                    isFocused -> Color(0xFF0B101D)
+                    isSelected -> NoosCyan
+                    else -> TextSecondary
+                },
                 modifier = Modifier.size(16.dp)
             )
             Text(
                 text = title,
-                color = if (isSelected || isFocused) Color.White else TextSecondary,
+                color = when {
+                    isFocused -> Color(0xFF0B101D)
+                    isSelected -> Color.White
+                    else -> TextSecondary
+                },
                 fontSize = 12.sp,
                 fontWeight = if (isSelected || isFocused) FontWeight.Bold else FontWeight.Normal
             )

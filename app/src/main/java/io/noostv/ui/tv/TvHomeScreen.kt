@@ -358,6 +358,20 @@ fun TvHomeScreen(
                         }
                         handled = true
                     }
+                    TvNavTab.FILTERS -> {
+                        coroutineScope.launch {
+                            val r0 = runCatching { contentFocusRequesters[TvNavTab.FILTERS]?.requestFocus() }
+                            if (r0.isFailure) {
+                                kotlinx.coroutines.delay(20)
+                                val r1 = runCatching { contentFocusRequesters[TvNavTab.FILTERS]?.requestFocus() }
+                                if (r1.isFailure) {
+                                    kotlinx.coroutines.delay(50)
+                                    runCatching { contentFocusRequesters[TvNavTab.FILTERS]?.requestFocus() }
+                                }
+                            }
+                        }
+                        handled = true
+                    }
                     else -> {
                         coroutineScope.launch {
                             kotlinx.coroutines.delay(20)
