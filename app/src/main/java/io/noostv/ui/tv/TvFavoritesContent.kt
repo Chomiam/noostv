@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.noostv.core.localization.LocalStrings
 import io.noostv.core.storage.SessionManager
+import io.noostv.data.model.Category
 import io.noostv.data.model.Channel
 import io.noostv.data.model.Series
 import io.noostv.data.model.VodMovie
@@ -44,7 +45,8 @@ enum class FavoriteFilterTab {
     ALL,
     CHANNELS,
     MOVIES,
-    SERIES
+    SERIES,
+    CATEGORIES
 }
 
 /**
@@ -56,6 +58,9 @@ fun TvFavoritesContent(
     channels: List<Channel>,
     movies: List<VodMovie>,
     series: List<Series>,
+    categories: List<Category> = emptyList(),
+    vodCategories: List<Category> = emptyList(),
+    seriesCategories: List<Category> = emptyList(),
     sessionManager: SessionManager,
     focusRequester: FocusRequester? = null,
     onNavigateLeftToSidebar: (() -> Unit)? = null,
@@ -179,10 +184,24 @@ fun TvFavoritesContent(
                 isSelected = selectedFilter == FavoriteFilterTab.SERIES,
                 onClick = { selectedFilter = FavoriteFilterTab.SERIES }
             )
+            FavTabChip(
+                label = "⚙️ Filtres catégories",
+                isSelected = selectedFilter == FavoriteFilterTab.CATEGORIES,
+                onClick = { selectedFilter = FavoriteFilterTab.CATEGORIES }
+            )
         }
 
-        // Contenu ou Empty State
-        if (totalFavorites == 0) {
+        // Contenu
+        if (selectedFilter == FavoriteFilterTab.CATEGORIES) {
+            TvCategoryFiltersContent(
+                liveCategories = categories,
+                vodCategories = vodCategories,
+                seriesCategories = seriesCategories,
+                sessionManager = sessionManager,
+                onNavigateLeftToSidebar = onNavigateLeftToSidebar,
+                onFiltersUpdated = { refreshFavorites() }
+            )
+        } else if (totalFavorites == 0) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()

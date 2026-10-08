@@ -33,7 +33,16 @@ Ce document définit les règles impératives, les consignes d'architecture et l
 
 ## 🛠️ Environnement & Commandes de Build
 
-L'environnement de développement nécessite le **JDK 21** pour compiler correctement le projet Gradle / Kotlin.
+> [!CAUTION]
+> ### ☕ RÈGLE IMPÉRATIVE JAVA : UTILISATION EXCLUSIVE DU JDK 21 LTS
+> **IL EST FORMELLEMENT INTERDIT DE COMPILER AVEC UNE ANCIENNE VERSION DE JAVA (JDK 17, JDK 11 OU INFÉRIEURE).**
+> Toute compilation (Debug ou Release) doit s'effectuer **EXCLUSIVEMENT** avec le JDK 21 installé à :
+> `/home/chomiam/.local/share/jdk-21`
+> 
+> Avant toute invocation de `./gradlew`, il est obligatoire d'exporter les variables :
+> ```bash
+> export JAVA_HOME=/home/chomiam/.local/share/jdk-21 && export PATH=$JAVA_HOME/bin:$PATH
+> ```
 
 ### 1. Variables d'environnement requises
 Toujours exporter `JAVA_HOME` vers JDK 21 avant toute commande Gradle :

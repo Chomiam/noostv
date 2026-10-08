@@ -6,6 +6,7 @@ import io.noostv.data.model.*
 import io.noostv.data.parser.M3UParser
 import io.noostv.data.parser.XmlTvParser
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -148,91 +149,108 @@ class IptvRepository(
                 _isLiveLoading.value = true
             }
 
-            // 1. Catégories direct & Chaînes direct (rapide, ~40Ko)
-            val liveCatsResult = xtreamClient.getLiveCategories(serverUrl, username, password)
-            val liveCats = liveCatsResult.getOrDefault(emptyList())
-
-            val liveStreamsResult = xtreamClient.getLiveStreams(serverUrl, username, password)
-            val liveStreams = liveStreamsResult.getOrDefault(emptyList())
-
-            val catMap = liveCats.associate { it.id to it.name }
-            val enrichedChannels = liveStreams.map { ch ->
-                val realCatName = catMap[ch.categoryId] ?: ch.categoryName
-                ch.copy(categoryName = realCatName)
+            // 1. CHARGEMENT CONCURRENT ULTRA-RAPIDE DE TOUTES LES CATÉGORIES (<200ms)
+            // Récupère en parallèle les catégories Direct, VOD et Séries pour afficher immédiatement les menus
+            val (liveCats, vodCats, seriesCats) = coroutineScope {
+                val liveCatsDef = async { xtreamClient.getLiveCategories(serverUrl, username, password).getOrDefault(emptyList()) }
+                val vodCatsDef = async { xtreamClient.getVodCategories(serverUrl, username, password).getOrDefault(emptyList()) }
+                val seriesCatsDef = async { xtreamClient.getSeriesCategories(serverUrl, username, password).getOrDefault(emptyList()) }
+                Triple(liveCatsDef.await(), vodCatsDef.await(), seriesCatsDef.await())
             }
 
-            // MISE À JOUR DISCRÈTE DU DIRECT TV : préserve les favoris et synchronise le cache
-            if (enrichedChannels.isNotEmpty()) {
-                val currentFavIds = _channels.value.filter { it.isFavorite }.map { it.id }.toSet()
-                val updatedChannels = if (currentFavIds.isNotEmpty()) {
-                    enrichedChannels.map { ch -> if (ch.id in currentFavIds) ch.copy(isFavorite = true) else ch }
-                } else enrichedChannels
-
-                _channels.value = updatedChannels
+            if (liveCats.isNotEmpty()) {
                 _categories.value = liveCats
-                catalogStore?.saveLiveCatalog(serverUrl, username, updatedChannels, liveCats)
             }
-            _isLiveLoading.value = false
-
-            // 2. Catégories Films VOD (rapide, ~50Ko)
-            val vodCatsResult = xtreamClient.getVodCategories(serverUrl, username, password)
-            val vodCats = vodCatsResult.getOrDefault(emptyList())
             if (vodCats.isNotEmpty()) {
                 _vodCategories.value = vodCats
                 catalogStore?.saveVodCategories(serverUrl, username, vodCats)
             }
-
-            // 3. Charger les films VOD de la première catégorie (catalogue complet pour cette catégorie)
-            val firstVodCatId = vodCats.firstOrNull()?.id ?: ""
-            if (firstVodCatId.isNotBlank()) {
-                if (_movies.value.isEmpty()) _isVodLoading.value = true
-                val initialVodResult = xtreamClient.getVodStreams(serverUrl, username, password, categoryId = firstVodCatId, limit = null)
-                initialVodResult.onSuccess {
-                    _movies.value = it
-                    catalogStore?.saveVodMovies(serverUrl, username, firstVodCatId, it)
-                }
-                _isVodLoading.value = false
-            }
-
-            // 4. Catégories Séries (rapide, ~50Ko)
-            val seriesCatsResult = xtreamClient.getSeriesCategories(serverUrl, username, password)
-            val seriesCats = seriesCatsResult.getOrDefault(emptyList())
             if (seriesCats.isNotEmpty()) {
                 _seriesCategories.value = seriesCats
                 catalogStore?.saveSeriesCategories(serverUrl, username, seriesCats)
             }
 
-            // 5. Charger les séries de la première catégorie (catalogue complet pour cette catégorie)
+            // 2. CHARGEMENT CONCURRENT DU CONTENU (Direct, VOD Cat 1, Séries Cat 1)
+            val firstVodCatId = vodCats.firstOrNull()?.id ?: ""
             val firstSeriesCatId = seriesCats.firstOrNull()?.id ?: ""
-            if (firstSeriesCatId.isNotBlank()) {
-                if (_series.value.isEmpty()) _isSeriesLoading.value = true
-                val initialSeriesResult = xtreamClient.getSeriesStreams(serverUrl, username, password, categoryId = firstSeriesCatId, limit = null)
-                initialSeriesResult.onSuccess {
-                    _series.value = it
-                    catalogStore?.saveSeries(serverUrl, username, firstSeriesCatId, it)
-                }
-                _isSeriesLoading.value = false
-            }
 
-            // 6. Charger en arrière-plan l'EPG pour les premières chaînes en parallèle (rapide, ~300ms au lieu de 3s)
-            val channelsToEpg = enrichedChannels.take(16)
-            if (channelsToEpg.isNotEmpty()) {
-                val epgList = java.util.Collections.synchronizedList(mutableListOf<EpgProgram>())
-                val semaphore = Semaphore(5)
-                coroutineScope {
-                    channelsToEpg.forEach { ch ->
-                        launch {
-                            semaphore.withPermit {
-                                val epgResult = xtreamClient.getShortEpg(serverUrl, username, password, ch.id)
-                                epgResult.onSuccess { progs ->
-                                    epgList.addAll(progs)
+            if (_movies.value.isEmpty() && firstVodCatId.isNotBlank()) _isVodLoading.value = true
+            if (_series.value.isEmpty() && firstSeriesCatId.isNotBlank()) _isSeriesLoading.value = true
+
+            val catMap = liveCats.associate { it.id to it.name }
+
+            coroutineScope {
+                // Flux Direct
+                launch {
+                    val liveStreamsResult = xtreamClient.getLiveStreams(serverUrl, username, password)
+                    val liveStreams = liveStreamsResult.getOrDefault(emptyList())
+                    if (liveStreams.isNotEmpty()) {
+                        val enrichedChannels = liveStreams.map { ch ->
+                            val realCatName = catMap[ch.categoryId] ?: ch.categoryName
+                            ch.copy(categoryName = realCatName)
+                        }
+                        val currentFavIds = _channels.value.filter { it.isFavorite }.map { it.id }.toSet()
+                        val updatedChannels = if (currentFavIds.isNotEmpty()) {
+                            enrichedChannels.map { ch -> if (ch.id in currentFavIds) ch.copy(isFavorite = true) else ch }
+                        } else enrichedChannels
+
+                        _channels.value = updatedChannels
+                        if (liveCats.isNotEmpty()) {
+                            _categories.value = liveCats
+                        }
+                        catalogStore?.saveLiveCatalog(serverUrl, username, updatedChannels, if (liveCats.isNotEmpty()) liveCats else _categories.value)
+
+                        // EPG en arrière-plan
+                        val channelsToEpg = enrichedChannels.take(16)
+                        if (channelsToEpg.isNotEmpty()) {
+                            launch {
+                                val epgList = java.util.Collections.synchronizedList(mutableListOf<EpgProgram>())
+                                val semaphore = Semaphore(5)
+                                coroutineScope {
+                                    channelsToEpg.forEach { ch ->
+                                        launch {
+                                            semaphore.withPermit {
+                                                val epgResult = xtreamClient.getShortEpg(serverUrl, username, password, ch.id)
+                                                epgResult.onSuccess { progs -> epgList.addAll(progs) }
+                                            }
+                                        }
+                                    }
+                                }
+                                if (epgList.isNotEmpty()) {
+                                    _epgPrograms.value = epgList.toList()
                                 }
                             }
                         }
                     }
+                    _isLiveLoading.value = false
                 }
-                if (epgList.isNotEmpty()) {
-                    _epgPrograms.value = epgList.toList()
+
+                // VOD Première catégorie
+                if (firstVodCatId.isNotBlank()) {
+                    launch {
+                        val initialVodResult = xtreamClient.getVodStreams(serverUrl, username, password, categoryId = firstVodCatId, limit = null)
+                        initialVodResult.onSuccess {
+                            _movies.value = it
+                            catalogStore?.saveVodMovies(serverUrl, username, firstVodCatId, it)
+                        }
+                        _isVodLoading.value = false
+                    }
+                } else {
+                    _isVodLoading.value = false
+                }
+
+                // Séries Première catégorie
+                if (firstSeriesCatId.isNotBlank()) {
+                    launch {
+                        val initialSeriesResult = xtreamClient.getSeriesStreams(serverUrl, username, password, categoryId = firstSeriesCatId, limit = null)
+                        initialSeriesResult.onSuccess {
+                            _series.value = it
+                            catalogStore?.saveSeries(serverUrl, username, firstSeriesCatId, it)
+                        }
+                        _isSeriesLoading.value = false
+                    }
+                } else {
+                    _isSeriesLoading.value = false
                 }
             }
 

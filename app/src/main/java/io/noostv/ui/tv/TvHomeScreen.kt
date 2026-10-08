@@ -262,12 +262,12 @@ fun TvHomeScreen(
     // Persistance et suivi des chaînes favorites
     var favoriteIds by remember { mutableStateOf(sessionManager.getFavoriteChannelIds()) }
 
-    // Filtrage des chaînes en direct selon la catégorie sélectionnée
-    val filteredChannels = remember(channels, selectedLiveCategory, favoriteIds) {
+    // Filtrage des chaînes en direct selon la catégorie sélectionnée et les filtres de visibilité
+    val filteredChannels = remember(channels, selectedLiveCategory, favoriteIds, activeProfile) {
         if (selectedLiveCategory.startsWith("⭐ Favoris")) {
             channels.filter { favoriteIds.contains(it.id) }
         } else if (selectedLiveCategory == "Toutes") {
-            channels
+            channels.filter { sessionManager.isLiveCategoryVisible(it.categoryId) }
         } else {
             channels.filter { it.categoryName.equals(selectedLiveCategory, ignoreCase = true) || it.categoryId == selectedLiveCategory }
         }
@@ -352,12 +352,17 @@ fun TvHomeScreen(
             when (selectedTab) {
                 // ==================== 1. ONGLET TV (DIRECT) ====================
                 TvNavTab.TV -> {
-                    val liveCatNames = remember(categories, channels, favoriteIds) {
+                    val liveCatNames = remember(categories, channels, favoriteIds, activeProfile) {
                         val list = mutableListOf("Toutes")
                         if (favoriteIds.isNotEmpty()) {
                             list.add("⭐ Favoris (${favoriteIds.size})")
                         }
-                        list.addAll(if (categories.isNotEmpty()) categories.map { it.name } else channels.map { it.categoryName }.distinct())
+                        val visibleCats = if (categories.isNotEmpty()) {
+                            categories.filter { sessionManager.isLiveCategoryVisible(it.id) }.map { it.name }
+                        } else {
+                            channels.map { it.categoryName }.distinct()
+                        }
+                        list.addAll(visibleCats)
                         list
                     }
 
@@ -502,11 +507,9 @@ fun TvHomeScreen(
                             // Restauration du focus au montage initial si retour du lecteur
                             var hasRestoredMovieMountFocus by remember { mutableStateOf(false) }
                             LaunchedEffect(pagedMovies.size, selectedTab) {
-                                if (!hasRestoredMovieMountFocus && selectedTab == TvNavTab.MOVIES && pagedMovies.isNotEmpty()) {
+                                if (!hasRestoredMovieMountFocus && initialTab == TvNavTab.MOVIES && selectedTab == TvNavTab.MOVIES && pagedMovies.isNotEmpty() && lastFocusedMovieId != null) {
                                     hasRestoredMovieMountFocus = true
-                                    val targetIdx = if (lastFocusedMovieId != null) {
-                                        pagedMovies.indexOfFirst { it.id == lastFocusedMovieId }.takeIf { it >= 0 } ?: 0
-                                    } else 0
+                                    val targetIdx = pagedMovies.indexOfFirst { it.id == lastFocusedMovieId }.takeIf { it >= 0 } ?: 0
                                     if (targetIdx in pagedMovies.indices) {
                                         moviesGridState.scrollToItem(targetIdx)
                                         kotlinx.coroutines.delay(100)
@@ -700,11 +703,9 @@ fun TvHomeScreen(
                             // Restauration du focus au montage initial si retour du lecteur
                             var hasRestoredSeriesMountFocus by remember { mutableStateOf(false) }
                             LaunchedEffect(pagedSeries.size, selectedTab) {
-                                if (!hasRestoredSeriesMountFocus && selectedTab == TvNavTab.SERIES && pagedSeries.isNotEmpty()) {
+                                if (!hasRestoredSeriesMountFocus && initialTab == TvNavTab.SERIES && selectedTab == TvNavTab.SERIES && pagedSeries.isNotEmpty() && lastFocusedSeriesId != null) {
                                     hasRestoredSeriesMountFocus = true
-                                    val targetIdx = if (lastFocusedSeriesId != null) {
-                                        pagedSeries.indexOfFirst { it.id == lastFocusedSeriesId }.takeIf { it >= 0 } ?: 0
-                                    } else 0
+                                    val targetIdx = pagedSeries.indexOfFirst { it.id == lastFocusedSeriesId }.takeIf { it >= 0 } ?: 0
                                     if (targetIdx in pagedSeries.indices) {
                                         seriesGridState.scrollToItem(targetIdx)
                                         kotlinx.coroutines.delay(100)
@@ -824,6 +825,9 @@ fun TvHomeScreen(
                         channels = channels,
                         movies = movies,
                         series = series,
+                        categories = categories,
+                        vodCategories = vodCategories,
+                        seriesCategories = seriesCategories,
                         sessionManager = sessionManager,
                         focusRequester = contentFocusRequesters[TvNavTab.FAVORITES]!!,
                         onNavigateLeftToSidebar = {
@@ -844,6 +848,7 @@ fun TvHomeScreen(
                 // ==================== 6. ONGLET FILTRES DE CATÉGORIES ====================
                 TvNavTab.FILTERS -> {
                     TvCategoryFiltersContent(
+                        liveCategories = categories,
                         vodCategories = vodCategories,
                         seriesCategories = seriesCategories,
                         sessionManager = sessionManager,
@@ -988,8 +993,12 @@ fun TvSidebar(
                     .clip(RoundedCornerShape(18.dp))
                     .focusRequester(myRequester)
                     .focusProperties {
-                        if (contentFocusRequester != null) {
-                            right = contentFocusRequester
+                        // Assure la continuité verticale stricte entre les onglets du volet sans déborder vers la droite
+                        if (nextTab != null) {
+                            sidebarFocusRequesters[nextTab]?.let { down = it }
+                        }
+                        if (prevTab != null) {
+                            sidebarFocusRequesters[prevTab]?.let { up = it }
                         }
                     }
                     .onFocusChanged {
@@ -1012,13 +1021,13 @@ fun TvSidebar(
                                 }
                                 Key.DirectionDown -> {
                                     if (nextTab != null) {
-                                        sidebarFocusRequesters[nextTab]?.requestFocus()
+                                        runCatching { sidebarFocusRequesters[nextTab]?.requestFocus() }
                                         true
                                     } else false
                                 }
                                 Key.DirectionUp -> {
                                     if (prevTab != null) {
-                                        sidebarFocusRequesters[prevTab]?.requestFocus()
+                                        runCatching { sidebarFocusRequesters[prevTab]?.requestFocus() }
                                         true
                                     } else false
                                 }
@@ -1235,9 +1244,6 @@ fun TvCategoryChipsRow(
             Box(
                 modifier = chipMod
                     .focusProperties {
-                        if (downFocusRequester != null) {
-                            down = downFocusRequester
-                        }
                         if (index == 0 && leftFocusRequester != null) {
                             left = leftFocusRequester
                         }

@@ -181,13 +181,23 @@ class SessionManager(context: Context) {
         }
 
         if (!parsed.isNullOrEmpty()) {
+            val sanitized = parsed.map { prof ->
+                prof.copy(
+                    favoriteChannelIds = prof.favoriteChannelIds ?: emptySet(),
+                    favoriteMovieIds = prof.favoriteMovieIds ?: emptySet(),
+                    favoriteSeriesIds = prof.favoriteSeriesIds ?: emptySet(),
+                    hiddenVodCategoryIds = prof.hiddenVodCategoryIds ?: emptySet(),
+                    hiddenSeriesCategoryIds = prof.hiddenSeriesCategoryIds ?: emptySet(),
+                    hiddenLiveCategoryIds = prof.hiddenLiveCategoryIds ?: emptySet()
+                )
+            }
             // S'assurer que le fichier miroir est toujours créé sur le disque
             if (!profilesBackupFile.exists()) {
                 try {
                     profilesBackupFile.writeText(json)
                 } catch (ignored: Exception) {}
             }
-            return parsed
+            return sanitized
         }
 
         // Tenter la sauvegarde miroir si le JSON de prefs était altéré
@@ -196,8 +206,18 @@ class SessionManager(context: Context) {
                 val backupJson = profilesBackupFile.readText()
                 val backupList: List<UserProfile>? = gson.fromJson(backupJson, type)
                 if (!backupList.isNullOrEmpty()) {
+                    val sanitizedBackup = backupList.map { prof ->
+                        prof.copy(
+                            favoriteChannelIds = prof.favoriteChannelIds ?: emptySet(),
+                            favoriteMovieIds = prof.favoriteMovieIds ?: emptySet(),
+                            favoriteSeriesIds = prof.favoriteSeriesIds ?: emptySet(),
+                            hiddenVodCategoryIds = prof.hiddenVodCategoryIds ?: emptySet(),
+                            hiddenSeriesCategoryIds = prof.hiddenSeriesCategoryIds ?: emptySet(),
+                            hiddenLiveCategoryIds = prof.hiddenLiveCategoryIds ?: emptySet()
+                        )
+                    }
                     prefs.edit().putString(KEY_PROFILES_JSON, backupJson).commit()
-                    return backupList
+                    return sanitizedBackup
                 }
             } catch (ignored: Exception) {}
         }
@@ -298,12 +318,12 @@ class SessionManager(context: Context) {
 
     // ==================== FAVORIS PAR PROFIL ====================
 
-    fun getFavoriteChannelIds(): Set<String> = getActiveProfile().favoriteChannelIds
+    fun getFavoriteChannelIds(): Set<String> = getActiveProfile().favoriteChannelIds ?: emptySet()
 
     fun toggleFavoriteChannel(id: String): Boolean {
         var isFav = false
         updateActiveProfile { prof ->
-            val set = prof.favoriteChannelIds.toMutableSet()
+            val set = (prof.favoriteChannelIds ?: emptySet()).toMutableSet()
             if (set.contains(id)) {
                 set.remove(id)
                 isFav = false
@@ -318,12 +338,12 @@ class SessionManager(context: Context) {
 
     fun isFavoriteChannel(id: String): Boolean = getFavoriteChannelIds().contains(id)
 
-    fun getFavoriteMovieIds(): Set<String> = getActiveProfile().favoriteMovieIds
+    fun getFavoriteMovieIds(): Set<String> = getActiveProfile().favoriteMovieIds ?: emptySet()
 
     fun toggleFavoriteMovie(id: String): Boolean {
         var isFav = false
         updateActiveProfile { prof ->
-            val set = prof.favoriteMovieIds.toMutableSet()
+            val set = (prof.favoriteMovieIds ?: emptySet()).toMutableSet()
             if (set.contains(id)) {
                 set.remove(id)
                 isFav = false
@@ -338,12 +358,12 @@ class SessionManager(context: Context) {
 
     fun isFavoriteMovie(id: String): Boolean = getFavoriteMovieIds().contains(id)
 
-    fun getFavoriteSeriesIds(): Set<String> = getActiveProfile().favoriteSeriesIds
+    fun getFavoriteSeriesIds(): Set<String> = getActiveProfile().favoriteSeriesIds ?: emptySet()
 
     fun toggleFavoriteSeries(id: String): Boolean {
         var isFav = false
         updateActiveProfile { prof ->
-            val set = prof.favoriteSeriesIds.toMutableSet()
+            val set = (prof.favoriteSeriesIds ?: emptySet()).toMutableSet()
             if (set.contains(id)) {
                 set.remove(id)
                 isFav = false
@@ -360,14 +380,14 @@ class SessionManager(context: Context) {
 
     // ==================== FILTRES DE CATÉGORIES PAR PROFIL ====================
 
-    fun getHiddenVodCategoryIds(): Set<String> = getActiveProfile().hiddenVodCategoryIds
+    fun getHiddenVodCategoryIds(): Set<String> = getActiveProfile().hiddenVodCategoryIds ?: emptySet()
 
     fun isVodCategoryVisible(categoryId: String): Boolean = !getHiddenVodCategoryIds().contains(categoryId)
 
     fun toggleVodCategoryVisibility(categoryId: String): Boolean {
         var isNowVisible = false
         updateActiveProfile { prof ->
-            val set = prof.hiddenVodCategoryIds.toMutableSet()
+            val set = (prof.hiddenVodCategoryIds ?: emptySet()).toMutableSet()
             if (set.contains(categoryId)) {
                 set.remove(categoryId)
                 isNowVisible = true
@@ -382,7 +402,7 @@ class SessionManager(context: Context) {
 
     fun setVodCategoryVisibility(categoryId: String, isVisible: Boolean) {
         updateActiveProfile { prof ->
-            val set = prof.hiddenVodCategoryIds.toMutableSet()
+            val set = (prof.hiddenVodCategoryIds ?: emptySet()).toMutableSet()
             if (isVisible) set.remove(categoryId) else set.add(categoryId)
             prof.copy(hiddenVodCategoryIds = set)
         }
@@ -394,14 +414,14 @@ class SessionManager(context: Context) {
         }
     }
 
-    fun getHiddenSeriesCategoryIds(): Set<String> = getActiveProfile().hiddenSeriesCategoryIds
+    fun getHiddenSeriesCategoryIds(): Set<String> = getActiveProfile().hiddenSeriesCategoryIds ?: emptySet()
 
     fun isSeriesCategoryVisible(categoryId: String): Boolean = !getHiddenSeriesCategoryIds().contains(categoryId)
 
     fun toggleSeriesCategoryVisibility(categoryId: String): Boolean {
         var isNowVisible = false
         updateActiveProfile { prof ->
-            val set = prof.hiddenSeriesCategoryIds.toMutableSet()
+            val set = (prof.hiddenSeriesCategoryIds ?: emptySet()).toMutableSet()
             if (set.contains(categoryId)) {
                 set.remove(categoryId)
                 isNowVisible = true
@@ -416,7 +436,7 @@ class SessionManager(context: Context) {
 
     fun setSeriesCategoryVisibility(categoryId: String, isVisible: Boolean) {
         updateActiveProfile { prof ->
-            val set = prof.hiddenSeriesCategoryIds.toMutableSet()
+            val set = (prof.hiddenSeriesCategoryIds ?: emptySet()).toMutableSet()
             if (isVisible) set.remove(categoryId) else set.add(categoryId)
             prof.copy(hiddenSeriesCategoryIds = set)
         }
@@ -425,6 +445,40 @@ class SessionManager(context: Context) {
     fun showAllSeriesCategories() {
         updateActiveProfile { prof ->
             prof.copy(hiddenSeriesCategoryIds = emptySet())
+        }
+    }
+
+    fun getHiddenLiveCategoryIds(): Set<String> = getActiveProfile().hiddenLiveCategoryIds ?: emptySet()
+
+    fun isLiveCategoryVisible(categoryId: String): Boolean = !getHiddenLiveCategoryIds().contains(categoryId)
+
+    fun toggleLiveCategoryVisibility(categoryId: String): Boolean {
+        var isNowVisible = false
+        updateActiveProfile { prof ->
+            val set = (prof.hiddenLiveCategoryIds ?: emptySet()).toMutableSet()
+            if (set.contains(categoryId)) {
+                set.remove(categoryId)
+                isNowVisible = true
+            } else {
+                set.add(categoryId)
+                isNowVisible = false
+            }
+            prof.copy(hiddenLiveCategoryIds = set)
+        }
+        return isNowVisible
+    }
+
+    fun setLiveCategoryVisibility(categoryId: String, isVisible: Boolean) {
+        updateActiveProfile { prof ->
+            val set = (prof.hiddenLiveCategoryIds ?: emptySet()).toMutableSet()
+            if (isVisible) set.remove(categoryId) else set.add(categoryId)
+            prof.copy(hiddenLiveCategoryIds = set)
+        }
+    }
+
+    fun showAllLiveCategories() {
+        updateActiveProfile { prof ->
+            prof.copy(hiddenLiveCategoryIds = emptySet())
         }
     }
 

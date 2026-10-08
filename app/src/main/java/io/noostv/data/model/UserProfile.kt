@@ -18,7 +18,8 @@ data class UserProfile(
     val favoriteMovieIds: Set<String> = emptySet(),
     val favoriteSeriesIds: Set<String> = emptySet(),
     val hiddenVodCategoryIds: Set<String> = emptySet(),
-    val hiddenSeriesCategoryIds: Set<String> = emptySet()
+    val hiddenSeriesCategoryIds: Set<String> = emptySet(),
+    val hiddenLiveCategoryIds: Set<String> = emptySet()
 ) {
     companion object {
         val AVATAR_COLORS = listOf(
