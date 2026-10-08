@@ -1,8 +1,10 @@
 package io.noostv.ui.player
 
+import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
@@ -28,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -54,6 +57,8 @@ import io.noostv.core.player.PlayerEngine
 import io.noostv.core.player.TrackInfo
 import io.noostv.core.player.VideoTrackInfo
 import io.noostv.core.player.PlaybackStats
+import io.noostv.core.player.formatDuration
+import io.noostv.core.storage.SessionManager
 import io.noostv.data.model.Channel
 import io.noostv.data.model.EpgProgram
 import io.noostv.ui.common.HdrBadge
@@ -62,6 +67,7 @@ import io.noostv.ui.common.ResolutionBadge
 import io.noostv.ui.theme.*
 import io.noostv.ui.tv.EpgProvider
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 /**
@@ -88,6 +94,9 @@ fun NoosPlayerScreen(
     channel: Channel? = null,
     channels: List<Channel> = emptyList(),
     epgPrograms: List<EpgProgram> = emptyList(),
+    contentId: String? = null,
+    sessionManager: SessionManager? = null,
+    initialPositionMs: Long = 0L,
     onBack: () -> Unit,
     onNextChannel: (() -> Unit)? = null,
     onPreviousChannel: (() -> Unit)? = null,
@@ -96,6 +105,7 @@ fun NoosPlayerScreen(
     isPipMode: Boolean = false
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var isOsdVisible by remember { mutableStateOf(true) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     var selectedSettingsTab by remember { mutableStateOf(PlayerSettingsTab.INFO) }
@@ -119,12 +129,68 @@ fun NoosPlayerScreen(
     // Focus Requester pour capturer les boutons télécommande TV
     val playerFocusRequester = remember { FocusRequester() }
     val playPauseFocusRequester = remember { FocusRequester() }
+    val timelineFocusRequester = remember { FocusRequester() }
+    var isTimelineFocused by remember { mutableStateOf(false) }
 
     // Position et durée VOD
     var currentPositionMs by remember { mutableLongStateOf(playerEngine.currentPosition) }
     var durationMs by remember { mutableLongStateOf(playerEngine.duration) }
     var isUserScrubbing by remember { mutableStateOf(false) }
     var scrubbedPositionMs by remember { mutableFloatStateOf(0f) }
+
+    // Notification visuelle de reprise de lecture
+    var showResumeToast by remember { mutableStateOf(initialPositionMs > 10_000L) }
+    LaunchedEffect(showResumeToast) {
+        if (showResumeToast) {
+            delay(5000)
+            showResumeToast = false
+        }
+    }
+
+    // Protection anti-écran de veille Google (FLAG_KEEP_SCREEN_ON)
+    DisposableEffect(Unit) {
+        val window = (context as? Activity)?.window
+        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    // Sauvegarde régulière de la position de lecture pour la reprise (toutes les 5 secondes)
+    LaunchedEffect(isPlaying, isLive, contentId) {
+        if (!isLive && contentId != null && sessionManager != null) {
+            while (true) {
+                delay(5000)
+                if (isPlaying && durationMs > 0L) {
+                    val cur = playerEngine.currentPosition
+                    sessionManager.savePlaybackResume(
+                        contentId = contentId,
+                        title = title,
+                        positionMs = cur,
+                        durationMs = durationMs
+                    )
+                }
+            }
+        }
+    }
+
+    // Sauvegarde finale à la fermeture du lecteur
+    DisposableEffect(contentId) {
+        onDispose {
+            if (!isLive && contentId != null && sessionManager != null) {
+                val cur = playerEngine.currentPosition
+                val dur = playerEngine.duration
+                if (dur > 0L) {
+                    sessionManager.savePlaybackResume(
+                        contentId = contentId,
+                        title = title,
+                        positionMs = cur,
+                        durationMs = dur
+                    )
+                }
+            }
+        }
+    }
 
     // Programme en cours et suivant pour la chaîne active
     val currentLiveProg = remember(channel?.id, epgPrograms) {
@@ -166,16 +232,23 @@ fun NoosPlayerScreen(
         }
     }
 
-    // Masquage automatique de l'OSD après 4.5 secondes (si le dialogue n'est pas ouvert)
-    LaunchedEffect(isOsdVisible, showSettingsDialog) {
+    // Masquage automatique de l'OSD après 4.5 secondes (si le dialogue n'est pas ouvert et qu'on ne navigue pas sur la timeline)
+    var wasOsdVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(isOsdVisible, showSettingsDialog, isTimelineFocused, isUserScrubbing) {
         if (isOsdVisible && !showSettingsDialog) {
-            delay(100)
-            runCatching { playPauseFocusRequester.requestFocus() }
-            delay(4400)
-            if (!showSettingsDialog) {
-                isOsdVisible = false
+            if (!wasOsdVisible) {
+                wasOsdVisible = true
+                delay(100)
+                runCatching { playPauseFocusRequester.requestFocus() }
+            }
+            if (!isTimelineFocused && !isUserScrubbing) {
+                delay(4500)
+                if (!showSettingsDialog && !isTimelineFocused && !isUserScrubbing) {
+                    isOsdVisible = false
+                }
             }
         } else if (!isOsdVisible) {
+            wasOsdVisible = false
             runCatching { playerFocusRequester.requestFocus() }
         }
     }
@@ -494,6 +567,7 @@ fun NoosPlayerScreen(
                 PlayerView(ctx).apply {
                     useController = false
                     player = playerEngine.exoPlayer
+                    keepScreenOn = true
                     layoutParams = FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
@@ -502,6 +576,7 @@ fun NoosPlayerScreen(
             },
             update = { playerView ->
                 playerView.resizeMode = resizeMode
+                playerView.keepScreenOn = true
             }
         )
 
@@ -594,6 +669,52 @@ fun NoosPlayerScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(text = feedback, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // ------------------ 3.5. BANDEAU DE REPRISE DE LECTURE ------------------
+        AnimatedVisibility(
+            visible = showResumeToast,
+            enter = fadeIn() + slideInVertically(),
+            exit = fadeOut() + slideOutVertically(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 70.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xE6162032))
+                    .border(1.5.dp, Color(0xFF3888FF), RoundedCornerShape(14.dp))
+                    .padding(horizontal = 18.dp, vertical = 10.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
+                    Text(
+                        text = "Reprise de lecture à ${formatDuration(initialPositionMs)}",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Button(
+                        onClick = {
+                            playerEngine.seekTo(0)
+                            currentPositionMs = 0L
+                            showResumeToast = false
+                            contentId?.let { sessionManager?.clearPlaybackResume(it) }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF24334D)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Replay, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Recommencer", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -976,49 +1097,145 @@ fun NoosPlayerScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    // Pour la VOD : Seekbar interactive et compteurs de temps
-                    if (!isLive && durationMs > 0L) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(0.92f),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = formatDuration(if (isUserScrubbing) scrubbedPositionMs.toLong() else currentPositionMs),
-                                    color = Color.White,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
+                    // Pour la VOD : Seekbar interactive avec focus télécommande TV et compteurs de temps
+                    if (!isLive) {
+                        val maxDur = if (durationMs > 0L) durationMs.toFloat() else 1f
+                        val displayPos = (if (isUserScrubbing) scrubbedPositionMs else currentPositionMs.toFloat()).coerceIn(0f, maxDur)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.92f)
+                                .focusRequester(timelineFocusRequester)
+                                .focusProperties {
+                                    down = playPauseFocusRequester
+                                }
+                                .focusable()
+                                .onFocusChanged { isTimelineFocused = it.isFocused }
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyDown) {
+                                        when (event.key) {
+                                            Key.DirectionLeft -> {
+                                                val base = if (isUserScrubbing) scrubbedPositionMs else currentPositionMs.toFloat()
+                                                val step = if (durationMs > 0L) maxOf(10_000f, durationMs * 0.01f) else 10_000f // 10s ou 1%
+                                                scrubbedPositionMs = maxOf(0f, base - step)
+                                                isUserScrubbing = true
+                                                seekFeedback = "-${(step / 1000).toInt()}s"
+                                                true
+                                            }
+                                            Key.DirectionRight -> {
+                                                val base = if (isUserScrubbing) scrubbedPositionMs else currentPositionMs.toFloat()
+                                                val step = if (durationMs > 0L) maxOf(10_000f, durationMs * 0.01f) else 10_000f // 10s ou 1%
+                                                scrubbedPositionMs = if (durationMs > 0L) minOf(durationMs.toFloat(), base + step) else (base + step)
+                                                isUserScrubbing = true
+                                                seekFeedback = "+${(step / 1000).toInt()}s"
+                                                true
+                                            }
+                                            Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                                                if (isUserScrubbing) {
+                                                    playerEngine.seekTo(scrubbedPositionMs.toLong())
+                                                    currentPositionMs = scrubbedPositionMs.toLong()
+                                                    isUserScrubbing = false
+                                                } else {
+                                                    if (isPlaying) playerEngine.pause() else playerEngine.resume()
+                                                }
+                                                true
+                                            }
+                                            Key.DirectionDown -> {
+                                                if (isUserScrubbing) {
+                                                    playerEngine.seekTo(scrubbedPositionMs.toLong())
+                                                    currentPositionMs = scrubbedPositionMs.toLong()
+                                                    isUserScrubbing = false
+                                                }
+                                                coroutineScope.launch {
+                                                    playPauseFocusRequester.requestFocus()
+                                                }
+                                                true
+                                            }
+                                            else -> false
+                                        }
+                                    } else false
+                                }
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(if (isTimelineFocused) Color(0xFF1E2838) else Color(0x55000000))
+                                .border(
+                                    width = if (isTimelineFocused) 2.5.dp else 1.dp,
+                                    color = if (isTimelineFocused) Color(0xFF3888FF) else Color(0x22FFFFFF),
+                                    shape = RoundedCornerShape(16.dp)
                                 )
-                                Text(
-                                    text = formatDuration(durationMs),
-                                    color = TextSecondary,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium
+                                .padding(horizontal = 16.dp, vertical = 10.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                // Badge d'aide et de statut TV
+                                if (isTimelineFocused) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(Color(0xFF3888FF))
+                                                .padding(horizontal = 10.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "◄ ◄  ${formatDuration(displayPos.toLong())}  ► ►",
+                                                color = Color.White,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Text(
+                                            text = "Appuyez sur OK pour caler • ▼ pour les contrôles",
+                                            color = Color(0xFF00E5FF),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = formatDuration(displayPos.toLong()),
+                                        color = if (isTimelineFocused) Color(0xFF00E5FF) else Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = if (durationMs > 0L) formatDuration(durationMs) else "--:--",
+                                        color = TextSecondary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+
+                                Slider(
+                                    value = displayPos,
+                                    onValueChange = { newValue ->
+                                        isUserScrubbing = true
+                                        scrubbedPositionMs = newValue
+                                    },
+                                    onValueChangeFinished = {
+                                        playerEngine.seekTo(scrubbedPositionMs.toLong())
+                                        currentPositionMs = scrubbedPositionMs.toLong()
+                                        isUserScrubbing = false
+                                    },
+                                    valueRange = 0f..maxDur,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = if (isTimelineFocused) Color.White else NoosCyan,
+                                        activeTrackColor = if (isTimelineFocused) Color(0xFF3888FF) else NoosCyan,
+                                        inactiveTrackColor = Color(0x44FFFFFF)
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .focusProperties { canFocus = false }
                                 )
                             }
-
-                            Slider(
-                                value = if (isUserScrubbing) scrubbedPositionMs else currentPositionMs.toFloat(),
-                                onValueChange = { newValue ->
-                                    isUserScrubbing = true
-                                    scrubbedPositionMs = newValue
-                                },
-                                onValueChangeFinished = {
-                                    playerEngine.seekTo(scrubbedPositionMs.toLong())
-                                    currentPositionMs = scrubbedPositionMs.toLong()
-                                    isUserScrubbing = false
-                                },
-                                valueRange = 0f..durationMs.toFloat(),
-                                colors = SliderDefaults.colors(
-                                    thumbColor = NoosCyan,
-                                    activeTrackColor = NoosCyan,
-                                    inactiveTrackColor = Color(0x44FFFFFF)
-                                ),
-                                modifier = Modifier.fillMaxWidth()
-                            )
                         }
                     }
 
@@ -1051,6 +1268,17 @@ fun NoosPlayerScreen(
                                     seekFeedback = "-10s"
                                 },
                                 modifier = Modifier
+                                    .focusProperties {
+                                        if (!isLive) {
+                                            up = timelineFocusRequester
+                                        }
+                                    }
+                                    .onPreviewKeyEvent { event ->
+                                        if (!isLive && event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
+                                            timelineFocusRequester.requestFocus()
+                                            true
+                                        } else false
+                                    }
                                     .clip(RoundedCornerShape(12.dp))
                                     .background(if (isReplayFocused) SurfaceDarkVariant else Color.Transparent)
                                     .border(1.5.dp, if (isReplayFocused) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))
@@ -1071,6 +1299,17 @@ fun NoosPlayerScreen(
                                 .clip(RoundedCornerShape(28.dp))
                                 .background(NoosCyan)
                                 .focusRequester(playPauseFocusRequester)
+                                .focusProperties {
+                                    if (!isLive) {
+                                        up = timelineFocusRequester
+                                    }
+                                }
+                                .onPreviewKeyEvent { event ->
+                                    if (!isLive && event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
+                                        timelineFocusRequester.requestFocus()
+                                        true
+                                    } else false
+                                }
                                 .onFocusChanged { isPlayFocused = it.isFocused }
                                 .border(if (isPlayFocused) 3.dp else 0.dp, Color.White, RoundedCornerShape(28.dp))
                         ) {
@@ -1106,6 +1345,17 @@ fun NoosPlayerScreen(
                                     seekFeedback = "+30s"
                                 },
                                 modifier = Modifier
+                                    .focusProperties {
+                                        if (!isLive) {
+                                            up = timelineFocusRequester
+                                        }
+                                    }
+                                    .onPreviewKeyEvent { event ->
+                                        if (!isLive && event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
+                                            timelineFocusRequester.requestFocus()
+                                            true
+                                        } else false
+                                    }
                                     .clip(RoundedCornerShape(12.dp))
                                     .background(if (isForwardFocused) SurfaceDarkVariant else Color.Transparent)
                                     .border(1.5.dp, if (isForwardFocused) NoosCyan else Color.Transparent, RoundedCornerShape(12.dp))

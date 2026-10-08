@@ -511,7 +511,7 @@ class IptvRepository(
             VodMovie(
                 id = "m1",
                 title = "Dune: Deuxième Partie",
-                streamUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+                streamUrl = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
                 posterUrl = "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=400",
                 rating = 8.6f,
                 releaseYear = 2024,
@@ -526,7 +526,7 @@ class IptvRepository(
             VodMovie(
                 id = "m2",
                 title = "Oppenheimer",
-                streamUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+                streamUrl = "https://storage.googleapis.com/exoplayer-test-media-1/mkv/android-screens-lavf-56.36.100-aac-avc-main-1280x720.mkv",
                 posterUrl = "https://images.unsplash.com/photo-1440404653325-ab127d49abc1?w=400",
                 rating = 8.9f,
                 releaseYear = 2023,
@@ -541,7 +541,7 @@ class IptvRepository(
             VodMovie(
                 id = "m3",
                 title = "Interstellar",
-                streamUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+                streamUrl = "https://storage.googleapis.com/exoplayer-test-media-1/mp4/dizzy-with-tx3g.mp4",
                 posterUrl = "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=400",
                 rating = 8.7f,
                 releaseYear = 2014,
@@ -576,7 +576,7 @@ class IptvRepository(
                                 seasonNumber = 1,
                                 episodeNumber = 1,
                                 title = "Quand on est perdu dans l'obscurité",
-                                streamUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+                                streamUrl = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
                                 durationMinutes = 81
                             ),
                             Episode(
@@ -585,7 +585,7 @@ class IptvRepository(
                                 seasonNumber = 1,
                                 episodeNumber = 2,
                                 title = "Les Infectés",
-                                streamUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+                                streamUrl = "https://storage.googleapis.com/exoplayer-test-media-1/mkv/android-screens-lavf-56.36.100-aac-avc-main-1280x720.mkv",
                                 durationMinutes = 53
                             )
                         )

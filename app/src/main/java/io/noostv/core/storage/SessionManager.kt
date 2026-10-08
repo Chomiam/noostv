@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import io.noostv.core.security.CryptoManager
+import io.noostv.data.model.PlaybackResumePoint
 import io.noostv.data.model.SavedAccount
 import io.noostv.data.model.UserProfile
 import java.io.File
@@ -542,6 +543,123 @@ class SessionManager(context: Context) {
 
     fun clearSavedAccounts() {
         prefs.edit().remove(KEY_SAVED_ACCOUNTS_ENCRYPTED).apply()
+    }
+
+    // ==================== REPRISE DE LECTURE (PLAYBACK RESUME) ====================
+
+    private val KEY_PLAYBACK_RESUME_PREFIX = "playback_resume_"
+    private val playbackResumeBackupFile: File
+        get() = File(appContext.filesDir, "noostv_playback_resume.json")
+
+    private fun getResumeStorageKey(profileId: String): String = "$KEY_PLAYBACK_RESUME_PREFIX$profileId"
+
+    /**
+     * Récupère le point de reprise de lecture pour un film ou un épisode donné,
+     * selon le profil utilisateur actif.
+     */
+    fun getPlaybackResume(contentId: String): PlaybackResumePoint? {
+        if (contentId.isBlank()) return null
+        val profileId = getActiveProfileId()
+        val all = getAllPlaybackResumesInternal(profileId)
+        return all[contentId]
+    }
+
+    /**
+     * Récupère l'ensemble des points de reprise du profil.
+     */
+    fun getAllPlaybackResumes(profileId: String = getActiveProfileId()): Map<String, PlaybackResumePoint> {
+        return getAllPlaybackResumesInternal(profileId)
+    }
+
+    /**
+     * Enregistre la progression de lecture d'un contenu.
+     * Si la lecture a duré moins de 10 secondes, ou est à moins de 30 secondes de la fin,
+     * le point de reprise est automatiquement purgé.
+     */
+    fun savePlaybackResume(contentId: String, title: String, positionMs: Long, durationMs: Long) {
+        if (contentId.isBlank()) return
+        val profileId = getActiveProfileId()
+        val map = getAllPlaybackResumesInternal(profileId).toMutableMap()
+
+        if (positionMs < 10_000L || (durationMs > 0L && positionMs >= durationMs - 30_000L)) {
+            if (map.remove(contentId) != null) {
+                savePlaybackResumesInternal(profileId, map)
+            }
+        } else {
+            map[contentId] = PlaybackResumePoint(
+                contentId = contentId,
+                title = title,
+                positionMs = positionMs,
+                durationMs = durationMs,
+                updatedAt = System.currentTimeMillis()
+            )
+            savePlaybackResumesInternal(profileId, map)
+        }
+    }
+
+    /**
+     * Supprime manuellement le point de reprise (ex: clic sur "Recommencer").
+     */
+    fun clearPlaybackResume(contentId: String) {
+        if (contentId.isBlank()) return
+        val profileId = getActiveProfileId()
+        val map = getAllPlaybackResumesInternal(profileId).toMutableMap()
+        if (map.remove(contentId) != null) {
+            savePlaybackResumesInternal(profileId, map)
+        }
+    }
+
+    private fun getAllPlaybackResumesInternal(profileId: String): Map<String, PlaybackResumePoint> {
+        val key = getResumeStorageKey(profileId)
+        val json = prefs.getString(key, null)
+        val type = object : TypeToken<Map<String, PlaybackResumePoint>>() {}.type
+
+        if (!json.isNullOrBlank()) {
+            try {
+                val parsed: Map<String, PlaybackResumePoint>? = gson.fromJson(json, type)
+                if (parsed != null) return parsed
+            } catch (ignored: Exception) {}
+        }
+
+        // Tenter depuis le fichier miroir de secours
+        if (playbackResumeBackupFile.exists()) {
+            try {
+                val backupJson = playbackResumeBackupFile.readText()
+                val rootType = object : TypeToken<Map<String, Map<String, PlaybackResumePoint>>>() {}.type
+                val rootMap: Map<String, Map<String, PlaybackResumePoint>>? = gson.fromJson(backupJson, rootType)
+                val profileMap = rootMap?.get(profileId)
+                if (!profileMap.isNullOrEmpty()) {
+                    prefs.edit().putString(key, gson.toJson(profileMap)).commit()
+                    return profileMap
+                }
+            } catch (ignored: Exception) {}
+        }
+
+        return emptyMap()
+    }
+
+    private fun savePlaybackResumesInternal(profileId: String, map: Map<String, PlaybackResumePoint>) {
+        val json = gson.toJson(map)
+        val key = getResumeStorageKey(profileId)
+        prefs.edit().putString(key, json).commit()
+
+        try {
+            val rootType = object : TypeToken<Map<String, Map<String, PlaybackResumePoint>>>() {}.type
+            val currentRoot: MutableMap<String, Map<String, PlaybackResumePoint>> = if (playbackResumeBackupFile.exists()) {
+                runCatching {
+                    gson.fromJson<Map<String, Map<String, PlaybackResumePoint>>>(playbackResumeBackupFile.readText(), rootType)?.toMutableMap()
+                }.getOrNull() ?: mutableMapOf()
+            } else {
+                mutableMapOf()
+            }
+            currentRoot[profileId] = map
+
+            val tempFile = File(appContext.filesDir, "noostv_playback_resume.json.tmp")
+            tempFile.writeText(gson.toJson(currentRoot))
+            if (tempFile.exists()) {
+                tempFile.renameTo(playbackResumeBackupFile)
+            }
+        } catch (ignored: Exception) {}
     }
 
     fun logout() {

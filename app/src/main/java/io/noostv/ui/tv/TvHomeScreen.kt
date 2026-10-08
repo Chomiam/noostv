@@ -58,6 +58,7 @@ import io.noostv.R
 import io.noostv.core.audio.LocalSoundEffectManager
 import io.noostv.core.entitlement.EntitlementManager
 import io.noostv.core.player.PlayerEngine
+import io.noostv.core.player.formatDuration
 import io.noostv.core.storage.SessionManager
 import io.noostv.data.model.Category
 import io.noostv.data.model.Channel
@@ -128,9 +129,9 @@ fun TvHomeScreen(
     onSelectChannel: (Channel) -> Unit,
     onLoadChannelEpg: ((Channel) -> Unit)? = null,
     onLoadChannelsBatch: ((List<Channel>) -> Unit)? = null,
-    onSelectMovie: (VodMovie) -> Unit,
+    onSelectMovie: (VodMovie, Long) -> Unit = { _, _ -> },
     onSelectSeries: (Series) -> Unit,
-    onSelectEpisode: (Series, io.noostv.data.model.Episode) -> Unit = { ser, _ -> onSelectSeries(ser) },
+    onSelectEpisode: (Series, io.noostv.data.model.Episode, Long) -> Unit = { ser, _, _ -> onSelectSeries(ser) },
     onSelectVodCategory: (Category) -> Unit,
     onSelectSeriesCategory: (Category) -> Unit,
     onOpenSearch: () -> Unit,
@@ -877,9 +878,10 @@ fun TvHomeScreen(
             TvMovieDetailModal(
                 movie = selectedMovieDetail!!,
                 isFavorite = favoriteMovieIds.contains(selectedMovieDetail!!.id),
-                onPlay = { m ->
+                sessionManager = sessionManager,
+                onPlay = { m, startPos ->
                     selectedMovieDetail = null
-                    onSelectMovie(m)
+                    onSelectMovie(m, startPos)
                 },
                 onToggleFavorite = {
                     val id = selectedMovieDetail!!.id
@@ -896,10 +898,11 @@ fun TvHomeScreen(
             TvSeriesDetailModal(
                 series = selectedSeriesDetail!!,
                 isFavorite = favoriteSeriesIds.contains(selectedSeriesDetail!!.id),
-                onPlayEpisode = { ep ->
+                sessionManager = sessionManager,
+                onPlayEpisode = { ep, startPos ->
                     val s = selectedSeriesDetail!!
                     selectedSeriesDetail = null
-                    onSelectEpisode(s, ep)
+                    onSelectEpisode(s, ep, startPos)
                 },
                 onToggleFavorite = {
                     val id = selectedSeriesDetail!!.id
@@ -2157,12 +2160,14 @@ fun TvEmptyState(message: String) {
 fun TvMovieDetailModal(
     movie: VodMovie,
     isFavorite: Boolean,
-    onPlay: (VodMovie) -> Unit,
+    sessionManager: SessionManager? = null,
+    onPlay: (VodMovie, Long) -> Unit,
     onToggleFavorite: () -> Unit,
     onDismiss: () -> Unit,
     onFetchFullInfo: (suspend (String) -> VodMovie?)? = null
 ) {
     val playFocusRequester = remember { FocusRequester() }
+    val restartFocusRequester = remember { FocusRequester() }
     val closeFocusRequester = remember { FocusRequester() }
     val favFocusRequester = remember { FocusRequester() }
     val bottomCloseFocusRequester = remember { FocusRequester() }
@@ -2170,6 +2175,9 @@ fun TvMovieDetailModal(
     val view = LocalView.current
     var fullMovie by remember(movie.id) { mutableStateOf(movie) }
     var isFetchingInfo by remember(movie.id) { mutableStateOf(onFetchFullInfo != null && movie.plot.isNullOrBlank()) }
+    val resumePoint = remember(movie.id) {
+        sessionManager?.getPlaybackResume("movie_${movie.id}")
+    }
 
     BackHandler {
         onDismiss()
@@ -2436,6 +2444,44 @@ fun TvMovieDetailModal(
                         }
                     }
 
+                    if (resumePoint != null) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(SurfaceDarkVariant.copy(alpha = 0.6f))
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "▶ Reprise de lecture à ${resumePoint.formattedPosition}",
+                                    color = NoosCyan,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "${resumePoint.progressPercent}% terminé",
+                                    color = TextSecondary,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            LinearProgressIndicator(
+                                progress = resumePoint.progressFraction,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp)),
+                                color = NoosCyan,
+                                trackColor = Color(0xFF233045)
+                            )
+                        }
+                    }
+
                     // Boutons d'action TV
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -2443,18 +2489,25 @@ fun TvMovieDetailModal(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         var isPlayFocused by remember { mutableStateOf(false) }
+                        var isRestartFocused by remember { mutableStateOf(false) }
                         var isFavFocused by remember { mutableStateOf(false) }
                         var isCloseFocused by remember { mutableStateOf(false) }
 
-                        // Bouton Play (Focus initial)
+                        // Bouton Play / Reprendre (Focus initial)
                         Button(
-                            onClick = { onPlay(fullMovie) },
+                            onClick = {
+                                if (resumePoint != null) {
+                                    onPlay(fullMovie, resumePoint.positionMs)
+                                } else {
+                                    onPlay(fullMovie, 0L)
+                                }
+                            },
                             modifier = Modifier
                                 .focusRequester(playFocusRequester)
                                 .onFocusChanged { isPlayFocused = it.isFocused }
                                 .focusProperties {
                                     up = closeFocusRequester
-                                    right = favFocusRequester
+                                    right = if (resumePoint != null) restartFocusRequester else favFocusRequester
                                 }
                                 .onPreviewKeyEvent { event ->
                                     if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
@@ -2465,11 +2518,59 @@ fun TvMovieDetailModal(
                                 .focusable(),
                             colors = ButtonDefaults.buttonColors(containerColor = if (isPlayFocused) NoosCyan else NoosBlue),
                             shape = RoundedCornerShape(14.dp),
-                            contentPadding = PaddingValues(horizontal = 22.dp, vertical = 12.dp)
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
                         ) {
                             Icon(Icons.Default.PlayArrow, contentDescription = null, tint = if (isPlayFocused) Color.Black else Color.White)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Lancer le film", color = if (isPlayFocused) Color.Black else Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(
+                                text = if (resumePoint != null) "Reprendre (${resumePoint.formattedPosition})" else "Lancer le film",
+                                color = if (isPlayFocused) Color.Black else Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
+
+                        // Bouton Recommencer si reprise existante
+                        if (resumePoint != null) {
+                            OutlinedButton(
+                                onClick = {
+                                    sessionManager?.clearPlaybackResume("movie_${fullMovie.id}")
+                                    onPlay(fullMovie, 0L)
+                                },
+                                modifier = Modifier
+                                    .focusRequester(restartFocusRequester)
+                                    .onFocusChanged { isRestartFocused = it.isFocused }
+                                    .focusProperties {
+                                        up = closeFocusRequester
+                                        left = playFocusRequester
+                                        right = favFocusRequester
+                                    }
+                                    .onPreviewKeyEvent { event ->
+                                        if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
+                                            view.post { closeFocusRequester.requestFocus() }
+                                            true
+                                        } else false
+                                    }
+                                    .focusable(),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (isRestartFocused) Color(0xFF1E2838) else Color.Transparent
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    width = if (isRestartFocused) 2.dp else 1.dp,
+                                    color = if (isRestartFocused) FocusGlow else CardBorderUnfocused
+                                ),
+                                shape = RoundedCornerShape(14.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Replay,
+                                    contentDescription = null,
+                                    tint = if (isRestartFocused) FocusGlow else TextSecondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Recommencer", color = if (isRestartFocused) Color.White else TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
                         }
 
                         // Bouton Favoris
@@ -2480,7 +2581,7 @@ fun TvMovieDetailModal(
                                 .onFocusChanged { isFavFocused = it.isFocused }
                                 .focusProperties {
                                     up = closeFocusRequester
-                                    left = playFocusRequester
+                                    left = if (resumePoint != null) restartFocusRequester else playFocusRequester
                                     right = bottomCloseFocusRequester
                                 }
                                 .onPreviewKeyEvent { event ->
@@ -2546,7 +2647,8 @@ fun TvMovieDetailModal(
 fun TvSeriesDetailModal(
     series: Series,
     isFavorite: Boolean,
-    onPlayEpisode: (Episode) -> Unit,
+    sessionManager: SessionManager? = null,
+    onPlayEpisode: (Episode, Long) -> Unit,
     onToggleFavorite: () -> Unit,
     onDismiss: () -> Unit,
     onFetchFullInfo: (suspend (String) -> Series?)? = null
@@ -2876,7 +2978,7 @@ fun TvSeriesDetailModal(
                                             title = "Épisode 1",
                                             streamUrl = ""
                                         )
-                                         onPlayEpisode(fallbackEp)
+                                         onPlayEpisode(fallbackEp, 0L)
                                     },
                                     modifier = Modifier
                                         .focusRequester(directPlayFocusRequester)
@@ -3009,6 +3111,9 @@ fun TvSeriesDetailModal(
                         ) {
                             itemsIndexed(episodeList, key = { _, ep -> "${ep.seasonNumber}_${ep.episodeNumber}_${ep.id}" }) { epIndex, ep ->
                                 var isEpFocused by remember { mutableStateOf(false) }
+                                val epResume = remember(ep.id) {
+                                    sessionManager?.getPlaybackResume("ep_${ep.id}")
+                                }
 
                                 Box(
                                     modifier = Modifier
@@ -3046,7 +3151,7 @@ fun TvSeriesDetailModal(
                                             } else false
                                         }
                                         .focusable()
-                                        .clickable { onPlayEpisode(ep) }
+                                        .clickable { onPlayEpisode(ep, epResume?.positionMs ?: 0L) }
                                         .clip(RoundedCornerShape(12.dp))
                                         .background(if (isEpFocused) Color(0xFF1E2838) else SurfaceDarkVariant)
                                         .border(
@@ -3096,11 +3201,32 @@ fun TvSeriesDetailModal(
                                                     if (ep.containerExtension.isNotBlank()) {
                                                         Text(ep.containerExtension.uppercase(), color = NoosCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                                     }
+                                                    if (epResume != null) {
+                                                        Text("•", color = TextSecondary, fontSize = 10.sp)
+                                                        Text("Reprise ${epResume.formattedPosition} (${epResume.progressPercent}%)", color = NoosCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
+                                                if (epResume != null) {
+                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                    LinearProgressIndicator(
+                                                        progress = epResume.progressFraction,
+                                                        modifier = Modifier
+                                                            .width(160.dp)
+                                                            .height(3.dp)
+                                                            .clip(RoundedCornerShape(2.dp)),
+                                                        color = NoosCyan,
+                                                        trackColor = Color(0xFF233045)
+                                                    )
                                                 }
                                             }
                                         }
 
-                                        Text("▶ Lire", color = if (isEpFocused) NoosCyan else TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        Text(
+                                            text = if (epResume != null) "▶ Reprendre" else "▶ Lire",
+                                            color = if (isEpFocused || epResume != null) NoosCyan else TextSecondary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
                                     }
                                 }
                             }

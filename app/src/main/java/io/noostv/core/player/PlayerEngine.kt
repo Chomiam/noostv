@@ -129,6 +129,7 @@ class PlayerEngine(
             .setMediaSourceFactory(mediaSourceFactory)
             .setTrackSelector(trackSelector)
             .setLoadControl(defaultLoadControl)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
@@ -260,7 +261,8 @@ class PlayerEngine(
         title: String,
         isHdrStream: Boolean = false,
         is4K: Boolean = false,
-        isPreview: Boolean = false
+        isPreview: Boolean = false,
+        startPositionMs: Long = 0L
     ): Boolean {
         // Garde-fou SaaS : vérifie si l'utilisateur a droit aux flux 4K / HDR (hors prévisualisation bridée à 720p)
         if (!isPreview && (isHdrStream || is4K) && !entitlementManager.isFeatureAllowed(Feature.HDR_4K_STREAMING)) {
@@ -281,14 +283,18 @@ class PlayerEngine(
         _availableSubtitleTracks.value = emptyList()
         _playbackStats.value = PlaybackStats()
 
-        Log.i("NoosPlayer", "playStream: '$title' -> ${io.noostv.core.security.CryptoManager.sanitizeUrl(url)}")
+        Log.i("NoosPlayer", "playStream: '$title' (startAt=${startPositionMs}ms) -> ${io.noostv.core.security.CryptoManager.sanitizeUrl(url)}")
 
         val mediaItem = MediaItem.Builder()
             .setUri(Uri.parse(url))
             .setMediaId(title)
             .build()
 
-        exoPlayer.setMediaItem(mediaItem)
+        if (startPositionMs > 0L) {
+            exoPlayer.setMediaItem(mediaItem, startPositionMs)
+        } else {
+            exoPlayer.setMediaItem(mediaItem)
+        }
         exoPlayer.prepare()
         exoPlayer.playWhenReady = true
         return true
