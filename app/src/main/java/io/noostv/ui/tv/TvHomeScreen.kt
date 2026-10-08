@@ -83,18 +83,16 @@ import io.noostv.ui.theme.*
 import kotlin.math.ceil
 
 /**
- * 7 Catégories latérales :
+ * 6 Catégories latérales :
  * 1. TV (Direct)
- * 2. Guide TV (EPG)
- * 3. Films (VOD Films)
- * 4. Séries (VOD Séries)
- * 5. Favoris (Épingles chaînes, films, séries)
- * 6. Filtres (Visibilité des catégories)
- * 7. Paramètres (Gestion système & Mises à jour GitHub)
+ * 2. Films (VOD Films)
+ * 3. Séries (VOD Séries)
+ * 4. Favoris (Épingles chaînes, films, séries)
+ * 5. Filtres (Visibilité des catégories)
+ * 6. Paramètres (Gestion système & Mises à jour GitHub)
  */
 enum class TvNavTab(val label: String, val icon: ImageVector) {
     TV("TV", Icons.Default.Tv),
-    EPG("Guide TV", Icons.Default.DateRange),
     MOVIES("Films", Icons.Default.Movie),
     SERIES("Séries", Icons.Default.VideoLibrary),
     FAVORITES("Favoris", Icons.Default.Star),
@@ -103,7 +101,6 @@ enum class TvNavTab(val label: String, val icon: ImageVector) {
 
     fun getLabel(strings: AppStrings): String = when (this) {
         TV -> strings.navLiveTv
-        EPG -> strings.navEpg
         MOVIES -> strings.navMovies
         SERIES -> strings.navSeries
         FAVORITES -> strings.navFavorites
@@ -190,7 +187,6 @@ fun TvHomeScreen(
     val sidebarFocusRequesters = remember {
         mapOf(
             TvNavTab.TV to FocusRequester(),
-            TvNavTab.EPG to FocusRequester(),
             TvNavTab.MOVIES to FocusRequester(),
             TvNavTab.SERIES to FocusRequester(),
             TvNavTab.FAVORITES to FocusRequester(),
@@ -201,7 +197,6 @@ fun TvHomeScreen(
     val contentFocusRequesters = remember {
         mapOf(
             TvNavTab.TV to FocusRequester(),
-            TvNavTab.EPG to FocusRequester(),
             TvNavTab.MOVIES to FocusRequester(),
             TvNavTab.SERIES to FocusRequester(),
             TvNavTab.FAVORITES to FocusRequester(),
@@ -461,18 +456,7 @@ fun TvHomeScreen(
                     }
                 }
 
-                // ==================== 2. ONGLET GUIDE TV (EPG) ====================
-                TvNavTab.EPG -> {
-                    TvEpgContent(
-                        channels = channels,
-                        epgPrograms = epgPrograms,
-                        focusRequester = contentFocusRequesters[TvNavTab.EPG]!!,
-                        onNavigateLeft = { runCatching { sidebarFocusRequesters[TvNavTab.EPG]?.requestFocus() } },
-                        onSelectChannel = onSelectChannel
-                    )
-                }
-
-                // ==================== 3. ONGLET FILMS (VOD) — RATIO CINÉMA 2:3 ====================
+                // ==================== 2. ONGLET FILMS (VOD) — RATIO CINÉMA 2:3 ====================
                 TvNavTab.MOVIES -> {
                     val visibleVodCategories = remember(vodCategories, activeProfile) {
                         vodCategories.filter { sessionManager.isVodCategoryVisible(it.id) }
@@ -2060,275 +2044,6 @@ fun TvSeriesGridCard(
             }
         }
     }
-}
-
-/**
- * Contenu interactif Guide TV (EPG) sobre et élégant
- */
-@Composable
-fun TvEpgContent(
-    channels: List<Channel>,
-    epgPrograms: List<EpgProgram>,
-    focusRequester: FocusRequester,
-    onNavigateLeft: () -> Unit,
-    onSelectChannel: (Channel) -> Unit
-) {
-    val currentTime = remember { System.currentTimeMillis() }
-    var focusedProgram by remember { mutableStateOf<EpgProgram?>(null) }
-    var focusedChannel by remember { mutableStateOf<Channel?>(null) }
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Guide TV Interactif (Direct & Replay)",
-                color = TextPrimary,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "Heure actuelle : ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(currentTime)}",
-                color = NoosCyan,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        if (channels.isEmpty()) {
-            TvEmptyState(message = "Aucune chaîne pour afficher le guide")
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(bottom = 16.dp)
-            ) {
-                items(channels) { channel ->
-                    var isRowFocused by remember { mutableStateOf(false) }
-
-                    val programs = remember(channel.id, epgPrograms) {
-                        val real = epgPrograms.filter { it.channelId == channel.id }
-                        if (real.isNotEmpty()) real else generateFallbackPrograms(channel, currentTime)
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // En-tête de la chaîne à gauche
-                        Box(
-                            modifier = Modifier
-                                .width(180.dp)
-                                .height(78.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .onFocusChanged {
-                                    isRowFocused = it.isFocused
-                                    if (it.isFocused) {
-                                        focusedChannel = channel
-                                        focusedProgram = programs.find { p -> p.isLiveNow(currentTime) } ?: programs.firstOrNull()
-                                    }
-                                }
-                                .focusable()
-                                .clickable { onSelectChannel(channel) }
-                                .onPreviewKeyEvent { keyEvent ->
-                                    if (keyEvent.type == KeyEventType.KeyDown && (keyEvent.key == Key.DirectionLeft || keyEvent.key == Key.Back)) {
-                                        onNavigateLeft()
-                                        true
-                                    } else false
-                                }
-                                .background(if (isRowFocused) Color(0xFF1E2838) else SurfaceDark)
-                                .border(
-                                    width = if (isRowFocused) 3.dp else 1.dp,
-                                    color = if (isRowFocused) FocusGlow else CardBorderUnfocused,
-                                    shape = RoundedCornerShape(14.dp)
-                                )
-                                .padding(12.dp),
-                            contentAlignment = Alignment.CenterStart
-                        ) {
-                            Column {
-                                Text(
-                                    text = channel.name,
-                                    color = if (isRowFocused) NoosCyan else TextPrimary,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = "${channel.resolution} • ${channel.categoryName}",
-                                    color = TextSecondary,
-                                    fontSize = 10.sp,
-                                    maxLines = 1
-                                )
-                            }
-                        }
-
-                        // Ligne des programmes avec barre de progression
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            items(programs) { prog ->
-                                val isLive = prog.isLiveNow(currentTime)
-                                val progress = prog.progressFraction(currentTime)
-                                var isProgFocused by remember { mutableStateOf(false) }
-
-                                Box(
-                                    modifier = Modifier
-                                        .width(260.dp)
-                                        .height(78.dp)
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .onFocusChanged {
-                                            isProgFocused = it.isFocused
-                                            if (it.isFocused) {
-                                                focusedProgram = prog
-                                                focusedChannel = channel
-                                            }
-                                        }
-                                        .focusable()
-                                        .clickable { onSelectChannel(channel) }
-                                        .background(if (isLive) Color(0xFF162032) else SurfaceDark)
-                                        .border(
-                                            width = if (isProgFocused) 3.dp else if (isLive) 1.dp else 0.dp,
-                                            color = if (isProgFocused) FocusGlow else if (isLive) NoosBlue.copy(alpha = 0.4f) else Color.Transparent,
-                                            shape = RoundedCornerShape(14.dp)
-                                        )
-                                        .padding(10.dp)
-                                ) {
-                                    Column(
-                                        modifier = Modifier.fillMaxSize(),
-                                        verticalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = prog.timeSlotFormatted,
-                                                color = if (isLive) NoosCyan else TextSecondary,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                            if (isLive) {
-                                                LiveIndicatorBadge()
-                                            } else if (prog.hasCatchup) {
-                                                Text("REVOIR", color = GoldVip, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-
-                                        Text(
-                                            text = prog.title,
-                                            color = if (isProgFocused) NoosCyan else TextPrimary,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-
-                                        if (isLive) {
-                                            LinearProgressIndicator(
-                                                progress = { progress },
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(3.dp)
-                                                    .clip(RoundedCornerShape(2.dp)),
-                                                color = NoosBlue,
-                                                trackColor = SurfaceDarkVariant
-                                            )
-                                        } else {
-                                            Spacer(modifier = Modifier.height(3.dp))
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Bandeau d'information détaillé du programme ciblé
-            AnimatedVisibility(visible = focusedProgram != null) {
-                focusedProgram?.let { prog ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xFF131A26))
-                            .border(1.dp, CardBorderUnfocused, RoundedCornerShape(16.dp))
-                            .padding(horizontal = 16.dp, vertical = 10.dp)
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    focusedChannel?.let { ch ->
-                                        Text(ch.name, color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        Text("•", color = TextSecondary, fontSize = 11.sp)
-                                    }
-                                    Text(prog.title, color = NoosCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                }
-                                Text("${prog.timeSlotFormatted} • ${prog.category ?: "Programme"}", color = TextSecondary, fontSize = 11.sp)
-                            }
-                            if (!prog.description.isNullOrBlank()) {
-                                Text(
-                                    text = prog.description,
-                                    color = TextPrimary,
-                                    fontSize = 11.sp,
-                                    lineHeight = 16.sp,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Créneaux par défaut si l'EPG n'est pas encore synchronisé
- */
-private fun generateFallbackPrograms(channel: Channel, currentTime: Long): List<EpgProgram> {
-    val halfHour = 30 * 60 * 1000L
-    val start1 = currentTime - (currentTime % halfHour)
-    val end1 = start1 + halfHour
-    val start2 = end1
-    val end2 = start2 + halfHour
-
-    return listOf(
-        EpgProgram(
-            id = "cur_${channel.id}",
-            channelId = channel.id,
-            title = "En direct sur ${channel.name}",
-            description = "Programme en cours de diffusion",
-            startEpochMs = start1,
-            stopEpochMs = end1
-        ),
-        EpgProgram(
-            id = "next_${channel.id}",
-            channelId = channel.id,
-            title = "Suite des programmes",
-            description = "Émission à suivre sur ${channel.name}",
-            startEpochMs = start2,
-            stopEpochMs = end2
-        )
-    )
 }
 
 /**

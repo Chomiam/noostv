@@ -82,7 +82,6 @@ enum class MobileBottomTab(val label: String, val icon: ImageVector) {
     SERIES("Séries", Icons.Default.VideoLibrary),
     FAVORITES("Favoris", Icons.Default.Star),
     FILTERS("Filtres", Icons.Default.Tune),
-    EPG("Guide TV", Icons.Default.CalendarToday),
     SETTINGS("Paramètres", Icons.Default.Settings);
 
     fun getLabel(strings: AppStrings): String = when (this) {
@@ -91,7 +90,6 @@ enum class MobileBottomTab(val label: String, val icon: ImageVector) {
         SERIES -> strings.navSeries
         FAVORITES -> strings.navFavorites
         FILTERS -> strings.navFilters
-        EPG -> strings.navEpg
         SETTINGS -> strings.navSettings
     }
 }
@@ -604,16 +602,7 @@ fun MobileHomeScreen(
                     )
                 }
 
-                // ==================== 6. GUIDE TV ====================
-                MobileBottomTab.EPG -> {
-                    MobileEpgContent(
-                        channels = channels,
-                        epgPrograms = epgPrograms,
-                        onSelectChannel = onSelectChannel
-                    )
-                }
-
-                // ==================== 7. PARAMÈTRES & OTA ====================
+                // ==================== 6. PARAMÈTRES & OTA ====================
                 MobileBottomTab.SETTINGS -> {
                     MobileSettingsView(
                         sessionManager = sessionManager,
@@ -1052,119 +1041,6 @@ private fun MobileVodCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-            }
-        }
-    }
-}
-
-/**
- * Vue mobile du Guide TV interactif
- */
-@Composable
-private fun MobileEpgContent(
-    channels: List<Channel>,
-    epgPrograms: List<EpgProgram>,
-    onSelectChannel: (Channel) -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "GUIDE TV INTERACTIF",
-                color = NoosCyan,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
-            Text(text = "En direct & À suivre", color = TextSecondary, fontSize = 11.sp)
-        }
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(bottom = 24.dp)
-        ) {
-            items(channels, key = { it.id }) { channel ->
-                val schedule = EpgProvider.getChannelSchedule(channel, epgPrograms)
-                val current = EpgProvider.getCurrentProgram(channel, epgPrograms)
-                val upcoming = schedule.filter { it.id != current.id && it.startEpochMs >= current.startEpochMs }.take(2)
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = SurfaceDark)
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        // En-tête chaîne
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSelectChannel(channel) },
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(channel.name, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                LiveIndicatorBadge()
-                            }
-                            Icon(imageVector = Icons.Default.PlayArrow, contentDescription = "Regarder", tint = NoosCyan, modifier = Modifier.size(20.dp))
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Programme en direct
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0x223888FF))
-                                .padding(10.dp)
-                        ) {
-                            Column {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(current.timeSlotFormatted, color = NoosCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    Text("EN CE MOMENT", color = NoosCyan, fontSize = 9.sp, fontWeight = FontWeight.Black)
-                                }
-                                Text(current.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                LinearProgressIndicator(
-                                    progress = { current.progressFraction() },
-                                    modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(50)),
-                                    color = NoosCyan,
-                                    trackColor = Color(0x3300E5FF)
-                                )
-                            }
-                        }
-
-                        // Programmes suivants
-                        if (upcoming.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("À SUIVRE", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            upcoming.forEach { prog ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(prog.title, color = TextPrimary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                    Text(prog.timeSlotFormatted, color = TextSecondary, fontSize = 11.sp)
-                                }
-                            }
-                        }
-                    }
-                }
             }
         }
     }

@@ -41,7 +41,6 @@ import io.noostv.ui.mobile.MobileHomeScreen
 import io.noostv.ui.player.MiniPlayerBar
 import io.noostv.ui.player.NoosPlayerScreen
 import io.noostv.ui.theme.NoosTvTheme
-import io.noostv.ui.tv.TvEpgScreen
 import io.noostv.ui.tv.TvHomeScreen
 
 enum class CurrentScreen {
@@ -49,7 +48,6 @@ enum class CurrentScreen {
     SYNC,
     HOME,
     PLAYER,
-    EPG,
     SEARCH
 }
 
@@ -634,15 +632,6 @@ class MainActivity : ComponentActivity() {
                                 onRefreshCatalog = refreshCatalogAction
                             )
                         }
-                    }
-
-                    CurrentScreen.EPG -> {
-                        TvEpgScreen(
-                            channels = channels,
-                            epgPrograms = epgPrograms,
-                            onSelectChannel = { startPlayChannel(it) },
-                            onBack = { currentScreen = CurrentScreen.HOME }
-                        )
                     }
 
                     CurrentScreen.SEARCH -> {
