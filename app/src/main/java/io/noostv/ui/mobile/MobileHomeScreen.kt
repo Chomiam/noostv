@@ -65,7 +65,6 @@ import io.noostv.ui.common.NoosPaginationBar
 import io.noostv.ui.common.PremiumVipBadge
 import io.noostv.ui.common.ResolutionBadge
 import io.noostv.ui.theme.*
-import io.noostv.ui.common.GithubTokenField
 import io.noostv.ui.tv.EpgProvider
 import io.noostv.ui.tv.TvCategoryFiltersContent
 import io.noostv.ui.tv.TvFavoritesContent
@@ -356,6 +355,12 @@ fun MobileHomeScreen(
                                 epgPrograms = epgPrograms,
                                 playerEngine = playerEngine,
                                 sessionManager = sessionManager,
+                                favoriteChannelIds = favoriteChannelIds,
+                                onToggleFavoriteChannel = { chId ->
+                                    sessionManager.toggleFavoriteChannel(chId)
+                                    val prof = sessionManager.getActiveProfile()
+                                    refreshProfileData(prof)
+                                },
                                 onSelectChannel = onSelectChannel,
                                 onLoadChannelEpg = onLoadChannelEpg
                             )
@@ -378,9 +383,16 @@ fun MobileHomeScreen(
                                     ) {
                                         items(filteredChannels, key = { it.id }) { channel ->
                                             val currentProg = EpgProvider.getCurrentProgram(channel, epgPrograms)
+                                            val isFav = favoriteChannelIds.contains(channel.id)
                                             MobileChannelCard(
                                                 channel = channel,
                                                 currentProgram = currentProg,
+                                                isFavorite = isFav,
+                                                onToggleFavorite = {
+                                                    sessionManager.toggleFavoriteChannel(channel.id)
+                                                    val prof = sessionManager.getActiveProfile()
+                                                    refreshProfileData(prof)
+                                                },
                                                 onClick = { onSelectChannel(channel) }
                                             )
                                         }
@@ -735,6 +747,8 @@ private fun MobileCategoryChips(
 private fun MobileChannelCard(
     channel: Channel,
     currentProgram: EpgProgram,
+    isFavorite: Boolean = false,
+    onToggleFavorite: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -877,13 +891,32 @@ private fun MobileChannelCard(
                 }
             }
 
-            // Bouton play
-            Icon(
-                imageVector = Icons.Default.PlayCircle,
-                contentDescription = "Lecture",
-                tint = NoosBlue,
-                modifier = Modifier.size(32.dp)
-            )
+            // Boutons Favori et Play
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (onToggleFavorite != null) {
+                    IconButton(
+                        onClick = onToggleFavorite,
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                            contentDescription = "Favori",
+                            tint = if (isFavorite) GoldVip else TextSecondary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+
+                Icon(
+                    imageVector = Icons.Default.PlayCircle,
+                    contentDescription = "Lecture",
+                    tint = NoosBlue,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
         }
     }
 }
@@ -1118,7 +1151,6 @@ private fun MobileSettingsView(
         coroutineScope.launch {
             val state = updateManager.checkForUpdates(
                 channel = channel,
-                token = sessionManager.githubToken,
                 currentVersion = currentAppVersion
             )
             updateState = state
@@ -1219,7 +1251,6 @@ private fun MobileSettingsView(
                     Text("${strings.checkUpdates} ($selectedChannel)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
 
-                GithubTokenField(sessionManager = sessionManager)
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // Statut de la vérification
@@ -1242,7 +1273,6 @@ private fun MobileSettingsView(
                                         updateState = UpdateState.Downloading(0, 0, state.release.apkSizeBytes)
                                         val dlResult = updateManager.downloadApk(
                                             release = state.release,
-                                            token = sessionManager.githubToken,
                                             onProgress = { pct, dl, tot ->
                                                 updateState = UpdateState.Downloading(pct, dl, tot)
                                             }
@@ -1415,6 +1445,8 @@ private fun MobileLandscapeTvContent(
     epgPrograms: List<EpgProgram>,
     playerEngine: PlayerEngine,
     sessionManager: SessionManager? = null,
+    favoriteChannelIds: Set<String> = emptySet(),
+    onToggleFavoriteChannel: ((String) -> Unit)? = null,
     onSelectChannel: (Channel) -> Unit,
     onLoadChannelEpg: ((Channel) -> Unit)? = null
 ) {
@@ -1498,11 +1530,13 @@ private fun MobileLandscapeTvContent(
                 ) {
                     items(channels, key = { it.id }) { channel ->
                         val isSelected = channel.id == activeChannel?.id
+                        val isFav = favoriteChannelIds.contains(channel.id)
                         val currentProg = EpgProvider.getCurrentProgram(channel, epgPrograms)
                         MobileLandscapeChannelListItem(
                             channel = channel,
                             currentProgram = currentProg,
                             isSelected = isSelected,
+                            isFavorite = isFav,
                             onClick = {
                                 if (isSelected) {
                                     onSelectChannel(channel)
@@ -1572,7 +1606,7 @@ private fun MobileLandscapeTvContent(
                             )
                             .padding(8.dp)
                     ) {
-                        // En-tête : Badge Live + Nom + Résolution
+                        // En-tête : Badge Live + Nom + Favori + Résolution
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1590,10 +1624,29 @@ private fun MobileLandscapeTvContent(
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.widthIn(max = 160.dp)
+                                    modifier = Modifier.widthIn(max = 140.dp)
                                 )
                             }
-                            if (activeChannel.isHdr) HdrBadge() else ResolutionBadge(resolution = activeChannel.resolution)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                val isFav = favoriteChannelIds.contains(activeChannel.id)
+                                if (onToggleFavoriteChannel != null) {
+                                    IconButton(
+                                        onClick = { onToggleFavoriteChannel(activeChannel.id) },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isFav) Icons.Default.Star else Icons.Default.StarBorder,
+                                            contentDescription = "Favori",
+                                            tint = if (isFav) GoldVip else Color.White,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                if (activeChannel.isHdr) HdrBadge() else ResolutionBadge(resolution = activeChannel.resolution)
+                            }
                         }
 
                         // Bas : Bouton Plein écran cliquable
@@ -1697,6 +1750,7 @@ private fun MobileLandscapeChannelListItem(
     channel: Channel,
     currentProgram: EpgProgram,
     isSelected: Boolean,
+    isFavorite: Boolean = false,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1758,14 +1812,28 @@ private fun MobileLandscapeChannelListItem(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = channel.name,
-                    color = if (isSelected) Color.White else TextPrimary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
+                    Text(
+                        text = channel.name,
+                        color = if (isSelected) Color.White else TextPrimary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (isFavorite) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = "Favori",
+                            tint = GoldVip,
+                            modifier = Modifier.size(11.dp)
+                        )
+                    }
+                }
                 if (isSelected) {
                     Text(
                         text = "EN VUE",

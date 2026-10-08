@@ -67,10 +67,19 @@ fun TvFavoritesContent(
     val strings = LocalStrings.current
     var selectedFilter by remember { mutableStateOf(FavoriteFilterTab.ALL) }
 
-    val activeProfile = sessionManager.getActiveProfile()
-    val favoriteChannelIds = activeProfile.favoriteChannelIds
-    val favoriteMovieIds = activeProfile.favoriteMovieIds
-    val favoriteSeriesIds = activeProfile.favoriteSeriesIds
+    var activeProfile by remember { mutableStateOf(sessionManager.getActiveProfile()) }
+    var favoriteChannelIds by remember { mutableStateOf(activeProfile.favoriteChannelIds) }
+    var favoriteMovieIds by remember { mutableStateOf(activeProfile.favoriteMovieIds) }
+    var favoriteSeriesIds by remember { mutableStateOf(activeProfile.favoriteSeriesIds) }
+
+    fun refreshFavorites() {
+        val prof = sessionManager.getActiveProfile()
+        activeProfile = prof
+        favoriteChannelIds = prof.favoriteChannelIds
+        favoriteMovieIds = prof.favoriteMovieIds
+        favoriteSeriesIds = prof.favoriteSeriesIds
+        onFavoriteChanged()
+    }
 
     val favChannels = remember(channels, favoriteChannelIds) {
         channels.filter { favoriteChannelIds.contains(it.id) }
@@ -245,7 +254,7 @@ fun TvFavoritesContent(
                                     onClick = { onSelectChannel(channel) },
                                     onUnpin = {
                                         sessionManager.toggleFavoriteChannel(channel.id)
-                                        onFavoriteChanged()
+                                        refreshFavorites()
                                     }
                                 )
                             }
@@ -276,7 +285,7 @@ fun TvFavoritesContent(
                                     onClick = { onSelectMovie(movie) },
                                     onUnpin = {
                                         sessionManager.toggleFavoriteMovie(movie.id)
-                                        onFavoriteChanged()
+                                        refreshFavorites()
                                     }
                                 )
                             }
@@ -307,7 +316,7 @@ fun TvFavoritesContent(
                                     onClick = { onSelectSeries(ser) },
                                     onUnpin = {
                                         sessionManager.toggleFavoriteSeries(ser.id)
-                                        onFavoriteChanged()
+                                        refreshFavorites()
                                     }
                                 )
                             }

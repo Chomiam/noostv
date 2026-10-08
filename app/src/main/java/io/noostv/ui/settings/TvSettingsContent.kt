@@ -38,7 +38,6 @@ import io.noostv.core.update.UpdateManager
 import io.noostv.core.update.UpdateState
 import io.noostv.ui.common.PremiumVipBadge
 import io.noostv.ui.theme.*
-import io.noostv.ui.common.GithubTokenField
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -75,7 +74,6 @@ fun TvSettingsContent(
         coroutineScope.launch {
             val state = updateManager.checkForUpdates(
                 channel = channel,
-                token = sessionManager.githubToken,
                 currentVersion = currentAppVersion
             )
             updateState = state
@@ -181,7 +179,6 @@ fun TvSettingsContent(
             )
         }
 
-        GithubTokenField(sessionManager = sessionManager)
         Spacer(modifier = Modifier.height(20.dp))
 
         // ==================== SECTION 2 : ÉTAT DES MISES À JOUR ====================
@@ -314,7 +311,6 @@ fun TvSettingsContent(
                                         coroutineScope.launch {
                                             val dlResult = updateManager.downloadApk(
                                                 release = release,
-                                                token = sessionManager.githubToken,
                                                 onProgress = { pct, dl, tot ->
                                                     updateState = UpdateState.Downloading(pct, dl, tot)
                                                 }

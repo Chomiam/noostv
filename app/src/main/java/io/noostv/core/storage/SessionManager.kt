@@ -7,6 +7,7 @@ import com.google.gson.reflect.TypeToken
 import io.noostv.core.security.CryptoManager
 import io.noostv.data.model.SavedAccount
 import io.noostv.data.model.UserProfile
+import java.io.File
 import java.util.UUID
 
 /**
@@ -16,6 +17,7 @@ import java.util.UUID
  */
 class SessionManager(context: Context) {
 
+    private val appContext: Context = context.applicationContext
     private val prefs: SharedPreferences =
         context.getSharedPreferences("noostv_session", Context.MODE_PRIVATE)
     private val gson = Gson()
@@ -128,10 +130,27 @@ class SessionManager(context: Context) {
         saveAccountToHistory(server, user, pass, name)
     }
 
-    // ==================== GESTION MULTI-PROFILS ====================
+    // ==================== GESTION MULTI-PROFILS & PERSISTANCE ULTRA-FIABLE ====================
+
+    private val profilesBackupFile: File
+        get() = File(appContext.filesDir, "noostv_profiles_backup.json")
 
     fun getProfiles(): List<UserProfile> {
-        val json = prefs.getString(KEY_PROFILES_JSON, null)
+        var json = prefs.getString(KEY_PROFILES_JSON, null)
+
+        // Si SharedPreferences est vide, restaurer depuis le fichier de sauvegarde miroir
+        if (json.isNullOrBlank() && profilesBackupFile.exists()) {
+            try {
+                val backupJson = profilesBackupFile.readText()
+                if (backupJson.isNotBlank()) {
+                    json = backupJson
+                    prefs.edit().putString(KEY_PROFILES_JSON, backupJson).commit()
+                }
+            } catch (e: Exception) {
+                // Ignore backup read failure
+            }
+        }
+
         if (json.isNullOrBlank()) {
             // Migration rétrocompatible : créer le profil Principal avec les favoris existants
             val legacyChannels = prefs.getStringSet("favorite_channel_ids", emptySet()) ?: emptySet()
@@ -152,17 +171,56 @@ class SessionManager(context: Context) {
             setActiveProfileId("profile_default")
             return list
         }
-        return try {
-            val type = object : TypeToken<List<UserProfile>>() {}.type
-            gson.fromJson<List<UserProfile>>(json, type) ?: listOf(UserProfile.DEFAULT_PROFILE)
+
+        val type = object : TypeToken<List<UserProfile>>() {}.type
+        val parsed: List<UserProfile>? = try {
+            gson.fromJson<List<UserProfile>>(json, type)
         } catch (e: Exception) {
-            listOf(UserProfile.DEFAULT_PROFILE)
+            null
         }
+
+        if (!parsed.isNullOrEmpty()) {
+            // S'assurer que le fichier miroir est toujours créé sur le disque
+            if (!profilesBackupFile.exists()) {
+                try {
+                    profilesBackupFile.writeText(json)
+                } catch (ignored: Exception) {}
+            }
+            return parsed
+        }
+
+        // Tenter la sauvegarde miroir si le JSON de prefs était altéré
+        if (profilesBackupFile.exists()) {
+            try {
+                val backupJson = profilesBackupFile.readText()
+                val backupList: List<UserProfile>? = gson.fromJson(backupJson, type)
+                if (!backupList.isNullOrEmpty()) {
+                    prefs.edit().putString(KEY_PROFILES_JSON, backupJson).commit()
+                    return backupList
+                }
+            } catch (ignored: Exception) {}
+        }
+
+        val fallback = listOf(UserProfile.DEFAULT_PROFILE)
+        saveProfilesList(fallback)
+        return fallback
     }
 
     private fun saveProfilesList(list: List<UserProfile>) {
         val json = gson.toJson(list)
-        prefs.edit().putString(KEY_PROFILES_JSON, json).apply()
+        // 1. Commit synchrone immédiat dans SharedPreferences (résiste aux fermetures brutales de l'app)
+        prefs.edit().putString(KEY_PROFILES_JSON, json).commit()
+
+        // 2. Écriture atomique sur fichier interne privé (survit aux mises à jour APK et nettoyages de SharedPreferences)
+        try {
+            val tempFile = File(appContext.filesDir, "noostv_profiles_backup.json.tmp")
+            tempFile.writeText(json)
+            if (tempFile.exists()) {
+                tempFile.renameTo(profilesBackupFile)
+            }
+        } catch (e: Exception) {
+            // Ne bloque jamais l'application si l'écriture échoue
+        }
     }
 
     fun getActiveProfileId(): String {
@@ -170,7 +228,7 @@ class SessionManager(context: Context) {
     }
 
     fun setActiveProfileId(id: String) {
-        prefs.edit().putString(KEY_ACTIVE_PROFILE_ID, id).apply()
+        prefs.edit().putString(KEY_ACTIVE_PROFILE_ID, id).commit()
     }
 
     fun getActiveProfile(): UserProfile {
@@ -226,7 +284,11 @@ class SessionManager(context: Context) {
     fun updateActiveProfile(transform: (UserProfile) -> UserProfile) {
         val current = getProfiles().toMutableList()
         val activeId = getActiveProfileId()
-        val index = current.indexOfFirst { it.id == activeId }
+        var index = current.indexOfFirst { it.id == activeId }
+        if (index == -1 && current.isNotEmpty()) {
+            index = 0
+            setActiveProfileId(current[0].id)
+        }
         if (index != -1) {
             current[index] = transform(current[index])
             saveProfilesList(current)
@@ -483,15 +545,11 @@ class SessionManager(context: Context) {
     }
 
     fun logout() {
-        val savedAccounts = prefs.getString(KEY_SAVED_ACCOUNTS_ENCRYPTED, null)
-        val appLang = prefs.getString(KEY_APP_LANGUAGE, "fr")
-        val updateChan = prefs.getString(KEY_UPDATE_CHANNEL, "stable")
         prefs.edit()
-            .clear()
             .putBoolean(KEY_IS_LOGGED_IN, false)
-            .putString(KEY_SAVED_ACCOUNTS_ENCRYPTED, savedAccounts)
-            .putString(KEY_APP_LANGUAGE, appLang)
-            .putString(KEY_UPDATE_CHANNEL, updateChan)
-            .apply()
+            .remove(KEY_SERVER_URL)
+            .remove(KEY_USERNAME)
+            .remove(KEY_PASSWORD)
+            .commit()
     }
 }

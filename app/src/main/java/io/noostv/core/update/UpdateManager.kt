@@ -55,11 +55,12 @@ class UpdateManager(private val context: Context) {
     }
 
     /**
-     * Vérifie la disponibilité d'une nouvelle version sur GitHub selon le canal sélectionné (stable ou testing)
+     * Vérifie la disponibilité d'une nouvelle version sur GitHub selon le canal sélectionné (stable ou testing).
+     * Le dépôt étant public, aucun jeton n'est requis par défaut.
      */
     suspend fun checkForUpdates(
         channel: String,
-        token: String,
+        token: String = "",
         currentVersion: String = io.noostv.BuildConfig.VERSION_NAME
     ): UpdateState = withContext(Dispatchers.IO) {
         try {
@@ -119,7 +120,7 @@ class UpdateManager(private val context: Context) {
             }
 
             if (matches) {
-                // Recherche de l'asset APK
+                // Recherche de l'asset APK (privilégie browser_download_url pour téléchargement public direct)
                 var apkUrl: String? = null
                 var apkName: String? = null
                 var apkSize: Long = 0
@@ -132,8 +133,9 @@ class UpdateManager(private val context: Context) {
                         if (aName.endsWith(".apk", ignoreCase = true)) {
                             apkName = aName
                             apkSize = assetObj.get("size")?.asLong ?: 0
-                            // URL de téléchargement de l'asset
-                            apkUrl = assetObj.get("url")?.asString ?: assetObj.get("browser_download_url")?.asString
+                            val browserUrl = assetObj.get("browser_download_url")?.asString
+                            val apiUrl = assetObj.get("url")?.asString
+                            apkUrl = if (!browserUrl.isNullOrBlank()) browserUrl else apiUrl
                             break
                         }
                     }
@@ -158,11 +160,11 @@ class UpdateManager(private val context: Context) {
     }
 
     /**
-     * Télécharge l'APK de mise à jour depuis GitHub
+     * Télécharge l'APK de mise à jour depuis GitHub (public ou privé).
      */
     suspend fun downloadApk(
         release: ReleaseInfo,
-        token: String,
+        token: String = "",
         onProgress: (percent: Int, downloaded: Long, total: Long) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         val downloadUrl = release.apkDownloadUrl 
@@ -171,10 +173,15 @@ class UpdateManager(private val context: Context) {
         try {
             val reqBuilder = Request.Builder()
                 .url(downloadUrl)
-                .header("Accept", "application/octet-stream")
 
-            if (token.isNotBlank()) {
-                reqBuilder.header("Authorization", "Bearer $token")
+            // Si c'est une URL de l'API REST privée, on spécifie l'accept octet-stream et le token.
+            // Si c'est un browser_download_url public (github.com/releases/download/...),
+            // AUCUN header d'authentification ne doit être envoyé (sinon rejet HTTP 400 par AWS S3 après redirection).
+            if (downloadUrl.contains("api.github.com")) {
+                reqBuilder.header("Accept", "application/octet-stream")
+                if (token.isNotBlank()) {
+                    reqBuilder.header("Authorization", "Bearer $token")
+                }
             }
 
             val response = httpClient.newCall(reqBuilder.build()).execute()
