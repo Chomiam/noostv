@@ -1285,12 +1285,24 @@ fun TvSidebar(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        Icon(
-                            imageVector = tab.icon,
-                            contentDescription = tabLabel,
-                            tint = if (isFocused) Color.White else if (isSelected) NoosCyan else TextSecondary,
-                            modifier = Modifier.size(19.dp)
-                        )
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = tab.icon,
+                                contentDescription = tabLabel,
+                                tint = if (isFocused) Color.White else if (isSelected) NoosCyan else TextSecondary,
+                                modifier = Modifier.size(19.dp)
+                            )
+                            if (tab == TvNavTab.SETTINGS) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .align(Alignment.TopEnd)
+                                        .offset(x = 3.dp, y = (-2).dp)
+                                        .background(Color(0xFFEF4444), CircleShape)
+                                        .border(1.dp, Color(0xFF0B101D), CircleShape)
+                                )
+                            }
+                        }
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = tabLabel,

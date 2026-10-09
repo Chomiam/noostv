@@ -249,13 +249,24 @@ fun MobileHomeScreen(
                                 selectedTab = tab
                                 onTabSelected(tab)
                             },
-                            alwaysShowLabel = false,
                             icon = {
-                                Icon(
-                                    imageVector = tab.icon,
-                                    contentDescription = tabLabel,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = tab.icon,
+                                        contentDescription = tabLabel,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    if (tab == MobileBottomTab.SETTINGS) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .align(Alignment.TopEnd)
+                                                .offset(x = 3.dp, y = (-2).dp)
+                                                .background(Color(0xFFEF4444), CircleShape)
+                                                .border(1.dp, SurfaceDark, CircleShape)
+                                        )
+                                    }
+                                }
                             },
                             label = {
                                 Text(
@@ -332,13 +343,24 @@ fun MobileHomeScreen(
                             NavigationRailItem(
                                 selected = isSelected,
                                 onClick = { selectedTab = tab },
-                                alwaysShowLabel = false,
                                 icon = {
-                                    Icon(
-                                        imageVector = tab.icon,
-                                        contentDescription = tabLabel,
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = tab.icon,
+                                            contentDescription = tabLabel,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        if (tab == MobileBottomTab.SETTINGS) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .align(Alignment.TopEnd)
+                                                    .offset(x = 3.dp, y = (-2).dp)
+                                                    .background(Color(0xFFEF4444), CircleShape)
+                                                    .border(1.dp, SurfaceDark, CircleShape)
+                                            )
+                                        }
+                                    }
                                 },
                                 label = {
                                     Text(
