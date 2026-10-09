@@ -156,11 +156,19 @@ fun NoosPlayerScreen(
         }
     }
 
-    // Sauvegarde régulière de la position de lecture pour la reprise (toutes les 5 secondes)
+    // Libération immédiate du cache de pochettes Coil en mémoire pour maximiser la RAM disponible pour ExoPlayer
+    LaunchedEffect(Unit) {
+        try {
+            coil.Coil.imageLoader(context).memoryCache?.clear()
+        } catch (_: Throwable) {}
+        System.gc()
+    }
+
+    // Sauvegarde optimisée de la position de lecture pour la reprise (toutes les 45 secondes au lieu de 5s pour ménager le CPU/flash)
     LaunchedEffect(isPlaying, isLive, contentId) {
         if (!isLive && contentId != null && sessionManager != null) {
             while (true) {
-                delay(5000)
+                delay(45_000)
                 if (isPlaying && durationMs > 0L) {
                     val cur = playerEngine.currentPosition
                     sessionManager.savePlaybackResume(
@@ -170,6 +178,22 @@ fun NoosPlayerScreen(
                         durationMs = durationMs
                     )
                 }
+            }
+        }
+    }
+
+    // Sauvegarde immédiate lors de la mise en pause
+    LaunchedEffect(isPlaying) {
+        if (!isPlaying && !isLive && contentId != null && sessionManager != null) {
+            val cur = playerEngine.currentPosition
+            val dur = playerEngine.duration
+            if (dur > 0L && cur > 0L) {
+                sessionManager.savePlaybackResume(
+                    contentId = contentId,
+                    title = title,
+                    positionMs = cur,
+                    durationMs = dur
+                )
             }
         }
     }
@@ -221,14 +245,16 @@ fun NoosPlayerScreen(
         runCatching { playerFocusRequester.requestFocus() }
     }
 
-    // Rafraîchissement régulier de la position VOD
-    LaunchedEffect(isPlaying) {
-        while (true) {
-            if (!isUserScrubbing) {
-                currentPositionMs = playerEngine.currentPosition
-                durationMs = playerEngine.duration
+    // Rafraîchissement régulier de la position VOD UNIQUEMENT quand l'OSD est visible (zéro réévaluation en plein écran passif)
+    LaunchedEffect(isPlaying, isOsdVisible) {
+        if (isOsdVisible) {
+            while (true) {
+                if (!isUserScrubbing) {
+                    currentPositionMs = playerEngine.currentPosition
+                    durationMs = playerEngine.duration
+                }
+                delay(500)
             }
-            delay(500)
         }
     }
 
@@ -285,11 +311,13 @@ fun NoosPlayerScreen(
         }
     }
 
-    // Mise à jour périodique des statistiques de lecture (toutes les secondes quand la vidéo joue ou le dialogue est ouvert)
-    LaunchedEffect(isPlaying, showSettingsDialog) {
-        while (true) {
-            playerEngine.updatePlaybackStats()
-            delay(1000)
+    // Mise à jour périodique des statistiques de lecture UNIQUEMENT si l'OSD ou le dialogue des paramètres est ouvert
+    LaunchedEffect(isPlaying, showSettingsDialog, isOsdVisible) {
+        if (isPlaying && (isOsdVisible || showSettingsDialog)) {
+            while (true) {
+                playerEngine.updatePlaybackStats()
+                delay(1000)
+            }
         }
     }
 

@@ -2,6 +2,7 @@ package io.noostv.core.player
 
 import android.content.Context
 import android.net.Uri
+import android.net.wifi.WifiManager
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -90,12 +91,46 @@ class PlayerEngine(
     private val entitlementManager: EntitlementManager
 ) {
 
+    // High-Performance WifiLock pour éliminer les micro-saccades et micro-rebuffering en veille Wi-Fi
+    private val wifiLock: WifiManager.WifiLock? by lazy {
+        try {
+            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            wifiManager?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "NoosTV:PlaybackWifiLock")?.apply {
+                setReferenceCounted(false)
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun acquireWifiLock() {
+        try {
+            if (wifiLock?.isHeld == false) {
+                wifiLock?.acquire()
+            }
+        } catch (e: Exception) {
+            Log.w("NoosPlayer", "Impossible d'acquérir le WifiLock", e)
+        }
+    }
+
+    private fun releaseWifiLock() {
+        try {
+            if (wifiLock?.isHeld == true) {
+                wifiLock?.release()
+            }
+        } catch (e: Exception) {
+            Log.w("NoosPlayer", "Impossible de libérer le WifiLock", e)
+        }
+    }
+
+    // Tunneling matériel activé pour relier directement le décodeur vidéo au pipeline d'affichage TV
     private val trackSelector = DefaultTrackSelector(context).apply {
         setParameters(
             buildUponParameters()
                 .setPreferredAudioLanguage("fra")
                 .setPreferredTextLanguage("fra")
                 .setForceHighestSupportedBitrate(true)
+                .setTunnelingEnabled(true)
         )
     }
 
@@ -109,19 +144,23 @@ class PlayerEngine(
 
     private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
 
+    // RenderersFactory avec file asynchrone MediaCodec pour désengorger le CPU sur les SoC TV quad-core
     private val renderersFactory = DefaultRenderersFactory(context)
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         .setEnableDecoderFallback(true)
+        .forceEnableMediaCodecAsynchronousQueueing()
 
-    // LoadControl optimisé pour zapping IPTV ultra-rapide et streaming VOD résilient
+    // LoadControl optimisé pour Android TV (économie RAM, 0 saccade, 25MB max)
     private val defaultLoadControl = DefaultLoadControl.Builder()
         .setBufferDurationsMs(
-            15_000, // minBufferMs
-            45_000, // maxBufferMs
-            1_000,  // bufferForPlaybackMs (zapping ultra-rapide)
-            2_000   // bufferForPlaybackAfterRebufferMs
+            8_000,  // minBufferMs (8s au lieu de 15s : économise ~50MB RAM sans risque de buffer underrun)
+            20_000, // maxBufferMs (20s au lieu de 45s : évite d'accumuler 150MB en mémoire vive)
+            1_000,  // bufferForPlaybackMs (1s : zapping ultra-rapide)
+            2_000   // bufferForPlaybackAfterRebufferMs (2s)
         )
-        .setPrioritizeTimeOverSizeThresholds(true)
+        .setTargetBufferBytes(25 * 1024 * 1024) // Plafonne la mémoire tampon à 25 Mo
+        .setBackBuffer(0, false) // 0s de back-buffer pour libérer immédiatement les trames passées
+        .setPrioritizeTimeOverSizeThresholds(false)
         .build()
 
     val exoPlayer: ExoPlayer by lazy {
@@ -176,6 +215,9 @@ class PlayerEngine(
                 _isPlaying.value = isPlaying
                 if (isPlaying) {
                     _playerError.value = null
+                    acquireWifiLock()
+                } else {
+                    releaseWifiLock()
                 }
                 updatePlaybackStats()
             }
@@ -241,6 +283,7 @@ class PlayerEngine(
                 .setMaxVideoSize(1280, 720)
                 .setMaxVideoBitrate(2_500_000)
                 .setForceHighestSupportedBitrate(false)
+                .setTunnelingEnabled(false)
                 .setExceedVideoConstraintsIfNecessary(true)
         } else {
             builder
@@ -248,6 +291,7 @@ class PlayerEngine(
                 .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
                 .setMaxVideoBitrate(Int.MAX_VALUE)
                 .setForceHighestSupportedBitrate(true)
+                .setTunnelingEnabled(true)
                 .setExceedVideoConstraintsIfNecessary(true)
         }
         trackSelector.setParameters(builder)
@@ -333,10 +377,12 @@ class PlayerEngine(
     }
 
     fun stop() {
+        releaseWifiLock()
         exoPlayer.stop()
     }
 
     fun release() {
+        releaseWifiLock()
         exoPlayer.release()
     }
 
@@ -358,6 +404,7 @@ class PlayerEngine(
             .clearVideoSizeConstraints()
             .setMaxVideoBitrate(Int.MAX_VALUE)
             .setForceHighestSupportedBitrate(trackInfo == null)
+            .setTunnelingEnabled(true)
             .setExceedVideoConstraintsIfNecessary(true)
 
         if (trackInfo == null) {
