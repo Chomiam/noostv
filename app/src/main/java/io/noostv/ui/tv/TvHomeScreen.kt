@@ -154,7 +154,9 @@ fun TvHomeScreen(
     onMovieFocused: (String) -> Unit = {},
     initialFocusedSeriesId: String? = null,
     onSeriesFocused: (String) -> Unit = {},
-    onRefreshCatalog: () -> Unit = {}
+    onRefreshCatalog: () -> Unit = {},
+    hasUpdateAvailable: Boolean = false,
+    onUpdateStatusChanged: ((Boolean) -> Unit)? = null
 ) {
     val strings = LocalStrings.current
     val context = LocalContext.current
@@ -299,6 +301,7 @@ fun TvHomeScreen(
                 TvNavTab.SERIES -> if (series.isNotEmpty() && !isSeriesLoading) contentFocusRequesters[TvNavTab.SERIES] else seriesCategoryChipsFocusRequester
                 else -> contentFocusRequesters[selectedTab]
             },
+            hasUpdateAvailable = hasUpdateAvailable,
             onTabSelected = { tab ->
                 selectedTab = tab
                 onTabSelected(tab)
@@ -1048,7 +1051,8 @@ fun TvHomeScreen(
                         onOpenLogin = onOpenLogin,
                         onLogout = onLogout,
                         onLanguageChanged = onLanguageChanged,
-                        onRefreshCatalog = onRefreshCatalog
+                        onRefreshCatalog = onRefreshCatalog,
+                        onUpdateStatusChanged = onUpdateStatusChanged
                     )
                 }
             }
@@ -1134,6 +1138,7 @@ fun TvSidebar(
     selectedTab: TvNavTab,
     sidebarFocusRequesters: Map<TvNavTab, FocusRequester>,
     contentFocusRequester: FocusRequester? = null,
+    hasUpdateAvailable: Boolean = false,
     onTabSelected: (TvNavTab) -> Unit,
     onNavigateRight: () -> Boolean
 ) {
@@ -1292,7 +1297,7 @@ fun TvSidebar(
                                 tint = if (isFocused) Color.White else if (isSelected) NoosCyan else TextSecondary,
                                 modifier = Modifier.size(19.dp)
                             )
-                            if (tab == TvNavTab.SETTINGS) {
+                            if (tab == TvNavTab.SETTINGS && hasUpdateAvailable) {
                                 Box(
                                     modifier = Modifier
                                         .size(6.dp)

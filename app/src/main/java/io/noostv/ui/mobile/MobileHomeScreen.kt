@@ -138,7 +138,9 @@ fun MobileHomeScreen(
     onMoviePageChange: (Int) -> Unit = {},
     initialSeriesPage: Int = 1,
     onSeriesPageChange: (Int) -> Unit = {},
-    onRefreshCatalog: () -> Unit = {}
+    onRefreshCatalog: () -> Unit = {},
+    hasUpdateAvailable: Boolean = false,
+    onUpdateStatusChanged: ((Boolean) -> Unit)? = null
 ) {
     val strings = LocalStrings.current
     val coroutineScope = rememberCoroutineScope()
@@ -256,7 +258,7 @@ fun MobileHomeScreen(
                                         contentDescription = tabLabel,
                                         modifier = Modifier.size(20.dp)
                                     )
-                                    if (tab == MobileBottomTab.SETTINGS) {
+                                    if (tab == MobileBottomTab.SETTINGS && hasUpdateAvailable) {
                                         Box(
                                             modifier = Modifier
                                                 .size(6.dp)
@@ -350,7 +352,7 @@ fun MobileHomeScreen(
                                             contentDescription = tabLabel,
                                             modifier = Modifier.size(20.dp)
                                         )
-                                        if (tab == MobileBottomTab.SETTINGS) {
+                                        if (tab == MobileBottomTab.SETTINGS && hasUpdateAvailable) {
                                             Box(
                                                 modifier = Modifier
                                                     .size(6.dp)
@@ -704,7 +706,8 @@ fun MobileHomeScreen(
                         onOpenLogin = onOpenLogin,
                         onLogout = onLogout,
                         onLanguageChanged = onLanguageChanged,
-                        onRefreshCatalog = onRefreshCatalog
+                        onRefreshCatalog = onRefreshCatalog,
+                        onUpdateStatusChanged = onUpdateStatusChanged
                     )
                 }
             }
@@ -1165,7 +1168,8 @@ private fun MobileSettingsView(
     onOpenLogin: () -> Unit,
     onLogout: () -> Unit,
     onLanguageChanged: (AppLanguage) -> Unit = {},
-    onRefreshCatalog: () -> Unit = {}
+    onRefreshCatalog: () -> Unit = {},
+    onUpdateStatusChanged: ((Boolean) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -1211,6 +1215,14 @@ private fun MobileSettingsView(
 
     LaunchedEffect(selectedChannel) {
         checkUpdates(selectedChannel)
+    }
+
+    LaunchedEffect(updateState) {
+        if (updateState is UpdateState.UpdateAvailable) {
+            onUpdateStatusChanged?.invoke(true)
+        } else if (updateState is UpdateState.UpToDate) {
+            onUpdateStatusChanged?.invoke(false)
+        }
     }
 
     Column(

@@ -53,7 +53,8 @@ fun TvSettingsContent(
     onOpenLogin: () -> Unit,
     onLogout: () -> Unit,
     onLanguageChanged: (AppLanguage) -> Unit = {},
-    onRefreshCatalog: () -> Unit = {}
+    onRefreshCatalog: () -> Unit = {},
+    onUpdateStatusChanged: ((Boolean) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -63,6 +64,14 @@ fun TvSettingsContent(
 
     var selectedChannel by remember { mutableStateOf(sessionManager.updateChannel) }
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+
+    LaunchedEffect(updateState) {
+        if (updateState is UpdateState.UpdateAvailable) {
+            onUpdateStatusChanged?.invoke(true)
+        } else if (updateState is UpdateState.UpToDate) {
+            onUpdateStatusChanged?.invoke(false)
+        }
+    }
     val currentAppVersion = io.noostv.BuildConfig.VERSION_NAME
 
     // Focus requesters pour D-Pad télécommande

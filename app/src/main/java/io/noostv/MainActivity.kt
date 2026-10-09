@@ -171,6 +171,22 @@ class MainActivity : ComponentActivity() {
                 var savedMobileMoviePage by remember { mutableIntStateOf(1) }
                 var savedMobileSeriesPage by remember { mutableIntStateOf(1) }
 
+                val updateManager = remember { io.noostv.core.update.UpdateManager(this@MainActivity) }
+                var hasUpdateAvailable by remember { mutableStateOf(false) }
+
+                // Vérification automatique des mises à jour au lancement de l'application
+                LaunchedEffect(sessionManager.updateChannel) {
+                    try {
+                        val res = updateManager.checkForUpdates(
+                            channel = sessionManager.updateChannel,
+                            currentVersion = BuildConfig.VERSION_NAME
+                        )
+                        hasUpdateAvailable = res is io.noostv.core.update.UpdateState.UpdateAvailable
+                    } catch (_: Exception) {
+                        hasUpdateAvailable = false
+                    }
+                }
+
                 // Mobile : dès qu'on est dans le lecteur, presser Home met automatiquement la
                 // lecture en mini-fenêtre PiP (déclenché par onUserLeaveHint → requestPip).
                 LaunchedEffect(currentScreen) {
@@ -535,7 +551,9 @@ class MainActivity : ComponentActivity() {
                                 onMovieFocused = { savedTvFocusedMovieId = it },
                                 initialFocusedSeriesId = savedTvFocusedSeriesId,
                                 onSeriesFocused = { savedTvFocusedSeriesId = it },
-                                onRefreshCatalog = refreshCatalogAction
+                                onRefreshCatalog = refreshCatalogAction,
+                                hasUpdateAvailable = hasUpdateAvailable,
+                                onUpdateStatusChanged = { hasUpdateAvailable = it }
                             )
                         } else {
                             MobileHomeScreen(
@@ -629,7 +647,9 @@ class MainActivity : ComponentActivity() {
                                 onMoviePageChange = { savedMobileMoviePage = it },
                                 initialSeriesPage = savedMobileSeriesPage,
                                 onSeriesPageChange = { savedMobileSeriesPage = it },
-                                onRefreshCatalog = refreshCatalogAction
+                                onRefreshCatalog = refreshCatalogAction,
+                                hasUpdateAvailable = hasUpdateAvailable,
+                                onUpdateStatusChanged = { hasUpdateAvailable = it }
                             )
                         }
                     }
