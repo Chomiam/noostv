@@ -44,6 +44,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import io.noostv.R
@@ -1152,6 +1155,27 @@ private fun MobileSettingsView(
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
     val currentAppVersion = io.noostv.BuildConfig.VERSION_NAME
 
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // Reprise automatique de l'installation au retour des paramètres Android si l'autorisation a été accordée
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val state = updateState
+                if (state is UpdateState.ReadyToInstall && updateManager.canInstallPackages()) {
+                    val res = updateManager.installApkWithResult(state.apkFile)
+                    if (res is UpdateManager.InstallResult.Error) {
+                        updateState = UpdateState.Error(res.message)
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     fun checkUpdates(channel: String) {
         updateState = UpdateState.Checking
         coroutineScope.launch {
@@ -1286,7 +1310,10 @@ private fun MobileSettingsView(
                                         dlResult.fold(
                                             onSuccess = { file ->
                                                 updateState = UpdateState.ReadyToInstall(file)
-                                                updateManager.installApk(file)
+                                                val res = updateManager.installApkWithResult(file)
+                                                if (res is UpdateManager.InstallResult.Error) {
+                                                    updateState = UpdateState.Error(res.message)
+                                                }
                                             },
                                             onFailure = { err ->
                                                 updateState = UpdateState.Error(err.localizedMessage ?: "Erreur de téléchargement")
@@ -1302,8 +1329,62 @@ private fun MobileSettingsView(
                             }
                         }
                     }
+                    is UpdateState.Downloading -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(strings.downloadingUpdate, color = NoosCyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                Text("${state.progressPercent}%", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                            LinearProgressIndicator(
+                                progress = { state.progressPercent / 100f },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(50)),
+                                color = NoosCyan,
+                                trackColor = SurfaceDarkVariant
+                            )
+                        }
+                    }
+                    is UpdateState.ReadyToInstall -> {
+                        val canInstall = updateManager.canInstallPackages()
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("📦 Mise à jour prête à être installée", color = NoosCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Button(
+                                onClick = {
+                                    if (!updateManager.canInstallPackages()) {
+                                        updateManager.openInstallPermissionSettings()
+                                    } else {
+                                        val res = updateManager.installApkWithResult(state.apkFile)
+                                        if (res is UpdateManager.InstallResult.Error) {
+                                            updateState = UpdateState.Error(res.message)
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().height(44.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = if (canInstall) Color(0xFF00C853) else NoosBlue)
+                            ) {
+                                Icon(
+                                    imageVector = if (canInstall) Icons.Default.CheckCircle else Icons.Default.Security,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    if (canInstall) "Lancer l'installation de la mise à jour" else "Autoriser l'installation dans Paramètres",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
                     is UpdateState.Error -> {
-                        Text("ℹ️ ${state.message}", color = TextSecondary, fontSize = 12.sp)
+                        Text("ℹ️ ${state.message}", color = Color(0xFFFF5252), fontSize = 12.sp)
                     }
                     else -> {}
                 }

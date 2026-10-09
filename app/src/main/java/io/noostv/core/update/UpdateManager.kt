@@ -83,8 +83,7 @@ class UpdateManager(private val context: Context) {
             val targetRelease = findMatchingRelease(jsonArray, channel)
                 ?: return@withContext UpdateState.UpToDate(currentVersion, channel)
 
-            val isNewer = isVersionNewer(targetRelease.version, currentVersion) || 
-                (channel.equals("testing", ignoreCase = true) && targetRelease.isPrerelease && targetRelease.version != currentVersion)
+            val isNewer = isVersionNewer(targetRelease.version, currentVersion)
 
             if (isNewer) {
                 UpdateState.UpdateAvailable(
@@ -102,6 +101,7 @@ class UpdateManager(private val context: Context) {
 
     private fun findMatchingRelease(releases: JsonArray, channel: String): ReleaseInfo? {
         val isTesting = channel.equals("testing", ignoreCase = true)
+        var bestRelease: ReleaseInfo? = null
 
         for (elem in releases) {
             val obj = elem.asJsonObject
@@ -112,51 +112,61 @@ class UpdateManager(private val context: Context) {
             val body = obj.get("body")?.asString ?: ""
             val publishedAt = obj.get("published_at")?.asString ?: ""
 
-            // Filtrage par canal
+            // Filtrage par canal :
+            // - testing : toutes les releases sont acceptées (pré-releases testing ET stables les plus récentes)
+            // - stable  : uniquement les versions stables officielles (!isPrerelease)
             val matches = if (isTesting) {
-                targetCommitish == "testing" || isPrerelease
+                true
             } else {
                 !isPrerelease && (targetCommitish == "stable" || targetCommitish == "master")
             }
 
-            if (matches) {
-                // Recherche de l'asset APK (privilégie browser_download_url pour téléchargement public direct)
-                var apkUrl: String? = null
-                var apkName: String? = null
-                var apkSize: Long = 0
+            if (!matches) continue
 
-                val assets = obj.getAsJsonArray("assets")
-                if (assets != null) {
-                    for (assetElem in assets) {
-                        val assetObj = assetElem.asJsonObject
-                        val aName = assetObj.get("name")?.asString ?: ""
-                        if (aName.endsWith(".apk", ignoreCase = true)) {
-                            apkName = aName
-                            apkSize = assetObj.get("size")?.asLong ?: 0
-                            val browserUrl = assetObj.get("browser_download_url")?.asString
-                            val apiUrl = assetObj.get("url")?.asString
-                            apkUrl = if (!browserUrl.isNullOrBlank()) browserUrl else apiUrl
-                            break
-                        }
+            // Recherche de l'asset APK (privilégie browser_download_url pour téléchargement public direct)
+            var apkUrl: String? = null
+            var apkName: String? = null
+            var apkSize: Long = 0
+
+            val assets = obj.getAsJsonArray("assets")
+            if (assets != null) {
+                for (assetElem in assets) {
+                    val assetObj = assetElem.asJsonObject
+                    val aName = assetObj.get("name")?.asString ?: ""
+                    if (aName.endsWith(".apk", ignoreCase = true)) {
+                        apkName = aName
+                        apkSize = assetObj.get("size")?.asLong ?: 0
+                        val browserUrl = assetObj.get("browser_download_url")?.asString
+                        val apiUrl = assetObj.get("url")?.asString
+                        apkUrl = if (!browserUrl.isNullOrBlank()) browserUrl else apiUrl
+                        break
                     }
                 }
+            }
 
-                val cleanVersion = tagName.removePrefix("v").trim()
-                return ReleaseInfo(
-                    tag = tagName,
-                    version = cleanVersion,
-                    title = name,
-                    notes = body,
-                    targetBranch = targetCommitish,
-                    isPrerelease = isPrerelease,
-                    publishedAt = publishedAt,
-                    apkDownloadUrl = apkUrl,
-                    apkName = apkName,
-                    apkSizeBytes = apkSize
-                )
+            if (apkUrl.isNullOrBlank()) continue
+
+            val cleanVersion = tagName.removePrefix("v").trim()
+            val candidate = ReleaseInfo(
+                tag = tagName,
+                version = cleanVersion,
+                title = name,
+                notes = body,
+                targetBranch = targetCommitish,
+                isPrerelease = isPrerelease,
+                publishedAt = publishedAt,
+                apkDownloadUrl = apkUrl,
+                apkName = apkName,
+                apkSizeBytes = apkSize
+            )
+
+            // Garde la version la plus haute parmi les éligibles
+            val currentBest = bestRelease
+            if (currentBest == null || isVersionNewer(candidate.version, currentBest.version)) {
+                bestRelease = candidate
             }
         }
-        return null
+        return bestRelease
     }
 
     /**
@@ -255,10 +265,24 @@ class UpdateManager(private val context: Context) {
      * Valide l'intégrité de l'archive APK téléchargée puis lance l'installateur de paquets d'Android.
      * Rejette et supprime les fichiers corrompus, incomplets ou dont l'applicationId ne correspond pas.
      */
+    sealed class InstallResult {
+        object Success : InstallResult()
+        object PermissionRequired : InstallResult()
+        data class Error(val message: String) : InstallResult()
+    }
+
+    /**
+     * Valide l'intégrité de l'archive APK téléchargée puis lance l'installateur de paquets d'Android.
+     * Rejette et supprime les fichiers corrompus, incomplets ou dont l'applicationId ne correspond pas.
+     */
     fun installApk(apkFile: File): Boolean {
+        return installApkWithResult(apkFile) is InstallResult.Success
+    }
+
+    fun installApkWithResult(apkFile: File): InstallResult {
         if (!apkFile.exists() || apkFile.length() < 1024 * 100) {
             android.util.Log.e("UpdateManager", "Fichier APK manquant ou taille invalide (< 100 Ko)")
-            return false
+            return InstallResult.Error("Fichier APK invalide ou incomplet")
         }
 
         // Vérification de la structure du paquet via l'analyseur natif du PackageManager
@@ -267,62 +291,126 @@ class UpdateManager(private val context: Context) {
         if (archiveInfo == null) {
             android.util.Log.e("UpdateManager", "PackageArchiveInfo nul : APK corrompu ou altéré")
             apkFile.delete()
-            return false
+            return InstallResult.Error("Fichier APK corrompu ou altéré")
         }
 
         // Vérification stricte du package applicatif
         if (archiveInfo.packageName != context.packageName) {
             android.util.Log.e("UpdateManager", "Alerte sécurité : PackageName de l'APK rejeté (${archiveInfo.packageName} != ${context.packageName})")
             apkFile.delete()
-            return false
+            return InstallResult.Error("Alerte sécurité : Le paquet ne correspond pas à NoosTV")
+        }
+
+        // Vérification contre le downgrade pour éviter INSTALL_FAILED_VERSION_DOWNGRADE
+        val currentPkgInfo = try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageInfo(context.packageName, android.content.pm.PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(context.packageName, 0)
+            }
+        } catch (e: Exception) {
+            null
+        }
+
+        val currentVersionCode = if (currentPkgInfo != null) {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                currentPkgInfo.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                currentPkgInfo.versionCode.toLong()
+            }
+        } else 0L
+
+        val archiveVersionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            archiveInfo.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            archiveInfo.versionCode.toLong()
+        }
+
+        if (archiveVersionCode > 0 && currentVersionCode > 0 && archiveVersionCode < currentVersionCode) {
+            android.util.Log.e("UpdateManager", "Refus d'installation : downgrade ($archiveVersionCode < $currentVersionCode)")
+            apkFile.delete()
+            return InstallResult.Error("Impossible d'installer : la version téléchargée (build $archiveVersionCode) est plus ancienne que la version installée (build $currentVersionCode).")
         }
 
         // Si l'autorisation d'installer des sources inconnues n'est pas encore accordée sur Android 8+, ouvrir les paramètres
         if (!canInstallPackages()) {
             android.util.Log.w("UpdateManager", "Permission REQUEST_INSTALL_PACKAGES manquante, redirection vers les paramètres")
             openInstallPermissionSettings()
-            return false
+            return InstallResult.PermissionRequired
         }
 
-        val uri: Uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            apkFile
-        )
+        return try {
+            val uri: Uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                apkFile
+            )
 
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            }
+            context.startActivity(intent)
+            InstallResult.Success
+        } catch (e: Exception) {
+            android.util.Log.e("UpdateManager", "Échec lors du lancement de l'intent d'installation", e)
+            InstallResult.Error("Erreur d'installation : ${e.localizedMessage ?: e.javaClass.simpleName}")
         }
-        context.startActivity(intent)
-        return true
     }
 
     /**
-     * Compare deux versions numériques (ex: "1.1.0" vs "1.0.1")
+     * Compare deux versions numériques (ex: "1.1.0" vs "1.0.1", "1.2.9-beta.1" vs "1.2.8")
      */
     fun isVersionNewer(remoteVersion: String, currentVersion: String): Boolean {
         try {
-            val rParts = remoteVersion.split("-")[0].split(".").map { it.toIntOrNull() ?: 0 }
-            val cParts = currentVersion.split("-")[0].split(".").map { it.toIntOrNull() ?: 0 }
+            val rClean = remoteVersion.trim().removePrefix("v")
+            val cClean = currentVersion.trim().removePrefix("v")
+            if (rClean == cClean) return false
 
-            val maxLen = maxOf(rParts.size, cParts.size)
+            val rBase = rClean.substringBefore("-").split(".").map { it.toIntOrNull() ?: 0 }
+            val cBase = cClean.substringBefore("-").split(".").map { it.toIntOrNull() ?: 0 }
+
+            val maxLen = maxOf(rBase.size, cBase.size)
             for (i in 0 until maxLen) {
-                val r = rParts.getOrElse(i) { 0 }
-                val c = cParts.getOrElse(i) { 0 }
+                val r = rBase.getOrElse(i) { 0 }
+                val c = cBase.getOrElse(i) { 0 }
                 if (r > c) return true
                 if (r < c) return false
             }
-            // Si la version numérique de base est identique (ex: 1.2.6 vs 1.2.6-beta.5),
-            // la version finale stable (sans tiret) est plus récente que la pré-release
-            if (!remoteVersion.contains("-") && currentVersion.contains("-")) {
+
+            // Les composantes numériques de base sont identiques (ex: 1.2.8 vs 1.2.8-beta.1)
+            val rHasPre = rClean.contains("-")
+            val cHasPre = cClean.contains("-")
+
+            if (!rHasPre && cHasPre) {
+                // Version finale stable plus récente que la pré-release (ex: 1.2.8 > 1.2.8-beta.1)
                 return true
             }
+            if (rHasPre && !cHasPre) {
+                // Pré-release plus ancienne que la version finale de même numéro
+                return false
+            }
+            if (rHasPre && cHasPre) {
+                // Deux pré-releases sur le même numéro de base (ex: 1.2.8-beta.2 vs 1.2.8-beta.1)
+                val rSuffix = rClean.substringAfter("-")
+                val cSuffix = cClean.substringAfter("-")
+                val rNum = Regex("\\d+").find(rSuffix)?.value?.toIntOrNull() ?: 0
+                val cNum = Regex("\\d+").find(cSuffix)?.value?.toIntOrNull() ?: 0
+                if (rNum != cNum) {
+                    return rNum > cNum
+                }
+                return rSuffix > cSuffix
+            }
+
             return false
         } catch (e: Exception) {
-            return remoteVersion != currentVersion
+            return false
         }
     }
 }
