@@ -538,7 +538,12 @@ class MainActivity : ComponentActivity() {
                                     sessionManager.appLanguage = newLang.code
                                 },
                                 initialTab = savedTvNavTab,
-                                onTabSelected = { savedTvNavTab = it },
+                                onTabSelected = { tab ->
+                                    savedTvNavTab = tab
+                                    if (tab != io.noostv.ui.tv.TvNavTab.TV) {
+                                        playerEngine.stop()
+                                    }
+                                },
                                 initialVodCategory = savedTvVodCategory,
                                 onVodCategorySelected = { savedTvVodCategory = it },
                                 initialSeriesCategory = savedTvSeriesCategory,

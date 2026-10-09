@@ -603,6 +603,9 @@ fun NoosPlayerScreen(
                 }
             },
             update = { playerView ->
+                if (playerView.player != playerEngine.exoPlayer) {
+                    playerView.player = playerEngine.exoPlayer
+                }
                 playerView.resizeMode = resizeMode
                 playerView.keepScreenOn = true
             }

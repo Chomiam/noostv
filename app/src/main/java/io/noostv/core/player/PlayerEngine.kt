@@ -28,6 +28,9 @@ import androidx.media3.common.VideoSize
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.mp4.Mp4Extractor
+import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
 import java.util.Locale
 
 /**
@@ -123,14 +126,13 @@ class PlayerEngine(
         }
     }
 
-    // Tunneling matériel activé pour relier directement le décodeur vidéo au pipeline d'affichage TV
+    // TrackSelector avec préférence audio/sous-titres français et tunneling désactivé (garantit le rendu vidéo sur tous les SoCs)
     private val trackSelector = DefaultTrackSelector(context).apply {
         setParameters(
             buildUponParameters()
                 .setPreferredAudioLanguage("fra")
                 .setPreferredTextLanguage("fra")
-                .setForceHighestSupportedBitrate(true)
-                .setTunnelingEnabled(true)
+                .setTunnelingEnabled(false)
         )
     }
 
@@ -142,25 +144,33 @@ class PlayerEngine(
 
     private val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
 
-    private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+    // Extracteurs avec gestion des conteneurs atypiques (TS dans MP4, edit-lists corrompues, keyframes non-IDR)
+    private val extractorsFactory = DefaultExtractorsFactory().apply {
+        setConstantBitrateSeekingEnabled(true)
+        setMp4ExtractorFlags(Mp4Extractor.FLAG_WORKAROUND_IGNORE_EDIT_LISTS)
+        setTsExtractorFlags(
+            DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or
+            DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS
+        )
+    }
 
-    // RenderersFactory avec file asynchrone MediaCodec pour désengorger le CPU sur les SoC TV quad-core
+    private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
+
+    // RenderersFactory avec repli automatique sur décodeurs logiciels si le matériel échoue
     private val renderersFactory = DefaultRenderersFactory(context)
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         .setEnableDecoderFallback(true)
-        .forceEnableMediaCodecAsynchronousQueueing()
 
-    // LoadControl optimisé pour Android TV (économie RAM, 0 saccade, 25MB max)
+    // LoadControl équilibré (priorité temps de lecture, absorption des variations de débit, anti-freeze)
     private val defaultLoadControl = DefaultLoadControl.Builder()
         .setBufferDurationsMs(
-            8_000,  // minBufferMs (8s au lieu de 15s : économise ~50MB RAM sans risque de buffer underrun)
-            20_000, // maxBufferMs (20s au lieu de 45s : évite d'accumuler 150MB en mémoire vive)
-            1_000,  // bufferForPlaybackMs (1s : zapping ultra-rapide)
-            2_000   // bufferForPlaybackAfterRebufferMs (2s)
+            15_000, // minBufferMs (15s : réserve suffisante pour absorber les fluctuations IPTV / VOD)
+            30_000, // maxBufferMs (30s : plafond mémoire sain)
+            1_500,  // bufferForPlaybackMs (1.5s : démarrage rapide)
+            3_000   // bufferForPlaybackAfterRebufferMs (3s : reprise stable)
         )
-        .setTargetBufferBytes(25 * 1024 * 1024) // Plafonne la mémoire tampon à 25 Mo
-        .setBackBuffer(0, false) // 0s de back-buffer pour libérer immédiatement les trames passées
-        .setPrioritizeTimeOverSizeThresholds(false)
+        .setBackBuffer(5_000, false) // 5s de back-buffer pour absorber les B-frames sans purge prématurée
+        .setPrioritizeTimeOverSizeThresholds(true) // Priorité absolue au maintien du flux en continu
         .build()
 
     val exoPlayer: ExoPlayer by lazy {
@@ -248,8 +258,17 @@ class PlayerEngine(
                     }
                     if (fallbackUrl != null) {
                         hasAttemptedFallback = true
-                        Log.i("NoosPlayer", "Tentative de repli vers : ${io.noostv.core.security.CryptoManager.sanitizeUrl(fallbackUrl)}")
-                        playStream(fallbackUrl, currentStreamTitle, _isHdrActive.value, false)
+                        val savedPos = currentPosition
+                        Log.i("NoosPlayer", "Tentative de repli vers : ${io.noostv.core.security.CryptoManager.sanitizeUrl(fallbackUrl)} à ${savedPos}ms")
+                        playStream(
+                            url = fallbackUrl,
+                            title = currentStreamTitle,
+                            isHdrStream = _isHdrActive.value,
+                            is4K = false,
+                            isPreview = false,
+                            startPositionMs = savedPos,
+                            isFallback = true
+                        )
                         return
                     }
                 }
@@ -290,8 +309,7 @@ class PlayerEngine(
                 .clearVideoSizeConstraints()
                 .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
                 .setMaxVideoBitrate(Int.MAX_VALUE)
-                .setForceHighestSupportedBitrate(true)
-                .setTunnelingEnabled(true)
+                .setTunnelingEnabled(false)
                 .setExceedVideoConstraintsIfNecessary(true)
         }
         trackSelector.setParameters(builder)
@@ -306,7 +324,8 @@ class PlayerEngine(
         isHdrStream: Boolean = false,
         is4K: Boolean = false,
         isPreview: Boolean = false,
-        startPositionMs: Long = 0L
+        startPositionMs: Long = 0L,
+        isFallback: Boolean = false
     ): Boolean {
         // Garde-fou SaaS : vérifie si l'utilisateur a droit aux flux 4K / HDR (hors prévisualisation bridée à 720p)
         if (!isPreview && (isHdrStream || is4K) && !entitlementManager.isFeatureAllowed(Feature.HDR_4K_STREAMING)) {
@@ -318,7 +337,9 @@ class PlayerEngine(
         _playerError.value = null
         currentStreamUrl = url
         currentStreamTitle = title
-        hasAttemptedFallback = false
+        if (!isFallback) {
+            hasAttemptedFallback = false
+        }
         _isHdrActive.value = isHdrStream
 
         // Réinitialise les métriques et pistes pour ne pas hériter des données d'un flux précédent
@@ -403,8 +424,7 @@ class PlayerEngine(
         val builder = trackSelector.buildUponParameters()
             .clearVideoSizeConstraints()
             .setMaxVideoBitrate(Int.MAX_VALUE)
-            .setForceHighestSupportedBitrate(trackInfo == null)
-            .setTunnelingEnabled(true)
+            .setTunnelingEnabled(false)
             .setExceedVideoConstraintsIfNecessary(true)
 
         if (trackInfo == null) {

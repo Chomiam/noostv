@@ -87,11 +87,8 @@ fun TvChannelPreviewContent(
         )
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            playerEngine.stop()
-        }
-    }
+    // Le cycle de vie et l'arrêt du player lors du changement d'onglet est géré au niveau parent
+    // pour éviter de couper la lecture lors du passage en plein écran.
 
     val channelSchedule = remember(selectedChannel.id, epgPrograms) {
         EpgProvider.getChannelSchedule(selectedChannel, epgPrograms)
