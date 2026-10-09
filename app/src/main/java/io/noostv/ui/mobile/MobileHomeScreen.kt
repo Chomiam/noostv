@@ -17,6 +17,7 @@ import io.noostv.core.player.PlayerEngine
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -149,7 +150,9 @@ fun MobileHomeScreen(
     var seriesPage by remember { mutableIntStateOf(initialSeriesPage) }
 
     val moviesGridState = rememberLazyGridState()
+    val moviesHorizontalGridState = rememberLazyGridState()
     val seriesGridState = rememberLazyGridState()
+    val seriesHorizontalGridState = rememberLazyGridState()
 
     var activeDetailMovie by remember { mutableStateOf<VodMovie?>(null) }
     var activeDetailSeries by remember { mutableStateOf<Series?>(null) }
@@ -434,6 +437,7 @@ fun MobileHomeScreen(
                         MobileCategoryChips(
                             categories = vodCatNames,
                             selectedCategory = selectedVodCategory,
+                            isCompact = isLandscape,
                             onSelect = { catName ->
                                 if (selectedVodCategory != catName) {
                                     selectedVodCategory = catName
@@ -458,22 +462,47 @@ fun MobileHomeScreen(
                             MobileEmptyState(message = "Aucun film disponible dans cette catégorie")
                         } else {
                             Column(modifier = Modifier.fillMaxSize()) {
-                                LazyVerticalGrid(
-                                    state = moviesGridState,
-                                    columns = GridCells.Fixed(2),
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(16.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    items(pagedMovies, key = { it.id }) { movie ->
-                                        MobileVodCard(
-                                            title = movie.title,
-                                            posterUrl = movie.posterUrl,
-                                            subtitle = "${movie.releaseYear ?: ""} • ★ ${movie.rating}",
-                                            badge = if (movie.isHdr) movie.hdrFormat ?: "HDR" else movie.resolution,
-                                            onClick = { activeDetailMovie = movie }
-                                        )
+                                if (isLandscape) {
+                                    LazyHorizontalGrid(
+                                        state = moviesHorizontalGridState,
+                                        rows = GridCells.Fixed(2),
+                                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        items(pagedMovies, key = { it.id }) { movie ->
+                                            MobileVodCard(
+                                                title = movie.title,
+                                                posterUrl = movie.posterUrl,
+                                                subtitle = "${movie.releaseYear ?: ""} • ★ ${movie.rating}",
+                                                badge = if (movie.isHdr) movie.hdrFormat ?: "HDR" else movie.resolution,
+                                                modifier = Modifier.fillMaxHeight().aspectRatio(2f / 3f),
+                                                isCompact = true,
+                                                onClick = { activeDetailMovie = movie }
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    LazyVerticalGrid(
+                                        state = moviesGridState,
+                                        columns = GridCells.Fixed(2),
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(16.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        items(pagedMovies, key = { it.id }) { movie ->
+                                            MobileVodCard(
+                                                title = movie.title,
+                                                posterUrl = movie.posterUrl,
+                                                subtitle = "${movie.releaseYear ?: ""} • ★ ${movie.rating}",
+                                                badge = if (movie.isHdr) movie.hdrFormat ?: "HDR" else movie.resolution,
+                                                modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f),
+                                                isCompact = false,
+                                                onClick = { activeDetailMovie = movie }
+                                            )
+                                        }
                                     }
                                 }
 
@@ -482,11 +511,18 @@ fun MobileHomeScreen(
                                     totalPages = totalMoviePages,
                                     totalItems = movies.size,
                                     itemLabel = "films",
+                                    isCompact = isLandscape,
                                     onPageChange = {
                                         moviePage = it
                                         onMoviePageChange(it)
                                         coroutineScope.launch {
-                                            runCatching { moviesGridState.scrollToItem(0) }
+                                            runCatching {
+                                                if (isLandscape) {
+                                                    moviesHorizontalGridState.scrollToItem(0)
+                                                } else {
+                                                    moviesGridState.scrollToItem(0)
+                                                }
+                                            }
                                         }
                                     }
                                 )
@@ -510,6 +546,7 @@ fun MobileHomeScreen(
                         MobileCategoryChips(
                             categories = seriesCatNames,
                             selectedCategory = selectedSeriesCategory,
+                            isCompact = isLandscape,
                             onSelect = { catName ->
                                 if (selectedSeriesCategory != catName) {
                                     selectedSeriesCategory = catName
@@ -534,23 +571,49 @@ fun MobileHomeScreen(
                             MobileEmptyState(message = "Aucune série disponible dans cette catégorie")
                         } else {
                             Column(modifier = Modifier.fillMaxSize()) {
-                                LazyVerticalGrid(
-                                    state = seriesGridState,
-                                    columns = GridCells.Fixed(2),
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(16.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    items(pagedSeries, key = { it.id }) { ser ->
-                                        val seasonInfo = if (ser.seasons.isNotEmpty()) "${ser.seasons.size} Saison${if (ser.seasons.size > 1) "s" else ""} • " else ""
-                                        MobileVodCard(
-                                            title = ser.title,
-                                            posterUrl = ser.posterUrl,
-                                            subtitle = "${seasonInfo}★ ${ser.rating}",
-                                            badge = "SERIES",
-                                            onClick = { activeDetailSeries = ser }
-                                        )
+                                if (isLandscape) {
+                                    LazyHorizontalGrid(
+                                        state = seriesHorizontalGridState,
+                                        rows = GridCells.Fixed(2),
+                                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        items(pagedSeries, key = { it.id }) { ser ->
+                                            val seasonInfo = if (ser.seasons.isNotEmpty()) "${ser.seasons.size} Saison${if (ser.seasons.size > 1) "s" else ""} • " else ""
+                                            MobileVodCard(
+                                                title = ser.title,
+                                                posterUrl = ser.posterUrl,
+                                                subtitle = "${seasonInfo}★ ${ser.rating}",
+                                                badge = "SERIES",
+                                                modifier = Modifier.fillMaxHeight().aspectRatio(2f / 3f),
+                                                isCompact = true,
+                                                onClick = { activeDetailSeries = ser }
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    LazyVerticalGrid(
+                                        state = seriesGridState,
+                                        columns = GridCells.Fixed(2),
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(16.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        items(pagedSeries, key = { it.id }) { ser ->
+                                            val seasonInfo = if (ser.seasons.isNotEmpty()) "${ser.seasons.size} Saison${if (ser.seasons.size > 1) "s" else ""} • " else ""
+                                            MobileVodCard(
+                                                title = ser.title,
+                                                posterUrl = ser.posterUrl,
+                                                subtitle = "${seasonInfo}★ ${ser.rating}",
+                                                badge = "SERIES",
+                                                modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f),
+                                                isCompact = false,
+                                                onClick = { activeDetailSeries = ser }
+                                            )
+                                        }
                                     }
                                 }
 
@@ -559,11 +622,18 @@ fun MobileHomeScreen(
                                     totalPages = totalSeriesPages,
                                     totalItems = series.size,
                                     itemLabel = "séries",
+                                    isCompact = isLandscape,
                                     onPageChange = {
                                         seriesPage = it
                                         onSeriesPageChange(it)
                                         coroutineScope.launch {
-                                            runCatching { seriesGridState.scrollToItem(0) }
+                                            runCatching {
+                                                if (isLandscape) {
+                                                    seriesHorizontalGridState.scrollToItem(0)
+                                                } else {
+                                                    seriesGridState.scrollToItem(0)
+                                                }
+                                            }
                                         }
                                     }
                                 )
@@ -745,12 +815,13 @@ private fun MobileTopBar(
 private fun MobileCategoryChips(
     categories: List<String>,
     selectedCategory: String,
-    onSelect: (String) -> Unit
+    onSelect: (String) -> Unit,
+    isCompact: Boolean = false
 ) {
     LazyRow(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 10.dp, horizontal = 16.dp),
+            .padding(vertical = if (isCompact) 4.dp else 10.dp, horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(categories) { cat ->
@@ -760,12 +831,15 @@ private fun MobileCategoryChips(
                     .clip(RoundedCornerShape(50))
                     .background(if (isSelected) NoosBlue else SurfaceDarkVariant)
                     .clickable { onSelect(cat) }
-                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                    .padding(
+                        horizontal = if (isCompact) 12.dp else 14.dp,
+                        vertical = if (isCompact) 4.dp else 6.dp
+                    )
             ) {
                 Text(
                     text = cat,
                     color = if (isSelected) Color.White else TextSecondary,
-                    fontSize = 12.sp,
+                    fontSize = if (isCompact) 11.sp else 12.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                 )
             }
@@ -963,17 +1037,18 @@ private fun MobileVodCard(
     posterUrl: String?,
     subtitle: String,
     badge: String? = null,
+    modifier: Modifier = Modifier,
+    isCompact: Boolean = false,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val shape = RoundedCornerShape(if (isCompact) 12.dp else 16.dp)
 
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(2f / 3f)
-            .clip(RoundedCornerShape(16.dp))
+        modifier = modifier
+            .clip(shape)
             .background(SurfaceDark)
-            .border(1.dp, CardBorderUnfocused, RoundedCornerShape(16.dp))
+            .border(1.dp, CardBorderUnfocused, shape)
             .clickable { onClick() }
     ) {
         // Image de l'affiche
@@ -995,7 +1070,12 @@ private fun MobileVodCard(
                     .background(SurfaceDarkVariant),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(imageVector = Icons.Default.Movie, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(36.dp))
+                Icon(
+                    imageVector = Icons.Default.Movie,
+                    contentDescription = null,
+                    tint = TextSecondary,
+                    modifier = Modifier.size(if (isCompact) 28.dp else 36.dp)
+                )
             }
         }
 
@@ -1006,20 +1086,25 @@ private fun MobileVodCard(
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(Color.Transparent, Color(0xAA080A0F), Color(0xF0080A0F)),
-                        startY = 150f
+                        startY = if (isCompact) 60f else 150f
                     )
                 )
-                .padding(10.dp)
+                .padding(if (isCompact) 6.dp else 10.dp)
         ) {
             badge?.let {
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .clip(RoundedCornerShape(6.dp))
+                        .clip(RoundedCornerShape(if (isCompact) 4.dp else 6.dp))
                         .background(Color(0xCC000000))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .padding(horizontal = if (isCompact) 4.dp else 6.dp, vertical = if (isCompact) 1.dp else 2.dp)
                 ) {
-                    Text(text = it, color = NoosCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = it,
+                        color = NoosCyan,
+                        fontSize = if (isCompact) 8.sp else 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
 
@@ -1029,15 +1114,15 @@ private fun MobileVodCard(
                 Text(
                     text = title,
                     color = Color.White,
-                    fontSize = 12.sp,
+                    fontSize = if (isCompact) 10.5.sp else 12.sp,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 2,
+                    maxLines = if (isCompact) 1 else 2,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = subtitle,
                     color = TextSecondary,
-                    fontSize = 10.sp,
+                    fontSize = if (isCompact) 8.5.sp else 10.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )

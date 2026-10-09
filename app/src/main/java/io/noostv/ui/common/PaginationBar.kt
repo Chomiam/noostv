@@ -54,6 +54,7 @@ fun NoosPaginationBar(
     onPageChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
     isTv: Boolean = false,
+    isCompact: Boolean = false,
     prevFocusRequester: FocusRequester? = null,
     nextFocusRequester: FocusRequester? = null,
     onNavigateUp: (() -> Unit)? = null,
@@ -72,7 +73,7 @@ fun NoosPaginationBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 12.dp, horizontal = 16.dp),
+            .padding(vertical = if (isCompact) 4.dp else 12.dp, horizontal = 16.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -83,7 +84,7 @@ fun NoosPaginationBar(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Précédent",
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(if (isCompact) 14.dp else 16.dp),
                     tint = when {
                         isTv && isFocused -> FocusGlow
                         currentPage > 1 -> NoosCyan
@@ -109,6 +110,7 @@ fun NoosPaginationBar(
                 }
             },
             isTv = isTv,
+            isCompact = isCompact,
             focusRequester = internalPrevFocusRequester,
             upFocusRequester = upFocusRequester,
             leftFocusRequester = sidebarFocusRequester,
@@ -123,35 +125,35 @@ fun NoosPaginationBar(
             onNavigateUp = onNavigateUpFromPrev
         )
 
-        Spacer(modifier = Modifier.width(16.dp))
+        Spacer(modifier = Modifier.width(if (isCompact) 10.dp else 16.dp))
 
         // Indicateur d'état central
         Box(
             modifier = Modifier
-                .background(DarkCard, RoundedCornerShape(12.dp))
-                .border(1.dp, Color(0x3300E5FF), RoundedCornerShape(12.dp))
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .background(DarkCard, RoundedCornerShape(if (isCompact) 10.dp else 12.dp))
+                .border(1.dp, Color(0x3300E5FF), RoundedCornerShape(if (isCompact) 10.dp else 12.dp))
+                .padding(horizontal = if (isCompact) 12.dp else 16.dp, vertical = if (isCompact) 6.dp else 10.dp),
             contentAlignment = Alignment.Center
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "Page $currentPage / $totalPages",
                     color = TextPrimary,
-                    fontSize = if (isTv) 14.sp else 13.sp,
+                    fontSize = if (isTv) 14.sp else if (isCompact) 11.5.sp else 13.sp,
                     fontWeight = FontWeight.Bold
                 )
                 if (totalItems > 0) {
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(if (isCompact) 6.dp else 8.dp))
                     Text(
                         text = "($totalItems $itemLabel)",
                         color = TextSecondary,
-                        fontSize = if (isTv) 12.sp else 11.sp
+                        fontSize = if (isTv) 12.sp else if (isCompact) 10.sp else 11.sp
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.width(16.dp))
+        Spacer(modifier = Modifier.width(if (isCompact) 10.dp else 16.dp))
 
         // Bouton Suivant
         PaginationButton(
@@ -160,7 +162,7 @@ fun NoosPaginationBar(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = "Suivant",
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(if (isCompact) 14.dp else 16.dp),
                     tint = when {
                         isTv && isFocused -> FocusGlow
                         currentPage < totalPages -> NoosCyan
@@ -186,6 +188,7 @@ fun NoosPaginationBar(
                 }
             },
             isTv = isTv,
+            isCompact = isCompact,
             focusRequester = internalNextFocusRequester,
             upFocusRequester = upFocusRequester,
             leftFocusRequester = if (currentPage > 1) internalPrevFocusRequester else sidebarFocusRequester,
@@ -208,6 +211,7 @@ private fun PaginationButton(
     enabled: Boolean,
     onClick: () -> Unit,
     isTv: Boolean,
+    isCompact: Boolean = false,
     focusRequester: FocusRequester? = null,
     upFocusRequester: FocusRequester? = null,
     leftFocusRequester: FocusRequester? = null,
@@ -327,15 +331,18 @@ private fun PaginationButton(
         .border(borderWidth, borderColor, RoundedCornerShape(12.dp))
 
     Row(
-        modifier = buttonModifier.padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier = buttonModifier.padding(
+            horizontal = if (isCompact) 12.dp else 16.dp,
+            vertical = if (isCompact) 6.dp else 10.dp
+        ),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(if (isCompact) 6.dp else 8.dp)
     ) {
         icon?.invoke(isFocused)
         Text(
             text = text,
             color = textColor,
-            fontSize = if (isTv) 13.sp else 12.sp,
+            fontSize = if (isTv) 13.sp else if (isCompact) 11.sp else 12.sp,
             fontWeight = if (isFocused) FontWeight.ExtraBold else FontWeight.Medium
         )
         iconRight?.invoke(isFocused)
