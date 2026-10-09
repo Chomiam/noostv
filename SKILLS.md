@@ -16,6 +16,7 @@ Ce document récapitule les apprentissages critiques, les pièges techniques sou
 9. [Persistance des Favoris & Double Couche de Sauvegarde (SharedPreferences + Disque)](#9-persistance-des-favoris--double-couche-de-sauvegarde-sharedpreferences--disque)
 10. [Mises à Jour OTA Publiques GitHub (S3 Redirect 400 & Absence de Token)](#10-mises-à-jour-ota-publiques-github-s3-redirect-400--absence-de-token)
 11. [Sécurité Applicative, Défense Anti-IA et Durcissement Android](#11-sécurité-applicative-défense-anti-ia-et-durcissement-android)
+12. [Optimisations de Lecture sur Android TV : Les Fausses Bonnes Idées & Pièges Matériels](#12-optimisations-de-lecture-sur-android-tv--les-fausses-bonnes-idées--pièges-matériels)
 
 ---
 
@@ -292,3 +293,83 @@ Charger des images non redimensionnées en ARGB_8888 sur des chipsets Mali-G31 /
 5. **Validation cryptographique et structurelle de l'OTA ([`UpdateManager.installApk`](file:///home/chomiam/Projets/noostv/app/src/main/java/io/noostv/core/update/UpdateManager.kt))** :
    * Avant d'invoquer `Intent.ACTION_VIEW`, analyser le binaire avec `PackageManager.getPackageArchiveInfo()`.
    * Rejeter et détruire le fichier immédiatement si `archiveInfo == null`, si la taille est inférieure à 100 Ko ou si `archiveInfo.packageName != context.packageName`.
+
+---
+
+## 12. Optimisations de Lecture sur Android TV : Les Fausses Bonnes Idées & Pièges Matériels
+
+Ce retour d'expérience documente les régressions critiques constatées lors de tentatives d'optimisation poussée du moteur vidéo ExoPlayer sur téléviseurs Android TV réels (SoC Amlogic, Mi TV, TCL, Google TV).
+
+### ⚠️ Les Pièges (Ce qui N'A PAS Fonctionné)
+
+1. **Le Video Tunneling forcé (`setTunnelingEnabled(true)`) ➔ Le bug du « Son sans Image »** :
+   * *L'intention théorique* : Relier directement le décodeur vidéo matériel au contrôleur d'affichage pour contourner la file SurfaceFlinger et réduire l'usage CPU.
+   * *La réalité matérielle* : Le tunneling matériel (`OMX_IndexAndroidConfigureVideoTunnelMode`) exige que le flux audio et le flux vidéo partagent une même horloge DSP matérielle. Dès lors qu'une vidéo VOD ou série (MP4/MKV) utilise une piste audio stéréo courante (AAC-LC décodé en logiciel/PCM via `c2.android.aac.decoder`), le pilote noyau TV (`AmMediaSync`) échoue avec l'erreur :
+     ```log
+     AmMediaSync: mediasync_ioctl cmd [1074023683] failed, ret:-1 error:14(Bad address)
+     AmMediaSync: [MEDIA_VIDEO_0-0](setPlaybackRateInternal) playbackrate:0.000000.
+     ```
+   * Le processeur fige alors le framerate vidéo à `0.000000 fps` : **le son joue normalement, mais l'écran reste noir**.
+   * *Règle absolue* : **JAMAIS de `setTunnelingEnabled(true)` inconditionnel**. Laisser ExoPlayer effectuer le rendu direct sur `SurfaceView` via MediaCodec standard.
+
+2. **La file asynchrone MediaCodec (`forceEnableMediaCodecAsynchronousQueueing()`)** :
+   * *L'intention théorique* : Déporter la soumission des tampons MediaCodec sur un thread d'arrière-plan pour éviter les blocages du thread principal sur CPU quad-core 1.5 GHz.
+   * *La réalité matérielle* : Sur les versions Android TV 9/10/11 et les couches HAL constructeurs Amlogic/MediaTek, le mode asynchrone déclenche des erreurs de priorité `ACodec (-1010)` et des déconnexions du tampon graphique (`BufferQueueProducer: disconnect: not connected`).
+   * *Règle absolue* : Conserver le mode synchrone natif par défaut de `DefaultRenderersFactory`.
+
+3. **Le LoadControl bridé en mémoire fixe (`setTargetBufferBytes(25MB)` + `prioritizeTimeOverSizeThresholds(false)`)** :
+   * *L'intention théorique* : Réduire l'empreinte RAM en dessous de 25 Mo pour préserver la mémoire des box TV dotées de 1.5 Go de RAM.
+   * *La réalité matérielle* : Sur un film ou un épisode 1080p/4K à fort débit (12 à 25 Mbps), 25 Mo représentent à peine 8 à 10 secondes de données. Dès que 25 Mo sont téléchargés, le lecteur stoppe immédiatement tout téléchargement réseau même si le buffer temporel est presque vide. Toute micro-latence réseau entraîne un épuisement du tampon et un gel permanent de la vidéo.
+   * De plus, `setBackBuffer(0, false)` supprime instantanément les trames passées et empêche le réordonnancement correct des trames composites B-frames.
+   * *Règle absolue* :
+     - Toujours activer `prioritizeTimeOverSizeThresholds(true)`.
+     - Ne jamais imposer de limite rigide en octets (laisser Media3 allouer dynamiquement).
+     - Conserver un back-buffer de sécurité : `setBackBuffer(5_000, false)`.
+
+4. **L'arrêt intempestif du lecteur par les composants de prévisualisation (`onDispose`)** :
+   * *L'intention théorique* : Libérer le lecteur lors de la destruction du widget de prévisualisation TV.
+   * *La réalité logicielle* : Lors du passage de l'accueil au plein écran (`currentScreen = PLAYER`), le composant de prévisualisation est démonté par Compose. Si son `onDispose` appelle `playerEngine.stop()`, il détruit le flux plein écran qui venait tout juste de démarrer, produisant un écran noir.
+   * *Règle absolue* : L'arrêt du lecteur doit être géré au niveau du conteneur parent (ex: changement d'onglet dans la barre latérale vers un onglet non-vidéo), et jamais au démontage des enfants lors d'une transition plein écran.
+
+---
+
+### ✅ Les Bonnes Pratiques Consolidées (Ce qui Fonctionne)
+
+```kotlin
+// 1. TrackSelector : Pas de tunneling, préférence de langue respectueuse
+val trackSelector = DefaultTrackSelector(context).apply {
+    setParameters(
+        buildUponParameters()
+            .setPreferredAudioLanguage("fra")
+            .setPreferredTextLanguage("fra")
+            .setTunnelingEnabled(false)
+    )
+}
+
+// 2. Extracteurs tolérants aux anomalies de conteneurs IPTV
+val extractorsFactory = DefaultExtractorsFactory().apply {
+    setConstantBitrateSeekingEnabled(true)
+    setMp4ExtractorFlags(Mp4Extractor.FLAG_WORKAROUND_IGNORE_EDIT_LISTS)
+    setTsExtractorFlags(
+        DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or
+        DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS
+    )
+}
+
+// 3. RenderersFactory avec repli logiciel sécurisé
+val renderersFactory = DefaultRenderersFactory(context)
+    .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+    .setEnableDecoderFallback(true)
+
+// 4. LoadControl équilibré basé sur le temps
+val defaultLoadControl = DefaultLoadControl.Builder()
+    .setBufferDurationsMs(
+        15_000, // minBufferMs : 15s de sécurité réseau
+        30_000, // maxBufferMs : 30s max pour ne pas surcharger la RAM
+        1_500,  // bufferForPlaybackMs : 1.5s démarrage rapide
+        3_000   // bufferForPlaybackAfterRebufferMs : 3s reprise stable
+    )
+    .setBackBuffer(5_000, false) // 5s pour absorber les B-frames
+    .setPrioritizeTimeOverSizeThresholds(true)
+    .build()
+```
