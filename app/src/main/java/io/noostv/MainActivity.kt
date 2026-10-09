@@ -141,6 +141,8 @@ class MainActivity : ComponentActivity() {
                 val channels by repository.channels.collectAsState()
                 val movies by repository.movies.collectAsState()
                 val series by repository.series.collectAsState()
+                val favoriteMovies by repository.favoriteMovies.collectAsState()
+                val favoriteSeries by repository.favoriteSeries.collectAsState()
                 val epgPrograms by repository.epgPrograms.collectAsState()
                 val categories by repository.categories.collectAsState()
                 val vodCategories by repository.vodCategories.collectAsState()
@@ -364,6 +366,17 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(sessionManager.isLoggedIn) {
                     if (sessionManager.isLoggedIn) {
                         if (sessionManager.serverUrl.isNotBlank()) {
+                            val prof = sessionManager.getActiveProfile()
+                            repository.loadFavorites(sessionManager.serverUrl, sessionManager.username, prof.id)
+                            coroutineScope.launch {
+                                repository.resolveMissingFavorites(
+                                    sessionManager.serverUrl,
+                                    sessionManager.username,
+                                    sessionManager.password,
+                                    prof
+                                )
+                            }
+
                             val hasCache = repository.hasCachedCatalog(sessionManager.serverUrl, sessionManager.username)
                             val cacheLoaded = if (hasCache) {
                                 repository.loadFromCache(sessionManager.serverUrl, sessionManager.username)
@@ -409,6 +422,24 @@ class MainActivity : ComponentActivity() {
                     currentScreen = CurrentScreen.SYNC
                     coroutineScope.launch {
                         repository.loadFromXtream(sessionManager.serverUrl, sessionManager.username, sessionManager.password)
+                    }
+                }
+
+                val onToggleFavMovie: (VodMovie, Boolean) -> Unit = { movie, isFav ->
+                    repository.toggleFavoriteMovie(sessionManager.serverUrl, sessionManager.username, sessionManager.getActiveProfile().id, movie, isFav)
+                }
+                val onToggleFavSeries: (Series, Boolean) -> Unit = { ser, isFav ->
+                    repository.toggleFavoriteSeries(sessionManager.serverUrl, sessionManager.username, sessionManager.getActiveProfile().id, ser, isFav)
+                }
+                val onProfileChangedAction: (io.noostv.data.model.UserProfile) -> Unit = { prof ->
+                    repository.loadFavorites(sessionManager.serverUrl, sessionManager.username, prof.id)
+                    coroutineScope.launch {
+                        repository.resolveMissingFavorites(
+                            sessionManager.serverUrl,
+                            sessionManager.username,
+                            sessionManager.password,
+                            prof
+                        )
                     }
                 }
 
@@ -458,6 +489,11 @@ class MainActivity : ComponentActivity() {
                                 channels = channels,
                                 movies = movies,
                                 series = series,
+                                favoriteMovies = favoriteMovies,
+                                favoriteSeries = favoriteSeries,
+                                onToggleFavoriteMovie = onToggleFavMovie,
+                                onToggleFavoriteSeries = onToggleFavSeries,
+                                onProfileChanged = onProfileChangedAction,
                                 epgPrograms = epgPrograms,
                                 categories = categories,
                                 vodCategories = vodCategories,
@@ -565,6 +601,11 @@ class MainActivity : ComponentActivity() {
                                 channels = channels,
                                 movies = movies,
                                 series = series,
+                                favoriteMovies = favoriteMovies,
+                                favoriteSeries = favoriteSeries,
+                                onToggleFavoriteMovie = onToggleFavMovie,
+                                onToggleFavoriteSeries = onToggleFavSeries,
+                                onProfileChanged = onProfileChangedAction,
                                 epgPrograms = epgPrograms,
                                 categories = categories,
                                 vodCategories = vodCategories,

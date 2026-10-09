@@ -56,8 +56,10 @@ enum class FavoriteFilterTab {
 @Composable
 fun TvFavoritesContent(
     channels: List<Channel>,
-    movies: List<VodMovie>,
-    series: List<Series>,
+    favoriteMovies: List<VodMovie> = emptyList(),
+    favoriteSeries: List<Series> = emptyList(),
+    movies: List<VodMovie> = emptyList(),
+    series: List<Series> = emptyList(),
     categories: List<Category> = emptyList(),
     vodCategories: List<Category> = emptyList(),
     seriesCategories: List<Category> = emptyList(),
@@ -67,7 +69,9 @@ fun TvFavoritesContent(
     onSelectChannel: (Channel) -> Unit,
     onSelectMovie: (VodMovie) -> Unit,
     onSelectSeries: (Series) -> Unit,
-    onFavoriteChanged: () -> Unit
+    onFavoriteChanged: () -> Unit,
+    onUnpinMovie: ((VodMovie) -> Unit)? = null,
+    onUnpinSeries: ((Series) -> Unit)? = null
 ) {
     val strings = LocalStrings.current
     var selectedFilter by remember { mutableStateOf(FavoriteFilterTab.ALL) }
@@ -86,14 +90,17 @@ fun TvFavoritesContent(
         onFavoriteChanged()
     }
 
+    val allMovies = if (favoriteMovies.isNotEmpty()) favoriteMovies else movies
+    val allSeries = if (favoriteSeries.isNotEmpty()) favoriteSeries else series
+
     val favChannels = remember(channels, favoriteChannelIds) {
         channels.filter { favoriteChannelIds.contains(it.id) }
     }
-    val favMovies = remember(movies, favoriteMovieIds) {
-        movies.filter { favoriteMovieIds.contains(it.id) }
+    val favMovies = remember(allMovies, favoriteMovieIds) {
+        allMovies.filter { favoriteMovieIds.contains(it.id) }
     }
-    val favSeries = remember(series, favoriteSeriesIds) {
-        series.filter { favoriteSeriesIds.contains(it.id) }
+    val favSeries = remember(allSeries, favoriteSeriesIds) {
+        allSeries.filter { favoriteSeriesIds.contains(it.id) }
     }
 
     val totalFavorites = favChannels.size + favMovies.size + favSeries.size
@@ -304,6 +311,7 @@ fun TvFavoritesContent(
                                     onClick = { onSelectMovie(movie) },
                                     onUnpin = {
                                         sessionManager.toggleFavoriteMovie(movie.id)
+                                        onUnpinMovie?.invoke(movie)
                                         refreshFavorites()
                                     }
                                 )
@@ -335,6 +343,7 @@ fun TvFavoritesContent(
                                     onClick = { onSelectSeries(ser) },
                                     onUnpin = {
                                         sessionManager.toggleFavoriteSeries(ser.id)
+                                        onUnpinSeries?.invoke(ser)
                                         refreshFavorites()
                                     }
                                 )

@@ -249,6 +249,138 @@ class EncryptedCatalogStore(
         }.getOrNull()
     }
 
+    // ==================== FAVORIS VOD & SÉRIES PAR PROFIL ====================
+
+    fun saveFavoriteMovies(serverUrl: String, username: String, profileId: String, movies: List<VodMovie>) {
+        if (serverUrl.isBlank() || profileId.isBlank()) return
+        runCatching {
+            val dir = getAccountDir(serverUrl, username)
+            val safeProf = sanitizeCatId(profileId)
+            val file = File(dir, "fav_movies_${safeProf}.enc")
+            val json = gson.toJson(movies)
+            val encrypted = compressAndEncrypt(json.toByteArray(Charsets.UTF_8))
+            file.writeBytes(encrypted)
+        }
+    }
+
+    fun loadFavoriteMovies(serverUrl: String, username: String, profileId: String): List<VodMovie> {
+        if (serverUrl.isBlank() || profileId.isBlank()) return emptyList()
+        return runCatching {
+            val dir = getAccountDir(serverUrl, username)
+            val safeProf = sanitizeCatId(profileId)
+            val file = File(dir, "fav_movies_${safeProf}.enc")
+            if (!file.exists() || file.length() == 0L) return emptyList()
+
+            val encrypted = file.readBytes()
+            val decrypted = decryptAndDecompress(encrypted)
+            if (decrypted.isEmpty()) return emptyList()
+
+            val json = String(decrypted, Charsets.UTF_8)
+            val type = object : TypeToken<List<VodMovie>>() {}.type
+            gson.fromJson<List<VodMovie>>(json, type) ?: emptyList()
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveFavoriteSeries(serverUrl: String, username: String, profileId: String, seriesList: List<Series>) {
+        if (serverUrl.isBlank() || profileId.isBlank()) return
+        runCatching {
+            val dir = getAccountDir(serverUrl, username)
+            val safeProf = sanitizeCatId(profileId)
+            val file = File(dir, "fav_series_${safeProf}.enc")
+            // Stocker uniquement les métadonnées de présentation de la série
+            val trimmed = seriesList.map { s ->
+                s.copy(
+                    seasons = s.seasons.map { season ->
+                        season.copy(
+                            episodes = season.episodes.map { ep ->
+                                ep.copy(plot = null)
+                            }
+                        )
+                    }
+                )
+            }
+            val json = gson.toJson(trimmed)
+            val encrypted = compressAndEncrypt(json.toByteArray(Charsets.UTF_8))
+            file.writeBytes(encrypted)
+        }
+    }
+
+    fun loadFavoriteSeries(serverUrl: String, username: String, profileId: String): List<Series> {
+        if (serverUrl.isBlank() || profileId.isBlank()) return emptyList()
+        return runCatching {
+            val dir = getAccountDir(serverUrl, username)
+            val safeProf = sanitizeCatId(profileId)
+            val file = File(dir, "fav_series_${safeProf}.enc")
+            if (!file.exists() || file.length() == 0L) return emptyList()
+
+            val encrypted = file.readBytes()
+            val decrypted = decryptAndDecompress(encrypted)
+            if (decrypted.isEmpty()) return emptyList()
+
+            val json = String(decrypted, Charsets.UTF_8)
+            val type = object : TypeToken<List<Series>>() {}.type
+            gson.fromJson<List<Series>>(json, type) ?: emptyList()
+        }.getOrDefault(emptyList())
+    }
+
+    fun findVodMoviesByIds(serverUrl: String, username: String, targetIds: Set<String>): List<VodMovie> {
+        if (serverUrl.isBlank() || targetIds.isEmpty()) return emptyList()
+        val dir = getAccountDir(serverUrl, username)
+        val files = dir.listFiles()?.filter {
+            it.name.startsWith("vod_") && it.name.endsWith(".enc") && !it.name.startsWith("vod_categories")
+        } ?: return emptyList()
+        val found = mutableListOf<VodMovie>()
+        val remaining = targetIds.toMutableSet()
+
+        val type = object : TypeToken<List<VodMovie>>() {}.type
+        for (file in files) {
+            if (remaining.isEmpty()) break
+            runCatching {
+                val decrypted = decryptAndDecompress(file.readBytes())
+                if (decrypted.isNotEmpty()) {
+                    val json = String(decrypted, Charsets.UTF_8)
+                    val list: List<VodMovie>? = gson.fromJson(json, type)
+                    list?.forEach { movie ->
+                        if (remaining.contains(movie.id)) {
+                            found.add(movie)
+                            remaining.remove(movie.id)
+                        }
+                    }
+                }
+            }
+        }
+        return found
+    }
+
+    fun findSeriesByIds(serverUrl: String, username: String, targetIds: Set<String>): List<Series> {
+        if (serverUrl.isBlank() || targetIds.isEmpty()) return emptyList()
+        val dir = getAccountDir(serverUrl, username)
+        val files = dir.listFiles()?.filter {
+            it.name.startsWith("series_") && it.name.endsWith(".enc") && !it.name.startsWith("series_categories")
+        } ?: return emptyList()
+        val found = mutableListOf<Series>()
+        val remaining = targetIds.toMutableSet()
+
+        val type = object : TypeToken<List<Series>>() {}.type
+        for (file in files) {
+            if (remaining.isEmpty()) break
+            runCatching {
+                val decrypted = decryptAndDecompress(file.readBytes())
+                if (decrypted.isNotEmpty()) {
+                    val json = String(decrypted, Charsets.UTF_8)
+                    val list: List<Series>? = gson.fromJson(json, type)
+                    list?.forEach { ser ->
+                        if (remaining.contains(ser.id)) {
+                            found.add(ser)
+                            remaining.remove(ser.id)
+                        }
+                    }
+                }
+            }
+        }
+        return found
+    }
+
     // ==================== NETTOYAGE DU CACHE ====================
 
     fun clearAccountCache(serverUrl: String, username: String) {

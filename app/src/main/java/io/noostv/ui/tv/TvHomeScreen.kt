@@ -156,7 +156,12 @@ fun TvHomeScreen(
     onSeriesFocused: (String) -> Unit = {},
     onRefreshCatalog: () -> Unit = {},
     hasUpdateAvailable: Boolean = false,
-    onUpdateStatusChanged: ((Boolean) -> Unit)? = null
+    onUpdateStatusChanged: ((Boolean) -> Unit)? = null,
+    favoriteMovies: List<VodMovie> = emptyList(),
+    favoriteSeries: List<Series> = emptyList(),
+    onToggleFavoriteMovie: ((VodMovie, Boolean) -> Unit)? = null,
+    onToggleFavoriteSeries: ((Series, Boolean) -> Unit)? = null,
+    onProfileChanged: ((UserProfile) -> Unit)? = null
 ) {
     val strings = LocalStrings.current
     val context = LocalContext.current
@@ -1003,6 +1008,8 @@ fun TvHomeScreen(
                 TvNavTab.FAVORITES -> {
                     TvFavoritesContent(
                         channels = channels,
+                        favoriteMovies = favoriteMovies,
+                        favoriteSeries = favoriteSeries,
                         movies = movies,
                         series = series,
                         categories = categories,
@@ -1021,7 +1028,9 @@ fun TvHomeScreen(
                             favoriteIds = sessionManager.getFavoriteChannelIds()
                             favoriteMovieIds = sessionManager.getFavoriteMovieIds()
                             favoriteSeriesIds = sessionManager.getFavoriteSeriesIds()
-                        }
+                        },
+                        onUnpinMovie = { movie -> onToggleFavoriteMovie?.invoke(movie, false) },
+                        onUnpinSeries = { ser -> onToggleFavoriteSeries?.invoke(ser, false) }
                     )
                 }
 
@@ -1071,9 +1080,10 @@ fun TvHomeScreen(
                 },
                 onToggleFavorite = {
                     val id = selectedMovieDetail!!.id
-                    sessionManager.toggleFavoriteMovie(id)
+                    val isFav = sessionManager.toggleFavoriteMovie(id)
                     favoriteMovieIds = sessionManager.getFavoriteMovieIds()
                     activeProfile = sessionManager.getActiveProfile()
+                    onToggleFavoriteMovie?.invoke(selectedMovieDetail!!, isFav)
                 },
                 onDismiss = { selectedMovieDetail = null },
                 onFetchFullInfo = { id -> onFetchVodInfo?.invoke(id) }
@@ -1092,9 +1102,10 @@ fun TvHomeScreen(
                 },
                 onToggleFavorite = {
                     val id = selectedSeriesDetail!!.id
-                    sessionManager.toggleFavoriteSeries(id)
+                    val isFav = sessionManager.toggleFavoriteSeries(id)
                     favoriteSeriesIds = sessionManager.getFavoriteSeriesIds()
                     activeProfile = sessionManager.getActiveProfile()
+                    onToggleFavoriteSeries?.invoke(selectedSeriesDetail!!, isFav)
                 },
                 onDismiss = { selectedSeriesDetail = null },
                 onFetchFullInfo = { id -> onFetchSeriesInfo?.invoke(id) }
@@ -1112,6 +1123,7 @@ fun TvHomeScreen(
                     favoriteMovieIds = newProfile.favoriteMovieIds
                     favoriteSeriesIds = newProfile.favoriteSeriesIds
                     isProfileModalOpen = false
+                    onProfileChanged?.invoke(newProfile)
                 }
             )
         }

@@ -140,7 +140,12 @@ fun MobileHomeScreen(
     onSeriesPageChange: (Int) -> Unit = {},
     onRefreshCatalog: () -> Unit = {},
     hasUpdateAvailable: Boolean = false,
-    onUpdateStatusChanged: ((Boolean) -> Unit)? = null
+    onUpdateStatusChanged: ((Boolean) -> Unit)? = null,
+    favoriteMovies: List<VodMovie> = emptyList(),
+    favoriteSeries: List<Series> = emptyList(),
+    onToggleFavoriteMovie: ((VodMovie, Boolean) -> Unit)? = null,
+    onToggleFavoriteSeries: ((Series, Boolean) -> Unit)? = null,
+    onProfileChanged: ((UserProfile) -> Unit)? = null
 ) {
     val strings = LocalStrings.current
     val coroutineScope = rememberCoroutineScope()
@@ -673,6 +678,8 @@ fun MobileHomeScreen(
                 MobileBottomTab.FAVORITES -> {
                     TvFavoritesContent(
                         channels = channels,
+                        favoriteMovies = favoriteMovies,
+                        favoriteSeries = favoriteSeries,
                         movies = movies,
                         series = series,
                         sessionManager = sessionManager,
@@ -682,7 +689,9 @@ fun MobileHomeScreen(
                         onFavoriteChanged = {
                             val prof = sessionManager.getActiveProfile()
                             refreshProfileData(prof)
-                        }
+                        },
+                        onUnpinMovie = { movie -> onToggleFavoriteMovie?.invoke(movie, false) },
+                        onUnpinSeries = { ser -> onToggleFavoriteSeries?.invoke(ser, false) }
                     )
                 }
 
@@ -725,9 +734,10 @@ fun MobileHomeScreen(
                 onSelectMovie(m)
             },
             onToggleFavorite = { id ->
-                sessionManager.toggleFavoriteMovie(id)
+                val isFav = sessionManager.toggleFavoriteMovie(id)
                 val prof = sessionManager.getActiveProfile()
                 refreshProfileData(prof)
+                onToggleFavoriteMovie?.invoke(movie, isFav)
             },
             onFetchFullInfo = { id -> onFetchVodInfo?.invoke(id) }
         )
@@ -747,9 +757,10 @@ fun MobileHomeScreen(
                 }
             },
             onToggleFavorite = { id ->
-                sessionManager.toggleFavoriteSeries(id)
+                val isFav = sessionManager.toggleFavoriteSeries(id)
                 val prof = sessionManager.getActiveProfile()
                 refreshProfileData(prof)
+                onToggleFavoriteSeries?.invoke(ser, isFav)
             },
             onFetchFullInfo = { id -> onFetchSeriesInfo?.invoke(id) }
         )
@@ -762,6 +773,7 @@ fun MobileHomeScreen(
             onProfileChanged = { newProfile ->
                 refreshProfileData(newProfile)
                 isProfileModalOpen = false
+                onProfileChanged?.invoke(newProfile)
             }
         )
     }

@@ -45,6 +45,12 @@ class IptvRepository(
     private val _series = MutableStateFlow<List<Series>>(emptyList())
     val series: StateFlow<List<Series>> = _series.asStateFlow()
 
+    private val _favoriteMovies = MutableStateFlow<List<VodMovie>>(emptyList())
+    val favoriteMovies: StateFlow<List<VodMovie>> = _favoriteMovies.asStateFlow()
+
+    private val _favoriteSeries = MutableStateFlow<List<Series>>(emptyList())
+    val favoriteSeries: StateFlow<List<Series>> = _favoriteSeries.asStateFlow()
+
     private val _epgPrograms = MutableStateFlow<List<EpgProgram>>(emptyList())
     val epgPrograms: StateFlow<List<EpgProgram>> = _epgPrograms.asStateFlow()
 
@@ -130,6 +136,8 @@ class IptvRepository(
         _channels.value = emptyList()
         _movies.value = emptyList()
         _series.value = emptyList()
+        _favoriteMovies.value = emptyList()
+        _favoriteSeries.value = emptyList()
         _epgPrograms.value = emptyList()
         _categories.value = emptyList()
         _vodCategories.value = emptyList()
@@ -386,6 +394,15 @@ class IptvRepository(
                 if (targetCatId != null) {
                     catalogStore?.saveVodMovies(serverUrl, username, targetCatId, freshList)
                 }
+                val currentFavs = _favoriteMovies.value
+                if (currentFavs.isNotEmpty()) {
+                    val updated = currentFavs.map { fav ->
+                        freshList.firstOrNull { it.id == fav.id } ?: fav
+                    }
+                    if (updated != currentFavs) {
+                        _favoriteMovies.value = updated
+                    }
+                }
             }
         } finally {
             _isVodLoading.value = false
@@ -423,6 +440,15 @@ class IptvRepository(
                 if (targetCatId != null) {
                     catalogStore?.saveSeries(serverUrl, username, targetCatId, enriched)
                 }
+                val currentFavs = _favoriteSeries.value
+                if (currentFavs.isNotEmpty()) {
+                    val updated = currentFavs.map { fav ->
+                        enriched.firstOrNull { it.id == fav.id } ?: fav
+                    }
+                    if (updated != currentFavs) {
+                        _favoriteSeries.value = updated
+                    }
+                }
             }
         } finally {
             _isSeriesLoading.value = false
@@ -435,6 +461,167 @@ class IptvRepository(
 
     fun clearAllDiskCaches() {
         catalogStore?.clearAllCaches()
+    }
+
+    // ==================== GESTION DES FAVORIS MULTI-PROFILS PERSISTANTS ====================
+
+    /**
+     * Charge immédiatement depuis le disque local les favoris films et séries du profil actif (0 ms)
+     */
+    fun loadFavorites(serverUrl: String, username: String, profileId: String) {
+        if (catalogStore != null && serverUrl.isNotBlank() && profileId.isNotBlank()) {
+            val favM = catalogStore.loadFavoriteMovies(serverUrl, username, profileId)
+            val favS = catalogStore.loadFavoriteSeries(serverUrl, username, profileId)
+            if (favM.isNotEmpty()) _favoriteMovies.value = favM
+            if (favS.isNotEmpty()) _favoriteSeries.value = favS
+        }
+    }
+
+    /**
+     * Résout et auto-guérit les favoris manquants (IDs enregistrés dans le profil mais pas encore en cache objet).
+     * 1. Cherche dans les catégories déjà mises en cache localement (<10ms).
+     * 2. Si des favoris sont introuvables localement, les télécharge via l'API Xtream en arrière-plan.
+     */
+    suspend fun resolveMissingFavorites(
+        serverUrl: String,
+        username: String,
+        password: String,
+        profile: UserProfile
+    ) = withContext(Dispatchers.IO) {
+        if (catalogStore == null || serverUrl.isBlank()) return@withContext
+
+        val profileId = profile.id
+        val favMovieIds = profile.favoriteMovieIds
+        val favSeriesIds = profile.favoriteSeriesIds
+
+        val currentMovieIds = _favoriteMovies.value.map { it.id }.toSet()
+        val missingMovieIds = favMovieIds - currentMovieIds
+
+        val currentSeriesIds = _favoriteSeries.value.map { it.id }.toSet()
+        val missingSeriesIds = favSeriesIds - currentSeriesIds
+
+        if (missingMovieIds.isEmpty() && missingSeriesIds.isEmpty()) return@withContext
+
+        // 1. Recherche instantanée dans les fichiers de catégories déjà en cache local
+        val newMovies = _favoriteMovies.value.toMutableList()
+        val stillMissingMovies = missingMovieIds.toMutableSet()
+        if (missingMovieIds.isNotEmpty()) {
+            val fromLocalCache = catalogStore.findVodMoviesByIds(serverUrl, username, missingMovieIds)
+            fromLocalCache.forEach { movie ->
+                if (!newMovies.any { it.id == movie.id }) {
+                    newMovies.add(movie)
+                    stillMissingMovies.remove(movie.id)
+                }
+            }
+        }
+
+        val newSeries = _favoriteSeries.value.toMutableList()
+        val stillMissingSeries = missingSeriesIds.toMutableSet()
+        if (missingSeriesIds.isNotEmpty()) {
+            val fromLocalCache = catalogStore.findSeriesByIds(serverUrl, username, missingSeriesIds)
+            fromLocalCache.forEach { ser ->
+                if (!newSeries.any { it.id == ser.id }) {
+                    newSeries.add(ser)
+                    stillMissingSeries.remove(ser.id)
+                }
+            }
+        }
+
+        // Mettre à jour l'UI avec ce qui a été trouvé en cache local immédiatement
+        if (newMovies.size != _favoriteMovies.value.size) {
+            _favoriteMovies.value = newMovies.toList()
+            catalogStore.saveFavoriteMovies(serverUrl, username, profileId, newMovies)
+        }
+        if (newSeries.size != _favoriteSeries.value.size) {
+            _favoriteSeries.value = newSeries.toList()
+            catalogStore.saveFavoriteSeries(serverUrl, username, profileId, newSeries)
+        }
+
+        // 2. Si des favoris sont toujours manquants, les récupérer via l'API Xtream
+        if ((stillMissingMovies.isNotEmpty() || stillMissingSeries.isNotEmpty()) && password.isNotBlank()) {
+            val semaphore = Semaphore(3)
+            coroutineScope {
+                stillMissingMovies.forEach { movieId ->
+                    launch {
+                        semaphore.withPermit {
+                            runCatching {
+                                val movieRes = xtreamClient.getVodInfo(serverUrl, username, password, movieId)
+                                movieRes.getOrNull()?.let { movie ->
+                                    synchronized(newMovies) {
+                                        if (!newMovies.any { it.id == movie.id }) {
+                                            newMovies.add(movie)
+                                            _favoriteMovies.value = newMovies.toList()
+                                            catalogStore.saveFavoriteMovies(serverUrl, username, profileId, newMovies)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                stillMissingSeries.forEach { seriesId ->
+                    launch {
+                        semaphore.withPermit {
+                            runCatching {
+                                val serRes = xtreamClient.getSeriesInfo(serverUrl, username, password, seriesId)
+                                serRes.getOrNull()?.let { ser ->
+                                    synchronized(newSeries) {
+                                        if (!newSeries.any { it.id == ser.id }) {
+                                            newSeries.add(ser)
+                                            _favoriteSeries.value = newSeries.toList()
+                                            catalogStore.saveFavoriteSeries(serverUrl, username, profileId, newSeries)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Ajoute ou retire un film des favoris persistants
+     */
+    fun toggleFavoriteMovie(serverUrl: String, username: String, profileId: String, movie: VodMovie, isFav: Boolean) {
+        val list = _favoriteMovies.value.toMutableList()
+        if (isFav) {
+            val idx = list.indexOfFirst { it.id == movie.id }
+            if (idx >= 0) {
+                list[idx] = movie
+            } else {
+                list.add(0, movie)
+            }
+        } else {
+            list.removeAll { it.id == movie.id }
+        }
+        _favoriteMovies.value = list
+        if (catalogStore != null && serverUrl.isNotBlank() && profileId.isNotBlank()) {
+            catalogStore.saveFavoriteMovies(serverUrl, username, profileId, list)
+        }
+    }
+
+    /**
+     * Ajoute ou retire une série des favoris persistants
+     */
+    fun toggleFavoriteSeries(serverUrl: String, username: String, profileId: String, series: Series, isFav: Boolean) {
+        val list = _favoriteSeries.value.toMutableList()
+        if (isFav) {
+            val idx = list.indexOfFirst { it.id == series.id }
+            if (idx >= 0) {
+                list[idx] = series
+            } else {
+                list.add(0, series)
+            }
+        } else {
+            list.removeAll { it.id == series.id }
+        }
+        _favoriteSeries.value = list
+        if (catalogStore != null && serverUrl.isNotBlank() && profileId.isNotBlank()) {
+            catalogStore.saveFavoriteSeries(serverUrl, username, profileId, list)
+        }
     }
 
     /**
@@ -818,6 +1005,8 @@ class IptvRepository(
         _channels.value = demoChannels
         _movies.value = demoMovies
         _series.value = demoSeries
+        _favoriteMovies.value = demoMovies.filter { it.isFavorite }
+        _favoriteSeries.value = demoSeries.filter { it.isFavorite }
         _epgPrograms.value = demoEpg
         _categories.value = listOf(
             Category("general", "Généraliste"),
