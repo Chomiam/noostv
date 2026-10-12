@@ -209,8 +209,10 @@ fun MobileHomeScreen(
         list
     }
 
-    val filteredChannels = remember(channels, selectedLiveCategory, favoriteChannelIds) {
-        if (selectedLiveCategory.startsWith("⭐ Favoris")) {
+    val filteredChannels = remember(channels, selectedLiveCategory, favoriteChannelIds, selectedTab) {
+        if (selectedTab != MobileBottomTab.TV) {
+            emptyList()
+        } else if (selectedLiveCategory.startsWith("⭐ Favoris")) {
             channels.filter { favoriteChannelIds.contains(it.id) }
         } else if (selectedLiveCategory == "Toutes") {
             channels
@@ -220,8 +222,8 @@ fun MobileHomeScreen(
     }
 
     // Chargement automatique de l'EPG pour les premières chaînes de la catégorie affichée
-    LaunchedEffect(filteredChannels, selectedLiveCategory) {
-        if (filteredChannels.isNotEmpty()) {
+    LaunchedEffect(filteredChannels, selectedLiveCategory, selectedTab) {
+        if (selectedTab == MobileBottomTab.TV && filteredChannels.isNotEmpty()) {
             onLoadChannelsBatch?.invoke(filteredChannels.take(20))
         }
     }

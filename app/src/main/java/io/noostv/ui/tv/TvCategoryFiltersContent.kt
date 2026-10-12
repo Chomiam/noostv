@@ -241,17 +241,18 @@ fun TvCategoryFiltersContent(
                                         true
                                     }
                                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                                        val catIds = currentCategories.map { it.id }
                                         when (selectedType) {
                                             FilterCategoryType.LIVE -> {
-                                                currentCategories.forEach { sessionManager.setLiveCategoryVisibility(it.id, false) }
+                                                sessionManager.setLiveCategoriesVisibility(catIds, false)
                                                 hiddenLiveIds = sessionManager.getHiddenLiveCategoryIds()
                                             }
                                             FilterCategoryType.MOVIES -> {
-                                                currentCategories.forEach { sessionManager.setVodCategoryVisibility(it.id, false) }
+                                                sessionManager.setVodCategoriesVisibility(catIds, false)
                                                 hiddenVodIds = sessionManager.getHiddenVodCategoryIds()
                                             }
                                             FilterCategoryType.SERIES -> {
-                                                currentCategories.forEach { sessionManager.setSeriesCategoryVisibility(it.id, false) }
+                                                sessionManager.setSeriesCategoriesVisibility(catIds, false)
                                                 hiddenSeriesIds = sessionManager.getHiddenSeriesCategoryIds()
                                             }
                                         }
@@ -266,17 +267,18 @@ fun TvCategoryFiltersContent(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
                         ) {
+                            val catIds = currentCategories.map { it.id }
                             when (selectedType) {
                                 FilterCategoryType.LIVE -> {
-                                    currentCategories.forEach { sessionManager.setLiveCategoryVisibility(it.id, false) }
+                                    sessionManager.setLiveCategoriesVisibility(catIds, false)
                                     hiddenLiveIds = sessionManager.getHiddenLiveCategoryIds()
                                 }
                                 FilterCategoryType.MOVIES -> {
-                                    currentCategories.forEach { sessionManager.setVodCategoryVisibility(it.id, false) }
+                                    sessionManager.setVodCategoriesVisibility(catIds, false)
                                     hiddenVodIds = sessionManager.getHiddenVodCategoryIds()
                                 }
                                 FilterCategoryType.SERIES -> {
-                                    currentCategories.forEach { sessionManager.setSeriesCategoryVisibility(it.id, false) }
+                                    sessionManager.setSeriesCategoriesVisibility(catIds, false)
                                     hiddenSeriesIds = sessionManager.getHiddenSeriesCategoryIds()
                                 }
                             }
@@ -385,7 +387,7 @@ fun TvCategoryFiltersContent(
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                itemsIndexed(currentCategories, key = { _, it -> it.id }) { index, cat ->
+                itemsIndexed(currentCategories, key = { index, it -> "${it.id}_$index" }) { index, cat ->
                     val isVisible = !currentHiddenIds.contains(cat.id)
                     var isFocused by remember { mutableStateOf(false) }
                     val scale by animateFloatAsState(targetValue = if (isFocused) 1.05f else 1.0f, label = "filter_cat_scale")

@@ -268,19 +268,26 @@ fun TvHomeScreen(
     var favoriteIds by remember { mutableStateOf(sessionManager.getFavoriteChannelIds()) }
 
     // Filtrage des chaînes en direct selon la catégorie sélectionnée et les filtres de visibilité
-    val filteredChannels = remember(channels, selectedLiveCategory, favoriteIds, activeProfile) {
-        if (selectedLiveCategory.startsWith("⭐ Favoris")) {
+    val filteredChannels = remember(channels, selectedLiveCategory, favoriteIds, activeProfile, selectedTab) {
+        if (selectedTab != TvNavTab.TV) {
+            emptyList()
+        } else if (selectedLiveCategory.startsWith("⭐ Favoris")) {
             channels.filter { favoriteIds.contains(it.id) }
         } else if (selectedLiveCategory == "Toutes") {
-            channels.filter { sessionManager.isLiveCategoryVisible(it.categoryId) }
+            val hiddenIds = sessionManager.getHiddenLiveCategoryIds()
+            if (hiddenIds.isEmpty()) {
+                channels
+            } else {
+                channels.filter { !hiddenIds.contains(it.categoryId) }
+            }
         } else {
             channels.filter { it.categoryName.equals(selectedLiveCategory, ignoreCase = true) || it.categoryId == selectedLiveCategory }
         }
     }
 
     // Chargement automatique en arrière-plan de l'EPG pour les premières chaînes de la catégorie affichée
-    LaunchedEffect(filteredChannels, selectedLiveCategory) {
-        if (filteredChannels.isNotEmpty()) {
+    LaunchedEffect(filteredChannels, selectedLiveCategory, selectedTab) {
+        if (selectedTab == TvNavTab.TV && filteredChannels.isNotEmpty()) {
             onLoadChannelsBatch?.invoke(filteredChannels.take(24))
         }
     }
@@ -419,8 +426,13 @@ fun TvHomeScreen(
                         if (favoriteIds.isNotEmpty()) {
                             list.add("⭐ Favoris (${favoriteIds.size})")
                         }
+                        val hiddenIds = sessionManager.getHiddenLiveCategoryIds()
                         val visibleCats = if (categories.isNotEmpty()) {
-                            categories.filter { sessionManager.isLiveCategoryVisible(it.id) }.map { it.name }
+                            if (hiddenIds.isEmpty()) {
+                                categories.map { it.name }
+                            } else {
+                                categories.filter { !hiddenIds.contains(it.id) }.map { it.name }
+                            }
                         } else {
                             channels.map { it.categoryName }.distinct()
                         }
@@ -481,7 +493,8 @@ fun TvHomeScreen(
                 // ==================== 2. ONGLET FILMS (VOD) — RATIO CINÉMA 2:3 ====================
                 TvNavTab.MOVIES -> {
                     val visibleVodCategories = remember(vodCategories, activeProfile) {
-                        vodCategories.filter { sessionManager.isVodCategoryVisible(it.id) }
+                        val hiddenIds = sessionManager.getHiddenVodCategoryIds()
+                        if (hiddenIds.isEmpty()) vodCategories else vodCategories.filter { !hiddenIds.contains(it.id) }
                     }
                     val vodCatNames = remember(visibleVodCategories) {
                         listOf("Toutes") + visibleVodCategories.map { it.name }
@@ -744,7 +757,8 @@ fun TvHomeScreen(
                 // ==================== 4. ONGLET SÉRIES (VOD) — RATIO CINÉMA 2:3 ====================
                 TvNavTab.SERIES -> {
                     val visibleSeriesCategories = remember(seriesCategories, activeProfile) {
-                        seriesCategories.filter { sessionManager.isSeriesCategoryVisible(it.id) }
+                        val hiddenIds = sessionManager.getHiddenSeriesCategoryIds()
+                        if (hiddenIds.isEmpty()) seriesCategories else seriesCategories.filter { !hiddenIds.contains(it.id) }
                     }
                     val seriesCatNames = remember(visibleSeriesCategories) {
                         listOf("Toutes") + visibleSeriesCategories.map { it.name }

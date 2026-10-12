@@ -131,12 +131,51 @@ class SessionManager(context: Context) {
         saveAccountToHistory(server, user, pass, name)
     }
 
-    // ==================== GESTION MULTI-PROFILS & PERSISTANCE ULTRA-FIABLE ====================
+    // ==================== GESTION MULTI-PROFILS & PERSISTANCE ULTRA-FIABLE (AVEC CACHE MÉMOIRE O(1)) ====================
 
     private val profilesBackupFile: File
         get() = File(appContext.filesDir, "noostv_profiles_backup.json")
 
+    private val profilesLock = Any()
+    @Volatile private var inMemoryProfiles: List<UserProfile>? = null
+    @Volatile private var inMemoryActiveProfile: UserProfile? = null
+    @Volatile private var cachedActiveProfileId: String? = null
+    @Volatile private var cachedHiddenLiveIds: Set<String>? = null
+    @Volatile private var cachedHiddenVodIds: Set<String>? = null
+    @Volatile private var cachedHiddenSeriesIds: Set<String>? = null
+    @Volatile private var cachedFavoriteChannelIds: Set<String>? = null
+    @Volatile private var cachedFavoriteMovieIds: Set<String>? = null
+    @Volatile private var cachedFavoriteSeriesIds: Set<String>? = null
+
+    private val diskWriteExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "noostv-profiles-io").apply { isDaemon = true }
+    }
+
+    private fun updateActiveProfileCache(activeProf: UserProfile) {
+        inMemoryActiveProfile = activeProf
+        cachedActiveProfileId = activeProf.id
+        cachedHiddenLiveIds = activeProf.hiddenLiveCategoryIds
+        cachedHiddenVodIds = activeProf.hiddenVodCategoryIds
+        cachedHiddenSeriesIds = activeProf.hiddenSeriesCategoryIds
+        cachedFavoriteChannelIds = activeProf.favoriteChannelIds
+        cachedFavoriteMovieIds = activeProf.favoriteMovieIds
+        cachedFavoriteSeriesIds = activeProf.favoriteSeriesIds
+    }
+
     fun getProfiles(): List<UserProfile> {
+        inMemoryProfiles?.let { return it }
+        synchronized(profilesLock) {
+            inMemoryProfiles?.let { return it }
+            val loaded = loadProfilesFromDisk()
+            inMemoryProfiles = loaded
+            val activeId = getActiveProfileId()
+            val active = loaded.firstOrNull { it.id == activeId } ?: loaded.firstOrNull() ?: UserProfile.DEFAULT_PROFILE
+            updateActiveProfileCache(active)
+            return loaded
+        }
+    }
+
+    private fun loadProfilesFromDisk(): List<UserProfile> {
         var json = prefs.getString(KEY_PROFILES_JSON, null)
 
         // Si SharedPreferences est vide, restaurer depuis le fichier de sauvegarde miroir
@@ -145,7 +184,7 @@ class SessionManager(context: Context) {
                 val backupJson = profilesBackupFile.readText()
                 if (backupJson.isNotBlank()) {
                     json = backupJson
-                    prefs.edit().putString(KEY_PROFILES_JSON, backupJson).commit()
+                    prefs.edit().putString(KEY_PROFILES_JSON, backupJson).apply()
                 }
             } catch (e: Exception) {
                 // Ignore backup read failure
@@ -216,7 +255,7 @@ class SessionManager(context: Context) {
                             hiddenLiveCategoryIds = prof.hiddenLiveCategoryIds ?: emptySet()
                         )
                     }
-                    prefs.edit().putString(KEY_PROFILES_JSON, backupJson).commit()
+                    prefs.edit().putString(KEY_PROFILES_JSON, backupJson).apply()
                     return sanitizedBackup
                 }
             } catch (ignored: Exception) {}
@@ -228,34 +267,54 @@ class SessionManager(context: Context) {
     }
 
     private fun saveProfilesList(list: List<UserProfile>) {
-        val json = gson.toJson(list)
-        // 1. Commit synchrone immédiat dans SharedPreferences (résiste aux fermetures brutales de l'app)
-        prefs.edit().putString(KEY_PROFILES_JSON, json).commit()
+        synchronized(profilesLock) {
+            inMemoryProfiles = list
+            val activeId = getActiveProfileId()
+            val active = list.firstOrNull { it.id == activeId } ?: list.firstOrNull() ?: UserProfile.DEFAULT_PROFILE
+            updateActiveProfileCache(active)
+        }
 
-        // 2. Écriture atomique sur fichier interne privé (survit aux mises à jour APK et nettoyages de SharedPreferences)
-        try {
-            val tempFile = File(appContext.filesDir, "noostv_profiles_backup.json.tmp")
-            tempFile.writeText(json)
-            if (tempFile.exists()) {
-                tempFile.renameTo(profilesBackupFile)
+        // Persistance asynchrone non-bloquante pour thread UI 0ms
+        val json = gson.toJson(list)
+        prefs.edit().putString(KEY_PROFILES_JSON, json).apply()
+
+        diskWriteExecutor.execute {
+            try {
+                val tempFile = File(appContext.filesDir, "noostv_profiles_backup.json.tmp")
+                tempFile.writeText(json)
+                if (tempFile.exists()) {
+                    tempFile.renameTo(profilesBackupFile)
+                }
+            } catch (e: Exception) {
+                // Ne bloque jamais l'application si l'écriture échoue
             }
-        } catch (e: Exception) {
-            // Ne bloque jamais l'application si l'écriture échoue
         }
     }
 
     fun getActiveProfileId(): String {
-        return prefs.getString(KEY_ACTIVE_PROFILE_ID, "profile_default") ?: "profile_default"
+        cachedActiveProfileId?.let { return it }
+        val id = prefs.getString(KEY_ACTIVE_PROFILE_ID, "profile_default") ?: "profile_default"
+        cachedActiveProfileId = id
+        return id
     }
 
     fun setActiveProfileId(id: String) {
-        prefs.edit().putString(KEY_ACTIVE_PROFILE_ID, id).commit()
+        synchronized(profilesLock) {
+            cachedActiveProfileId = id
+            prefs.edit().putString(KEY_ACTIVE_PROFILE_ID, id).apply()
+            val list = inMemoryProfiles ?: getProfiles()
+            val active = list.firstOrNull { it.id == id } ?: list.firstOrNull() ?: UserProfile.DEFAULT_PROFILE
+            updateActiveProfileCache(active)
+        }
     }
 
     fun getActiveProfile(): UserProfile {
+        inMemoryActiveProfile?.let { return it }
         val list = getProfiles()
         val activeId = getActiveProfileId()
-        return list.firstOrNull { it.id == activeId } ?: list.firstOrNull() ?: UserProfile.DEFAULT_PROFILE
+        val active = list.firstOrNull { it.id == activeId } ?: list.firstOrNull() ?: UserProfile.DEFAULT_PROFILE
+        updateActiveProfileCache(active)
+        return active
     }
 
     fun createProfile(name: String, colorHex: Long = 0xFF3888FF, icon: String = "Person"): UserProfile {
@@ -303,27 +362,30 @@ class SessionManager(context: Context) {
     }
 
     fun updateActiveProfile(transform: (UserProfile) -> UserProfile) {
-        val current = getProfiles().toMutableList()
-        val activeId = getActiveProfileId()
-        var index = current.indexOfFirst { it.id == activeId }
-        if (index == -1 && current.isNotEmpty()) {
-            index = 0
-            setActiveProfileId(current[0].id)
-        }
-        if (index != -1) {
-            current[index] = transform(current[index])
-            saveProfilesList(current)
+        synchronized(profilesLock) {
+            val current = getProfiles().toMutableList()
+            val activeId = getActiveProfileId()
+            var index = current.indexOfFirst { it.id == activeId }
+            if (index == -1 && current.isNotEmpty()) {
+                index = 0
+                cachedActiveProfileId = current[0].id
+                prefs.edit().putString(KEY_ACTIVE_PROFILE_ID, current[0].id).apply()
+            }
+            if (index != -1) {
+                current[index] = transform(current[index])
+                saveProfilesList(current)
+            }
         }
     }
 
     // ==================== FAVORIS PAR PROFIL ====================
 
-    fun getFavoriteChannelIds(): Set<String> = getActiveProfile().favoriteChannelIds ?: emptySet()
+    fun getFavoriteChannelIds(): Set<String> = cachedFavoriteChannelIds ?: getActiveProfile().favoriteChannelIds
 
     fun toggleFavoriteChannel(id: String): Boolean {
         var isFav = false
         updateActiveProfile { prof ->
-            val set = (prof.favoriteChannelIds ?: emptySet()).toMutableSet()
+            val set = prof.favoriteChannelIds.toMutableSet()
             if (set.contains(id)) {
                 set.remove(id)
                 isFav = false
@@ -338,12 +400,12 @@ class SessionManager(context: Context) {
 
     fun isFavoriteChannel(id: String): Boolean = getFavoriteChannelIds().contains(id)
 
-    fun getFavoriteMovieIds(): Set<String> = getActiveProfile().favoriteMovieIds ?: emptySet()
+    fun getFavoriteMovieIds(): Set<String> = cachedFavoriteMovieIds ?: getActiveProfile().favoriteMovieIds
 
     fun toggleFavoriteMovie(id: String): Boolean {
         var isFav = false
         updateActiveProfile { prof ->
-            val set = (prof.favoriteMovieIds ?: emptySet()).toMutableSet()
+            val set = prof.favoriteMovieIds.toMutableSet()
             if (set.contains(id)) {
                 set.remove(id)
                 isFav = false
@@ -358,12 +420,12 @@ class SessionManager(context: Context) {
 
     fun isFavoriteMovie(id: String): Boolean = getFavoriteMovieIds().contains(id)
 
-    fun getFavoriteSeriesIds(): Set<String> = getActiveProfile().favoriteSeriesIds ?: emptySet()
+    fun getFavoriteSeriesIds(): Set<String> = cachedFavoriteSeriesIds ?: getActiveProfile().favoriteSeriesIds
 
     fun toggleFavoriteSeries(id: String): Boolean {
         var isFav = false
         updateActiveProfile { prof ->
-            val set = (prof.favoriteSeriesIds ?: emptySet()).toMutableSet()
+            val set = prof.favoriteSeriesIds.toMutableSet()
             if (set.contains(id)) {
                 set.remove(id)
                 isFav = false
@@ -380,14 +442,14 @@ class SessionManager(context: Context) {
 
     // ==================== FILTRES DE CATÉGORIES PAR PROFIL ====================
 
-    fun getHiddenVodCategoryIds(): Set<String> = getActiveProfile().hiddenVodCategoryIds ?: emptySet()
+    fun getHiddenVodCategoryIds(): Set<String> = cachedHiddenVodIds ?: getActiveProfile().hiddenVodCategoryIds
 
     fun isVodCategoryVisible(categoryId: String): Boolean = !getHiddenVodCategoryIds().contains(categoryId)
 
     fun toggleVodCategoryVisibility(categoryId: String): Boolean {
         var isNowVisible = false
         updateActiveProfile { prof ->
-            val set = (prof.hiddenVodCategoryIds ?: emptySet()).toMutableSet()
+            val set = prof.hiddenVodCategoryIds.toMutableSet()
             if (set.contains(categoryId)) {
                 set.remove(categoryId)
                 isNowVisible = true
@@ -402,8 +464,18 @@ class SessionManager(context: Context) {
 
     fun setVodCategoryVisibility(categoryId: String, isVisible: Boolean) {
         updateActiveProfile { prof ->
-            val set = (prof.hiddenVodCategoryIds ?: emptySet()).toMutableSet()
+            val set = prof.hiddenVodCategoryIds.toMutableSet()
             if (isVisible) set.remove(categoryId) else set.add(categoryId)
+            prof.copy(hiddenVodCategoryIds = set)
+        }
+    }
+
+    fun setVodCategoriesVisibility(categoryIds: Collection<String>, isVisible: Boolean) {
+        if (categoryIds.isEmpty()) return
+        val targetSet = categoryIds.toSet()
+        updateActiveProfile { prof ->
+            val set = prof.hiddenVodCategoryIds.toMutableSet()
+            if (isVisible) set.removeAll(targetSet) else set.addAll(targetSet)
             prof.copy(hiddenVodCategoryIds = set)
         }
     }
@@ -414,14 +486,14 @@ class SessionManager(context: Context) {
         }
     }
 
-    fun getHiddenSeriesCategoryIds(): Set<String> = getActiveProfile().hiddenSeriesCategoryIds ?: emptySet()
+    fun getHiddenSeriesCategoryIds(): Set<String> = cachedHiddenSeriesIds ?: getActiveProfile().hiddenSeriesCategoryIds
 
     fun isSeriesCategoryVisible(categoryId: String): Boolean = !getHiddenSeriesCategoryIds().contains(categoryId)
 
     fun toggleSeriesCategoryVisibility(categoryId: String): Boolean {
         var isNowVisible = false
         updateActiveProfile { prof ->
-            val set = (prof.hiddenSeriesCategoryIds ?: emptySet()).toMutableSet()
+            val set = prof.hiddenSeriesCategoryIds.toMutableSet()
             if (set.contains(categoryId)) {
                 set.remove(categoryId)
                 isNowVisible = true
@@ -436,8 +508,18 @@ class SessionManager(context: Context) {
 
     fun setSeriesCategoryVisibility(categoryId: String, isVisible: Boolean) {
         updateActiveProfile { prof ->
-            val set = (prof.hiddenSeriesCategoryIds ?: emptySet()).toMutableSet()
+            val set = prof.hiddenSeriesCategoryIds.toMutableSet()
             if (isVisible) set.remove(categoryId) else set.add(categoryId)
+            prof.copy(hiddenSeriesCategoryIds = set)
+        }
+    }
+
+    fun setSeriesCategoriesVisibility(categoryIds: Collection<String>, isVisible: Boolean) {
+        if (categoryIds.isEmpty()) return
+        val targetSet = categoryIds.toSet()
+        updateActiveProfile { prof ->
+            val set = prof.hiddenSeriesCategoryIds.toMutableSet()
+            if (isVisible) set.removeAll(targetSet) else set.addAll(targetSet)
             prof.copy(hiddenSeriesCategoryIds = set)
         }
     }
@@ -448,14 +530,14 @@ class SessionManager(context: Context) {
         }
     }
 
-    fun getHiddenLiveCategoryIds(): Set<String> = getActiveProfile().hiddenLiveCategoryIds ?: emptySet()
+    fun getHiddenLiveCategoryIds(): Set<String> = cachedHiddenLiveIds ?: getActiveProfile().hiddenLiveCategoryIds
 
     fun isLiveCategoryVisible(categoryId: String): Boolean = !getHiddenLiveCategoryIds().contains(categoryId)
 
     fun toggleLiveCategoryVisibility(categoryId: String): Boolean {
         var isNowVisible = false
         updateActiveProfile { prof ->
-            val set = (prof.hiddenLiveCategoryIds ?: emptySet()).toMutableSet()
+            val set = prof.hiddenLiveCategoryIds.toMutableSet()
             if (set.contains(categoryId)) {
                 set.remove(categoryId)
                 isNowVisible = true
@@ -470,8 +552,18 @@ class SessionManager(context: Context) {
 
     fun setLiveCategoryVisibility(categoryId: String, isVisible: Boolean) {
         updateActiveProfile { prof ->
-            val set = (prof.hiddenLiveCategoryIds ?: emptySet()).toMutableSet()
+            val set = prof.hiddenLiveCategoryIds.toMutableSet()
             if (isVisible) set.remove(categoryId) else set.add(categoryId)
+            prof.copy(hiddenLiveCategoryIds = set)
+        }
+    }
+
+    fun setLiveCategoriesVisibility(categoryIds: Collection<String>, isVisible: Boolean) {
+        if (categoryIds.isEmpty()) return
+        val targetSet = categoryIds.toSet()
+        updateActiveProfile { prof ->
+            val set = prof.hiddenLiveCategoryIds.toMutableSet()
+            if (isVisible) set.removeAll(targetSet) else set.addAll(targetSet)
             prof.copy(hiddenLiveCategoryIds = set)
         }
     }
