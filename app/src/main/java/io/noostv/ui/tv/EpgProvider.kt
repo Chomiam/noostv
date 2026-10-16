@@ -153,17 +153,25 @@ object EpgProvider {
     private var lastRawListRef: List<EpgProgram>? = null
     private var cachedIndex: Map<String, List<EpgProgram>> = emptyMap()
 
-    // Cache des programmes auto-générés pour ne pas recalculer inutilement durant le scroll rapide
+    // Cache des programmes auto-générés pour ne pas recalculer inutilement durant le scroll rapide (plafonné pour limiter la RAM)
     private val defaultProgramCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, EpgProgram>>()
 
     @Synchronized
+    fun clearCaches() {
+        lastRawListRef = null
+        cachedIndex = emptyMap()
+        defaultProgramCache.clear()
+    }
+
+    @Synchronized
     private fun getIndexedMap(epgPrograms: List<EpgProgram>): Map<String, List<EpgProgram>> {
+        if (epgPrograms.isEmpty()) return emptyMap()
         if (epgPrograms === lastRawListRef && cachedIndex.isNotEmpty()) {
             return cachedIndex
         }
-        val map = HashMap<String, MutableList<EpgProgram>>(epgPrograms.size / 2)
+        val map = HashMap<String, MutableList<EpgProgram>>((epgPrograms.size / 2).coerceAtLeast(16))
         for (prog in epgPrograms) {
-            map.getOrPut(prog.channelId) { ArrayList() }.add(prog)
+            map.getOrPut(prog.channelId) { ArrayList(4) }.add(prog)
         }
         lastRawListRef = epgPrograms
         cachedIndex = map
@@ -187,10 +195,13 @@ object EpgProvider {
             if (anyProg != null) return anyProg
         }
 
-        // 2. Synthétiser un programme réaliste avec cache mémoïsé (valide 60s)
+        // 2. Synthétiser un programme réaliste avec cache mémoïsé (valide 60s, plafonné à 250 entrées)
         val cached = defaultProgramCache[channel.id]
         if (cached != null && now - cached.first < 60_000L && cached.second.isLiveNow(now)) {
             return cached.second
+        }
+        if (defaultProgramCache.size > 250) {
+            defaultProgramCache.clear()
         }
         val generated = generateDefaultLiveProgram(channel, now)
         defaultProgramCache[channel.id] = Pair(now, generated)

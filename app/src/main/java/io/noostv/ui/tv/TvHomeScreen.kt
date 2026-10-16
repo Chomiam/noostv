@@ -462,6 +462,11 @@ fun TvHomeScreen(
                             filteredChannels.first()
                         }
 
+                        LaunchedEffect(activePreview.id) {
+                            kotlinx.coroutines.delay(500)
+                            onLoadChannelEpg?.invoke(activePreview)
+                        }
+
                         TvChannelPreviewContent(
                             channels = filteredChannels,
                             selectedChannel = activePreview,
@@ -474,7 +479,6 @@ fun TvHomeScreen(
                             },
                             onChannelChanged = { newChan ->
                                 previewChannel = newChan
-                                onLoadChannelEpg?.invoke(newChan)
                             },
                             onOpenFullscreen = { chan ->
                                 onSelectChannel(chan)
@@ -1499,14 +1503,21 @@ fun TvCategoryChipsRow(
     onNavigateDown: (() -> Unit)? = null,
     onSelectCategory: (String) -> Unit
 ) {
-    Row(
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val firstVisibleIdx = listState.firstVisibleItemIndex
+
+    LazyRow(
+        state = listState,
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        categories.forEachIndexed { index, category ->
+        itemsIndexed(
+            items = categories,
+            key = { index, cat -> "${index}_$cat" },
+            contentType = { _, _ -> "category_chip" }
+        ) { index, category ->
             val isSelected = category.equals(selectedCategory, ignoreCase = true)
             var isFocused by remember { mutableStateOf(false) }
 
@@ -1532,13 +1543,14 @@ fun TvCategoryChipsRow(
                     } else false
                 }
 
-            if (focusRequester != null && index == 0) {
+            if (focusRequester != null && index == firstVisibleIdx) {
                 chipMod = chipMod.focusRequester(focusRequester)
             }
 
             Box(
                 modifier = chipMod
                     .onFocusChanged { isFocused = it.isFocused }
+                    .focusable()
                     .clickable { onSelectCategory(category) }
                     .background(
                         when {
@@ -1548,7 +1560,7 @@ fun TvCategoryChipsRow(
                         }
                     )
                     .border(
-                        width = if (isFocused) 2.5.dp else if (isSelected) 1.dp else 1.dp,
+                        width = if (isFocused) 2.5.dp else 1.dp,
                         color = if (isFocused) FocusGlow else if (isSelected) NoosBlue else CardBorderUnfocused,
                         shape = RoundedCornerShape(50)
                     )
@@ -1579,8 +1591,9 @@ fun TvChannelGridCard(
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val isLowSpec = remember { io.noostv.core.device.DeviceDetector.isLowSpecDevice(context) }
     var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(targetValue = if (isFocused) 1.05f else 1.0f, label = "channel_scale")
+    val scale = if (isLowSpec) 1.0f else animateFloatAsState(targetValue = if (isFocused) 1.05f else 1.0f, label = "channel_scale").value
 
     val backdropUrl = remember(channel.id, currentProgram.id) {
         EpgProvider.getProgramBackdrop(channel, currentProgram)
@@ -1608,12 +1621,12 @@ fun TvChannelGridCard(
                 shape = RoundedCornerShape(18.dp)
             )
     ) {
-        // 1. Image du programme en cours en arrière-plan plein format avec downsampling 400x225
+        // 1. Image du programme en cours en arrière-plan plein format avec downsampling 320x180 sur low-spec
         AsyncImage(
             model = ImageRequest.Builder(context)
                 .data(backdropUrl)
-                .size(width = 400, height = 225)
-                .crossfade(true)
+                .size(width = if (isLowSpec) 320 else 400, height = if (isLowSpec) 180 else 225)
+                .crossfade(!isLowSpec)
                 .allowHardware(false)
                 .build(),
             contentDescription = currentProgram.title,
@@ -1664,10 +1677,11 @@ fun TvChannelGridCard(
                                 .padding(3.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            SubcomposeAsyncImage(
+                            AsyncImage(
                                 model = ImageRequest.Builder(context)
                                     .data(channel.logoUrl)
-                                    .crossfade(true)
+                                    .size(72, 72)
+                                    .crossfade(!isLowSpec)
                                     .allowHardware(false)
                                     .build(),
                                 contentDescription = channel.name,
@@ -1741,9 +1755,10 @@ fun TvChannelGridCard(
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
                             .weight(1f)
-                            .basicMarquee(iterations = Int.MAX_VALUE)
+                            .then(if (isFocused && !isLowSpec) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier)
                     )
                 }
 
@@ -1782,9 +1797,10 @@ fun TvMovieGridCard(
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val isLowSpec = remember { io.noostv.core.device.DeviceDetector.isLowSpecDevice(context) }
     val soundManager = LocalSoundEffectManager.current
     var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(targetValue = if (isFocused) 1.06f else 1.0f, label = "vod_scale")
+    val scale = if (isLowSpec) 1.0f else animateFloatAsState(targetValue = if (isFocused) 1.06f else 1.0f, label = "vod_scale").value
 
     var cardModifier = Modifier
         .fillMaxWidth()
@@ -1856,13 +1872,13 @@ fun TvMovieGridCard(
                 shape = RoundedCornerShape(18.dp)
             )
     ) {
-        // 1. Affiche plein format respectant le ratio 2:3 avec downsampling mémoire 300x450
+        // 1. Affiche plein format respectant le ratio 2:3 avec downsampling mémoire adapté
         if (!movie.posterUrl.isNullOrBlank()) {
             AsyncImage(
                 model = ImageRequest.Builder(context)
                     .data(movie.posterUrl)
-                    .size(width = 300, height = 450)
-                    .crossfade(true)
+                    .size(width = if (isLowSpec) 220 else 300, height = if (isLowSpec) 330 else 450)
+                    .crossfade(!isLowSpec)
                     .allowHardware(false)
                     .build(),
                 contentDescription = movie.title,
@@ -1955,9 +1971,10 @@ fun TvSeriesGridCard(
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val isLowSpec = remember { io.noostv.core.device.DeviceDetector.isLowSpecDevice(context) }
     val soundManager = LocalSoundEffectManager.current
     var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(targetValue = if (isFocused) 1.06f else 1.0f, label = "series_scale")
+    val scale = if (isLowSpec) 1.0f else animateFloatAsState(targetValue = if (isFocused) 1.06f else 1.0f, label = "series_scale").value
 
     var cardModifier = Modifier
         .fillMaxWidth()
@@ -2029,13 +2046,13 @@ fun TvSeriesGridCard(
                 shape = RoundedCornerShape(18.dp)
             )
     ) {
-        // 1. Affiche plein format respectant le ratio 2:3 avec downsampling mémoire 300x450
+        // 1. Affiche plein format respectant le ratio 2:3 avec downsampling mémoire adapté
         if (!series.posterUrl.isNullOrBlank()) {
             AsyncImage(
                 model = ImageRequest.Builder(context)
                     .data(series.posterUrl)
-                    .size(width = 300, height = 450)
-                    .crossfade(true)
+                    .size(width = if (isLowSpec) 220 else 300, height = if (isLowSpec) 330 else 450)
+                    .crossfade(!isLowSpec)
                     .allowHardware(false)
                     .build(),
                 contentDescription = series.title,
@@ -2186,9 +2203,10 @@ fun TvMovieDetailModal(
     val favFocusRequester = remember { FocusRequester() }
     val bottomCloseFocusRequester = remember { FocusRequester() }
     val context = LocalContext.current
+    val isLowSpec = remember { io.noostv.core.device.DeviceDetector.isLowSpecDevice(context) }
     val view = LocalView.current
     var fullMovie by remember(movie.id) { mutableStateOf(movie) }
-    var isFetchingInfo by remember(movie.id) { mutableStateOf(onFetchFullInfo != null && movie.plot.isNullOrBlank()) }
+    var isFetchingInfo by remember(movie.id) { mutableStateOf(onFetchFullInfo != null && (movie.plot.isNullOrBlank() || movie.cast.isEmpty())) }
     val resumePoint = remember(movie.id) {
         sessionManager?.getPlaybackResume("movie_${movie.id}")
     }
@@ -2198,7 +2216,7 @@ fun TvMovieDetailModal(
     }
 
     LaunchedEffect(movie.id) {
-        if (movie.plot.isNullOrBlank() && onFetchFullInfo != null) {
+        if ((movie.plot.isNullOrBlank() || movie.cast.isEmpty()) && onFetchFullInfo != null) {
             isFetchingInfo = true
             onFetchFullInfo(movie.id)?.let { enriched ->
                 fullMovie = enriched
@@ -2260,10 +2278,11 @@ fun TvMovieDetailModal(
                     ) {
                         val poster = fullMovie.posterUrl ?: movie.posterUrl
                         if (!poster.isNullOrBlank()) {
-                            SubcomposeAsyncImage(
+                            AsyncImage(
                                 model = ImageRequest.Builder(context)
                                     .data(poster)
-                                    .crossfade(true)
+                                    .size(300, 450)
+                                    .crossfade(!isLowSpec)
                                     .allowHardware(false)
                                     .build(),
                                 contentDescription = fullMovie.title,
@@ -2735,10 +2754,11 @@ fun TvSeriesDetailModal(
                             .background(Color(0xFF162032))
                     ) {
                         if (!fullSeries.posterUrl.isNullOrBlank()) {
-                            SubcomposeAsyncImage(
+                            AsyncImage(
                                 model = ImageRequest.Builder(context)
                                     .data(fullSeries.posterUrl)
-                                    .crossfade(true)
+                                    .size(300, 450)
+                                    .crossfade(false)
                                     .allowHardware(false)
                                     .build(),
                                 contentDescription = fullSeries.title,

@@ -25,16 +25,19 @@ class NoosApplication : Application(), ImageLoaderFactory {
     }
 
     override fun newImageLoader(): ImageLoader {
+        val isLowSpec = io.noostv.core.device.DeviceDetector.isLowSpecDevice(this)
+        val maxMemBytes = if (isLowSpec) 14 * 1024 * 1024 else 24 * 1024 * 1024 // Plafond strict 14 Mo sur TV low-RAM
         return ImageLoader.Builder(this)
             .memoryCache {
                 MemoryCache.Builder(this)
-                    .maxSizePercent(0.25) // 25% de la mémoire max allouée
+                    .maxSizeBytes(maxMemBytes)
+                    .weakReferencesEnabled(false)
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(150L * 1024 * 1024) // 150 Mo de cache disque
+                    .maxSizeBytes(if (isLowSpec) 80L * 1024 * 1024 else 150L * 1024 * 1024)
                     .build()
             }
             // RGB_565 divise par 2 l'empreinte mémoire RAM de chaque miniature (2 octets/pixel au lieu de 4)
@@ -43,7 +46,31 @@ class NoosApplication : Application(), ImageLoaderFactory {
             .respectCacheHeaders(false) // Permet de conserver les affiches même si le serveur IPTV envoie 'no-cache'
             // Indispensable sur Android TV (Mali GPU) pour éviter les crashs de rendu matériel
             .allowHardware(false)
-            .crossfade(true)
+            // Désactive le crossfade sur les TV à faible config (évite de garder 2 bitmaps + 60fps alpha par carte)
+            .crossfade(!isLowSpec)
             .build()
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= TRIM_MEMORY_RUNNING_LOW || level >= TRIM_MEMORY_UI_HIDDEN) {
+            runCatching { coil.Coil.imageLoader(this).memoryCache?.clear() }
+            io.noostv.ui.tv.EpgProvider.clearCaches()
+        } else if (level >= TRIM_MEMORY_RUNNING_MODERATE) {
+            runCatching {
+                val cache = coil.Coil.imageLoader(this).memoryCache
+                if (cache != null) {
+                    // Purge complète préventive dès que la RAM se tend
+                    cache.clear()
+                }
+            }
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        runCatching { coil.Coil.imageLoader(this).memoryCache?.clear() }
+        io.noostv.ui.tv.EpgProvider.clearCaches()
     }
 }

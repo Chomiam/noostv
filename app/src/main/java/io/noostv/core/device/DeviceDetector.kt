@@ -86,4 +86,40 @@ class DeviceDetector(private val context: Context) {
     fun hasHdrDisplay(): Boolean {
         return getSupportedHdrModes().isNotEmpty()
     }
+
+    val isLowSpec: Boolean by lazy {
+        isLowSpecDevice(context)
+    }
+
+    companion object {
+        @Volatile
+        private var cachedLowSpec: Boolean? = null
+
+        /**
+         * Détecte les téléviseurs et boîtiers Android TV à faible configuration (ex: fausses TV Samsung,
+         * box génériques 1 Go / 1.5 Go / 2 Go RAM, SoC Quad-Core Cortex-A53 / Mali-400 / Mali-G31)
+         * afin de brider l'empreinte RAM à chaud, l'overdraw GPU et les animations coûteuses.
+         */
+        fun isLowSpecDevice(context: Context): Boolean {
+            cachedLowSpec?.let { return it }
+            val result = runCatching {
+                val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+                if (am != null) {
+                    if (am.isLowRamDevice) return@runCatching true
+                    val memInfo = android.app.ActivityManager.MemoryInfo()
+                    am.getMemoryInfo(memInfo)
+                    val totalMb = memInfo.totalMem / (1024L * 1024L)
+                    // <= 2300 Mo couvre toutes les TV et box 1 Go, 1.5 Go et 2 Go de RAM
+                    if (totalMb in 1..2300) return@runCatching true
+                }
+                val uiModeManager = context.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
+                val isTvMode = uiModeManager?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
+                    context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+                // Sur TV, un petit processeur <= 4 coeurs tire un énorme bénéfice du mode allégé
+                isTvMode && Runtime.getRuntime().availableProcessors() <= 4
+            }.getOrDefault(true)
+            cachedLowSpec = result
+            return result
+        }
+    }
 }

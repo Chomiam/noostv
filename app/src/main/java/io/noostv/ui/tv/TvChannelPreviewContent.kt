@@ -71,13 +71,17 @@ fun TvChannelPreviewContent(
     onNavigateLeftToSidebar: () -> Unit,
     onFavoriteToggled: (() -> Unit)? = null
 ) {
+    val context = LocalContext.current
+    val isLowSpec = remember { io.noostv.core.device.DeviceDetector.isLowSpecDevice(context) }
+
     // Focus requesters pour navigation D-Pad
     val playerFocusRequester = remember { FocusRequester() }
     val channelListFocusRequester = contentFocusRequester ?: remember { FocusRequester() }
 
-    // Démarre la lecture du flux dans le PlayerEngine en mode prévisualisation (720p, débit optimisé) avec debounce anti-saccade
+    // Démarre la lecture du flux dans le PlayerEngine en mode prévisualisation (720p, débit optimisé) avec debounce anti-saccade.
+    // Sur les TV d'entrée de gamme, un délai de 650ms évite de réinitialiser MediaCodec pendant un défilement rapide au D-Pad.
     LaunchedEffect(selectedChannel.id) {
-        kotlinx.coroutines.delay(250) // Debounce zapping ultra-fluide
+        kotlinx.coroutines.delay(if (isLowSpec) 650L else 280L)
         playerEngine.playStream(
             url = selectedChannel.streamUrl,
             title = selectedChannel.name,
@@ -141,7 +145,9 @@ fun TvChannelPreviewContent(
             }
 
             val listState = rememberLazyListState()
-            val selectedIndex = channels.indexOfFirst { it.id == selectedChannel.id }.coerceAtLeast(0)
+            val selectedIndex = remember(channels, selectedChannel.id) {
+                channels.indexOfFirst { it.id == selectedChannel.id }.coerceAtLeast(0)
+            }
 
             LaunchedEffect(Unit) {
                 listState.scrollToItem(selectedIndex.coerceAtLeast(0))
@@ -159,12 +165,15 @@ fun TvChannelPreviewContent(
                 ) { index, ch ->
                     val isCurrent = ch.id == selectedChannel.id
                     val isFirstItem = index == 0
-                    val liveProg = EpgProvider.getCurrentProgram(ch, epgPrograms)
+                    val liveProg = remember(ch.id, epgPrograms) {
+                        EpgProvider.getCurrentProgram(ch, epgPrograms)
+                    }
 
                     TvChannelListItem(
                         channel = ch,
                         currentProgram = liveProg,
                         isSelected = isCurrent,
+                        isLowSpec = isLowSpec,
                         focusRequester = if (isFirstItem) channelListFocusRequester else null,
                         onNavigateLeft = onNavigateLeftToSidebar,
                         onNavigateRight = { runCatching { playerFocusRequester.requestFocus() } },
@@ -415,6 +424,7 @@ fun TvChannelListItem(
     channel: Channel,
     currentProgram: EpgProgram,
     isSelected: Boolean,
+    isLowSpec: Boolean = false,
     focusRequester: FocusRequester? = null,
     onNavigateLeft: (() -> Unit)? = null,
     onNavigateRight: (() -> Unit)? = null,
@@ -424,11 +434,9 @@ fun TvChannelListItem(
 ) {
     val context = LocalContext.current
     var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(targetValue = if (isFocused) 1.02f else 1.0f, label = "channel_list_scale")
 
     var mod = Modifier
         .fillMaxWidth()
-        .scale(scale)
         .clip(RoundedCornerShape(14.dp))
 
     if (focusRequester != null) {
@@ -506,7 +514,7 @@ fun TvChannelListItem(
                         model = ImageRequest.Builder(context)
                             .data(channel.logoUrl)
                             .size(72, 72)
-                            .crossfade(true)
+                            .crossfade(!isLowSpec)
                             .allowHardware(false)
                             .build(),
                         contentDescription = channel.name,

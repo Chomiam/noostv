@@ -161,16 +161,21 @@ class PlayerEngine(
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         .setEnableDecoderFallback(true)
 
-    // LoadControl équilibré (priorité temps de lecture, absorption des variations de débit, anti-freeze)
+    private val isLowSpec = io.noostv.core.device.DeviceDetector.isLowSpecDevice(context)
+
+    // LoadControl adapté à la configuration matérielle :
+    // Sur les TV d'entrée de gamme (1-2 Go RAM), plafonne strictement le buffer RAM à 12 Mo (contre illimité par défaut)
+    // pour éviter les freezes GC et les crashs OOM lors des flux FHD/4K à haut débit.
     private val defaultLoadControl = DefaultLoadControl.Builder()
         .setBufferDurationsMs(
-            15_000, // minBufferMs (15s : réserve suffisante pour absorber les fluctuations IPTV / VOD)
-            30_000, // maxBufferMs (30s : plafond mémoire sain)
-            1_500,  // bufferForPlaybackMs (1.5s : démarrage rapide)
-            3_000   // bufferForPlaybackAfterRebufferMs (3s : reprise stable)
+            if (isLowSpec) 8_000 else 15_000,  // minBufferMs
+            if (isLowSpec) 15_000 else 28_000, // maxBufferMs
+            if (isLowSpec) 1_200 else 1_500,   // bufferForPlaybackMs
+            if (isLowSpec) 2_500 else 3_000    // bufferForPlaybackAfterRebufferMs
         )
-        .setBackBuffer(5_000, false) // 5s de back-buffer pour absorber les B-frames sans purge prématurée
-        .setPrioritizeTimeOverSizeThresholds(true) // Priorité absolue au maintien du flux en continu
+        .setTargetBufferBytes(if (isLowSpec) 12 * 1024 * 1024 else 28 * 1024 * 1024)
+        .setBackBuffer(if (isLowSpec) 0 else 4_000, false)
+        .setPrioritizeTimeOverSizeThresholds(!isLowSpec)
         .build()
 
     val exoPlayer: ExoPlayer by lazy {

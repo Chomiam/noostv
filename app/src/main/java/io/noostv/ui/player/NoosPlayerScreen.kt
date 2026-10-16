@@ -51,7 +51,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import coil.compose.SubcomposeAsyncImage
+import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import io.noostv.core.player.PlayerEngine
 import io.noostv.core.player.TrackInfo
@@ -808,11 +808,18 @@ fun NoosPlayerScreen(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 if (!chan.logoUrl.isNullOrBlank()) {
-                                    SubcomposeAsyncImage(
-                                        model = ImageRequest.Builder(LocalContext.current)
+                                    val ctx = LocalContext.current
+                                    val isLowSpec = remember { io.noostv.core.device.DeviceDetector.isLowSpecDevice(ctx) }
+                                    val logoReq = remember(chan.logoUrl, isLowSpec) {
+                                        ImageRequest.Builder(ctx)
                                             .data(chan.logoUrl)
-                                            .crossfade(true)
-                                            .build(),
+                                            .size(72, 72)
+                                            .crossfade(!isLowSpec)
+                                            .allowHardware(false)
+                                            .build()
+                                    }
+                                    AsyncImage(
+                                        model = logoReq,
                                         contentDescription = chan.name,
                                         modifier = Modifier
                                             .size(36.dp)

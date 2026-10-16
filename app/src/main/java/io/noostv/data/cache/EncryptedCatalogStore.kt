@@ -51,36 +51,36 @@ class EncryptedCatalogStore(
         return catId.replace(Regex("[^a-zA-Z0-9_\\-]"), "_").take(32)
     }
 
-    private fun gzipCompress(data: ByteArray): ByteArray {
-        val bos = java.io.ByteArrayOutputStream(data.size / 4)
-        java.util.zip.GZIPOutputStream(bos).use { it.write(data) }
-        return bos.toByteArray()
-    }
-
-    private fun gzipDecompress(compressed: ByteArray): ByteArray {
-        val bis = java.io.ByteArrayInputStream(compressed)
-        val gis = java.util.zip.GZIPInputStream(bis)
-        val bos = java.io.ByteArrayOutputStream()
-        val buffer = ByteArray(8192)
-        var len: Int
-        while (gis.read(buffer).also { len = it } > 0) {
-            bos.write(buffer, 0, len)
+    private fun writeEncryptedJson(file: File, src: Any, typeOfSrc: java.lang.reflect.Type? = null) {
+        val bos = java.io.ByteArrayOutputStream(16_384)
+        java.util.zip.GZIPOutputStream(bos).use { gos ->
+            java.io.OutputStreamWriter(gos, Charsets.UTF_8).use { writer ->
+                if (typeOfSrc != null) {
+                    gson.toJson(src, typeOfSrc, writer)
+                } else {
+                    gson.toJson(src, writer)
+                }
+            }
         }
-        return bos.toByteArray()
+        val encrypted = CryptoManager.encryptBytes(bos.toByteArray())
+        file.writeBytes(encrypted)
     }
 
-    private fun compressAndEncrypt(plainBytes: ByteArray): ByteArray {
-        val compressed = gzipCompress(plainBytes)
-        return CryptoManager.encryptBytes(compressed)
-    }
-
-    private fun decryptAndDecompress(encryptedBytes: ByteArray): ByteArray {
-        val decrypted = CryptoManager.decryptBytes(encryptedBytes)
-        if (decrypted.isEmpty()) return decrypted
-        return if (decrypted.size >= 2 && decrypted[0] == 0x1f.toByte() && decrypted[1] == 0x8b.toByte()) {
-            runCatching { gzipDecompress(decrypted) }.getOrDefault(decrypted)
+    private fun <T> readEncryptedJson(file: File, typeOfT: java.lang.reflect.Type): T? {
+        if (!file.exists() || file.length() == 0L) return null
+        val encrypted = file.readBytes()
+        val decrypted = CryptoManager.decryptBytes(encrypted)
+        if (decrypted.isEmpty()) return null
+        val isGzip = decrypted.size >= 2 && decrypted[0] == 0x1f.toByte() && decrypted[1] == 0x8b.toByte()
+        val inputStream = if (isGzip) {
+            java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(decrypted))
         } else {
-            decrypted
+            java.io.ByteArrayInputStream(decrypted)
+        }
+        return inputStream.use { stream ->
+            java.io.InputStreamReader(stream, Charsets.UTF_8).use { reader ->
+                gson.fromJson<T>(reader, typeOfT)
+            }
         }
     }
 
@@ -103,9 +103,7 @@ class EncryptedCatalogStore(
             val dir = getAccountDir(serverUrl, username)
             val file = File(dir, "live_catalog.enc")
             val payload = CachedLiveCatalog(channels = channels, categories = categories)
-            val json = gson.toJson(payload)
-            val encrypted = compressAndEncrypt(json.toByteArray(Charsets.UTF_8))
-            file.writeBytes(encrypted)
+            writeEncryptedJson(file, payload)
         }
     }
 
@@ -119,13 +117,7 @@ class EncryptedCatalogStore(
                 runCatching { file.delete() }
                 return null
             }
-
-            val encrypted = file.readBytes()
-            val decrypted = decryptAndDecompress(encrypted)
-            if (decrypted.isEmpty()) return null
-
-            val json = String(decrypted, Charsets.UTF_8)
-            gson.fromJson(json, CachedLiveCatalog::class.java)
+            readEncryptedJson<CachedLiveCatalog>(file, CachedLiveCatalog::class.java)
         }.getOrNull()
     }
 
@@ -136,9 +128,7 @@ class EncryptedCatalogStore(
         runCatching {
             val dir = getAccountDir(serverUrl, username)
             val file = File(dir, "vod_categories.enc")
-            val json = gson.toJson(categories)
-            val encrypted = compressAndEncrypt(json.toByteArray(Charsets.UTF_8))
-            file.writeBytes(encrypted)
+            writeEncryptedJson(file, categories)
         }
     }
 
@@ -147,15 +137,8 @@ class EncryptedCatalogStore(
         return runCatching {
             val dir = getAccountDir(serverUrl, username)
             val file = File(dir, "vod_categories.enc")
-            if (!file.exists() || file.length() == 0L) return null
-
-            val encrypted = file.readBytes()
-            val decrypted = decryptAndDecompress(encrypted)
-            if (decrypted.isEmpty()) return null
-
-            val json = String(decrypted, Charsets.UTF_8)
             val type = object : TypeToken<List<Category>>() {}.type
-            gson.fromJson<List<Category>>(json, type)
+            readEncryptedJson<List<Category>>(file, type)
         }.getOrNull()
     }
 
@@ -165,9 +148,7 @@ class EncryptedCatalogStore(
             val dir = getAccountDir(serverUrl, username)
             val safeCat = sanitizeCatId(categoryId)
             val file = File(dir, "vod_${safeCat}.enc")
-            val json = gson.toJson(movies)
-            val encrypted = compressAndEncrypt(json.toByteArray(Charsets.UTF_8))
-            file.writeBytes(encrypted)
+            writeEncryptedJson(file, movies)
         }
     }
 
@@ -177,15 +158,8 @@ class EncryptedCatalogStore(
             val dir = getAccountDir(serverUrl, username)
             val safeCat = sanitizeCatId(categoryId)
             val file = File(dir, "vod_${safeCat}.enc")
-            if (!file.exists() || file.length() == 0L) return null
-
-            val encrypted = file.readBytes()
-            val decrypted = decryptAndDecompress(encrypted)
-            if (decrypted.isEmpty()) return null
-
-            val json = String(decrypted, Charsets.UTF_8)
             val type = object : TypeToken<List<VodMovie>>() {}.type
-            gson.fromJson<List<VodMovie>>(json, type)
+            readEncryptedJson<List<VodMovie>>(file, type)
         }.getOrNull()
     }
 
@@ -196,9 +170,7 @@ class EncryptedCatalogStore(
         runCatching {
             val dir = getAccountDir(serverUrl, username)
             val file = File(dir, "series_categories.enc")
-            val json = gson.toJson(categories)
-            val encrypted = compressAndEncrypt(json.toByteArray(Charsets.UTF_8))
-            file.writeBytes(encrypted)
+            writeEncryptedJson(file, categories)
         }
     }
 
@@ -207,15 +179,8 @@ class EncryptedCatalogStore(
         return runCatching {
             val dir = getAccountDir(serverUrl, username)
             val file = File(dir, "series_categories.enc")
-            if (!file.exists() || file.length() == 0L) return null
-
-            val encrypted = file.readBytes()
-            val decrypted = decryptAndDecompress(encrypted)
-            if (decrypted.isEmpty()) return null
-
-            val json = String(decrypted, Charsets.UTF_8)
             val type = object : TypeToken<List<Category>>() {}.type
-            gson.fromJson<List<Category>>(json, type)
+            readEncryptedJson<List<Category>>(file, type)
         }.getOrNull()
     }
 
@@ -225,9 +190,7 @@ class EncryptedCatalogStore(
             val dir = getAccountDir(serverUrl, username)
             val safeCat = sanitizeCatId(categoryId)
             val file = File(dir, "series_${safeCat}.enc")
-            val json = gson.toJson(seriesList)
-            val encrypted = compressAndEncrypt(json.toByteArray(Charsets.UTF_8))
-            file.writeBytes(encrypted)
+            writeEncryptedJson(file, seriesList)
         }
     }
 
@@ -237,15 +200,8 @@ class EncryptedCatalogStore(
             val dir = getAccountDir(serverUrl, username)
             val safeCat = sanitizeCatId(categoryId)
             val file = File(dir, "series_${safeCat}.enc")
-            if (!file.exists() || file.length() == 0L) return null
-
-            val encrypted = file.readBytes()
-            val decrypted = decryptAndDecompress(encrypted)
-            if (decrypted.isEmpty()) return null
-
-            val json = String(decrypted, Charsets.UTF_8)
             val type = object : TypeToken<List<Series>>() {}.type
-            gson.fromJson<List<Series>>(json, type)
+            readEncryptedJson<List<Series>>(file, type)
         }.getOrNull()
     }
 
@@ -257,9 +213,7 @@ class EncryptedCatalogStore(
             val dir = getAccountDir(serverUrl, username)
             val safeProf = sanitizeCatId(profileId)
             val file = File(dir, "fav_movies_${safeProf}.enc")
-            val json = gson.toJson(movies)
-            val encrypted = compressAndEncrypt(json.toByteArray(Charsets.UTF_8))
-            file.writeBytes(encrypted)
+            writeEncryptedJson(file, movies)
         }
     }
 
@@ -269,15 +223,8 @@ class EncryptedCatalogStore(
             val dir = getAccountDir(serverUrl, username)
             val safeProf = sanitizeCatId(profileId)
             val file = File(dir, "fav_movies_${safeProf}.enc")
-            if (!file.exists() || file.length() == 0L) return emptyList()
-
-            val encrypted = file.readBytes()
-            val decrypted = decryptAndDecompress(encrypted)
-            if (decrypted.isEmpty()) return emptyList()
-
-            val json = String(decrypted, Charsets.UTF_8)
             val type = object : TypeToken<List<VodMovie>>() {}.type
-            gson.fromJson<List<VodMovie>>(json, type) ?: emptyList()
+            readEncryptedJson<List<VodMovie>>(file, type) ?: emptyList()
         }.getOrDefault(emptyList())
     }
 
@@ -299,9 +246,7 @@ class EncryptedCatalogStore(
                     }
                 )
             }
-            val json = gson.toJson(trimmed)
-            val encrypted = compressAndEncrypt(json.toByteArray(Charsets.UTF_8))
-            file.writeBytes(encrypted)
+            writeEncryptedJson(file, trimmed)
         }
     }
 
@@ -311,15 +256,8 @@ class EncryptedCatalogStore(
             val dir = getAccountDir(serverUrl, username)
             val safeProf = sanitizeCatId(profileId)
             val file = File(dir, "fav_series_${safeProf}.enc")
-            if (!file.exists() || file.length() == 0L) return emptyList()
-
-            val encrypted = file.readBytes()
-            val decrypted = decryptAndDecompress(encrypted)
-            if (decrypted.isEmpty()) return emptyList()
-
-            val json = String(decrypted, Charsets.UTF_8)
             val type = object : TypeToken<List<Series>>() {}.type
-            gson.fromJson<List<Series>>(json, type) ?: emptyList()
+            readEncryptedJson<List<Series>>(file, type) ?: emptyList()
         }.getOrDefault(emptyList())
     }
 
@@ -336,15 +274,11 @@ class EncryptedCatalogStore(
         for (file in files) {
             if (remaining.isEmpty()) break
             runCatching {
-                val decrypted = decryptAndDecompress(file.readBytes())
-                if (decrypted.isNotEmpty()) {
-                    val json = String(decrypted, Charsets.UTF_8)
-                    val list: List<VodMovie>? = gson.fromJson(json, type)
-                    list?.forEach { movie ->
-                        if (remaining.contains(movie.id)) {
-                            found.add(movie)
-                            remaining.remove(movie.id)
-                        }
+                val list: List<VodMovie>? = readEncryptedJson(file, type)
+                list?.forEach { movie ->
+                    if (remaining.contains(movie.id)) {
+                        found.add(movie)
+                        remaining.remove(movie.id)
                     }
                 }
             }
@@ -365,15 +299,11 @@ class EncryptedCatalogStore(
         for (file in files) {
             if (remaining.isEmpty()) break
             runCatching {
-                val decrypted = decryptAndDecompress(file.readBytes())
-                if (decrypted.isNotEmpty()) {
-                    val json = String(decrypted, Charsets.UTF_8)
-                    val list: List<Series>? = gson.fromJson(json, type)
-                    list?.forEach { ser ->
-                        if (remaining.contains(ser.id)) {
-                            found.add(ser)
-                            remaining.remove(ser.id)
-                        }
+                val list: List<Series>? = readEncryptedJson(file, type)
+                list?.forEach { ser ->
+                    if (remaining.contains(ser.id)) {
+                        found.add(ser)
+                        remaining.remove(ser.id)
                     }
                 }
             }

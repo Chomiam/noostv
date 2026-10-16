@@ -408,8 +408,10 @@ private fun FavChannelCard(
     onClick: () -> Unit,
     onUnpin: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val isLowSpec = remember { io.noostv.core.device.DeviceDetector.isLowSpecDevice(context) }
     var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(targetValue = if (isFocused) 1.05f else 1.0f, label = "fav_chan_scale")
+    val scale = if (isLowSpec) 1.0f else animateFloatAsState(targetValue = if (isFocused) 1.05f else 1.0f, label = "fav_chan_scale").value
 
     Box(
         modifier = Modifier
@@ -493,8 +495,10 @@ private fun FavPosterCard(
     onClick: () -> Unit,
     onUnpin: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val isLowSpec = remember { io.noostv.core.device.DeviceDetector.isLowSpecDevice(context) }
     var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(targetValue = if (isFocused) 1.06f else 1.0f, label = "fav_post_scale")
+    val scale = if (isLowSpec) 1.0f else animateFloatAsState(targetValue = if (isFocused) 1.06f else 1.0f, label = "fav_post_scale").value
 
     Box(
         modifier = Modifier
@@ -519,8 +523,16 @@ private fun FavPosterCard(
                     .background(Color(0xFF0F1420))
             ) {
                 if (!posterUrl.isNullOrBlank()) {
+                    val imgRequest = remember(posterUrl, isLowSpec) {
+                        coil.request.ImageRequest.Builder(context)
+                            .data(posterUrl)
+                            .size(220, 330)
+                            .crossfade(!isLowSpec)
+                            .allowHardware(false)
+                            .build()
+                    }
                     coil.compose.AsyncImage(
-                        model = posterUrl,
+                        model = imgRequest,
                         contentDescription = title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop

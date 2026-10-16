@@ -58,6 +58,8 @@ class XtreamCodesClient(
         }
     }
 
+    private val mapItemType = object : TypeToken<Map<String, Any>>() {}.type
+
     /**
      * Lit et désérialise le JSON directement depuis le flux réseau sans allouer de String intermédiaire géante
      */
@@ -66,6 +68,46 @@ class XtreamCodesClient(
         return runCatching {
             responseBody.charStream().use { reader ->
                 gson.fromJson<T>(reader, type)
+            }
+        }.getOrNull()
+    }
+
+    /**
+     * Lit un tableau JSON élément par élément en streaming via JsonReader.
+     * Évite d'allouer simultanément des dizaines de milliers de LinkedTreeMap en RAM sur les TV 1-2 Go.
+     */
+    private inline fun <R : Any> parseJsonArrayStreaming(
+        response: okhttp3.Response,
+        limit: Int? = null,
+        crossinline transform: (Map<String, Any>) -> R?
+    ): List<R>? {
+        val responseBody = response.body ?: return null
+        return runCatching {
+            responseBody.charStream().use { charStream ->
+                com.google.gson.stream.JsonReader(charStream).use { jsonReader ->
+                    jsonReader.isLenient = true
+                    if (jsonReader.peek() != com.google.gson.stream.JsonToken.BEGIN_ARRAY) {
+                        return@use null
+                    }
+                    val result = ArrayList<R>(256)
+                    jsonReader.beginArray()
+                    while (jsonReader.hasNext()) {
+                        if (limit != null && limit > 0 && result.size >= limit) {
+                            jsonReader.skipValue()
+                            continue
+                        }
+                        if (jsonReader.peek() == com.google.gson.stream.JsonToken.BEGIN_OBJECT) {
+                            val item: Map<String, Any>? = gson.fromJson(jsonReader, mapItemType)
+                            if (item != null) {
+                                transform(item)?.let { result.add(it) }
+                            }
+                        } else {
+                            jsonReader.skipValue()
+                        }
+                    }
+                    jsonReader.endArray()
+                    result
+                }
             }
         }.getOrNull()
     }
@@ -88,8 +130,7 @@ class XtreamCodesClient(
                 return@withContext Result.failure(Exception("Erreur HTTP: ${response.code}"))
             }
 
-            val type = object : TypeToken<Map<String, Any>>() {}.type
-            val jsonMap: Map<String, Any> = parseJsonStreaming(response, type)
+            val jsonMap: Map<String, Any> = parseJsonStreaming(response, mapItemType)
                 ?: return@withContext Result.failure(Exception("Réponse vide ou invalide"))
 
             @Suppress("UNCHECKED_CAST")
@@ -151,17 +192,13 @@ class XtreamCodesClient(
         try {
             val request = Request.Builder().url(url).build()
             val response = client.newCall(request).execute()
-            val type = object : TypeToken<List<Map<String, Any>>>() {}.type
-            val rawList: List<Map<String, Any>> = parseJsonStreaming(response, type)
-                ?: return@withContext Result.failure(Exception("Réponse vide ou invalide"))
-
-            val channels = rawList.mapNotNull { item ->
-                val streamId = item["stream_id"]?.toString()?.substringBefore(".") ?: return@mapNotNull null
+            val channels = parseJsonArrayStreaming(response) { item ->
+                val streamId = item["stream_id"]?.toString()?.substringBefore(".") ?: return@parseJsonArrayStreaming null
                 val name = item["name"]?.toString() ?: "Chaîne $streamId"
-                val logo = item["stream_icon"]?.toString()
-                val catId = item["category_id"]?.toString() ?: "general"
+                val logo = item["stream_icon"]?.toString()?.takeIf { it.isNotBlank() }
+                val catId = (item["category_id"]?.toString() ?: "general").intern()
                 val num = (item["num"] as? Number)?.toInt()
-                val epgId = item["epg_channel_id"]?.toString()
+                val epgId = item["epg_channel_id"]?.toString()?.takeIf { it.isNotBlank() }
                 val archive = (item["tv_archive"] as? Number)?.toInt() ?: 0
                 val archiveDuration = (item["tv_archive_duration"] as? Number)?.toInt() ?: 0
 
@@ -169,7 +206,6 @@ class XtreamCodesClient(
                 val resolution = when {
                     name.contains("4K", ignoreCase = true) || name.contains("UHD", ignoreCase = true) -> "4K UHD"
                     name.contains("720", ignoreCase = true) -> "720p"
-                    name.contains("FHD", ignoreCase = true) || name.contains("1080", ignoreCase = true) || name.contains("HD", ignoreCase = true) -> "1080p"
                     else -> "1080p"
                 }
                 val codec = when {
@@ -187,7 +223,7 @@ class XtreamCodesClient(
                     streamUrl = streamUrl,
                     logoUrl = logo,
                     categoryId = catId,
-                    categoryName = "Catégorie $catId",
+                    categoryName = "",
                     isHdr = isHdr,
                     resolution = resolution,
                     videoCodec = codec,
@@ -195,7 +231,7 @@ class XtreamCodesClient(
                     hasCatchup = archive > 0,
                     catchupDays = archiveDuration
                 )
-            }
+            } ?: return@withContext Result.failure(Exception("Réponse vide ou invalide"))
 
             Result.success(channels)
         } catch (e: Exception) {
@@ -235,30 +271,16 @@ class XtreamCodesClient(
         try {
             val request = Request.Builder().url(url).build()
             val response = client.newCall(request).execute()
-            val type = object : TypeToken<List<Map<String, Any>>>() {}.type
-            val rawList: List<Map<String, Any>> = parseJsonStreaming(response, type)
-                ?: return@withContext Result.failure(Exception("Réponse vide ou invalide"))
-
-            val listToProcess = if (limit != null && limit > 0) rawList.take(limit) else rawList
-
-            val movies = listToProcess.mapNotNull { item ->
-                val streamId = item["stream_id"]?.toString()?.substringBefore(".") ?: return@mapNotNull null
+            val movies = parseJsonArrayStreaming(response, limit = limit) { item ->
+                val streamId = item["stream_id"]?.toString()?.substringBefore(".") ?: return@parseJsonArrayStreaming null
                 val name = item["name"]?.toString() ?: "Film $streamId"
-                val poster = item["stream_icon"]?.toString()
+                val poster = item["stream_icon"]?.toString()?.takeIf { it.isNotBlank() }
                 val rating = (item["rating"]?.toString()?.toFloatOrNull()) ?: 0f
                 val year = (item["year"] as? Number)?.toInt() ?: item["year"]?.toString()?.toIntOrNull()
-                val plot = item["plot"]?.toString()
-                val ext = item["container_extension"]?.toString() ?: "mp4"
-                val catId = item["category_id"]?.toString() ?: categoryId ?: "movies_all"
-
-                val genreStr = item["genre"]?.toString()
-                val genres = genreStr?.split(",", "/", ";")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
-                val castStr = item["cast"]?.toString()
-                val cast = castStr?.split(",", ";")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
-                val director = item["director"]?.toString()
-                val backdrops = item["backdrop_path"] as? List<*>
-                val backdropUrl = backdrops?.firstOrNull()?.toString() ?: poster
-                val duration = (item["duration"] as? Number)?.toInt() ?: item["duration"]?.toString()?.toIntOrNull()
+                // Allège la RAM à chaud sur la grille : le synopsis complet et le casting sont chargés à la demande via getVodInfo
+                val plot = item["plot"]?.toString()?.takeIf { it.isNotBlank() }?.take(180)
+                val ext = (item["container_extension"]?.toString() ?: "mp4").intern()
+                val catId = (item["category_id"]?.toString() ?: categoryId ?: "movies_all").intern()
 
                 val isHdr = name.contains("HDR", ignoreCase = true) || name.contains("Dolby Vision", ignoreCase = true)
                 val hdrFormat = if (name.contains("Dolby Vision", ignoreCase = true)) "Dolby Vision" else if (isHdr) "HDR10" else null
@@ -270,14 +292,14 @@ class XtreamCodesClient(
                     title = name,
                     streamUrl = streamUrl,
                     posterUrl = poster,
-                    backdropUrl = backdropUrl,
+                    backdropUrl = poster,
                     rating = rating,
                     releaseYear = year,
-                    durationMinutes = duration,
+                    durationMinutes = null,
                     plot = plot,
-                    genres = genres,
-                    cast = cast,
-                    director = director,
+                    genres = emptyList(),
+                    cast = emptyList(),
+                    director = null,
                     isHdr = isHdr,
                     hdrFormat = hdrFormat,
                     resolution = resolution,
@@ -285,7 +307,7 @@ class XtreamCodesClient(
                     categoryId = catId,
                     containerExtension = ext
                 )
-            }
+            } ?: return@withContext Result.failure(Exception("Réponse vide ou invalide"))
 
             Result.success(movies)
         } catch (e: Exception) {
@@ -421,42 +443,31 @@ class XtreamCodesClient(
         try {
             val request = Request.Builder().url(url).build()
             val response = client.newCall(request).execute()
-            val type = object : TypeToken<List<Map<String, Any>>>() {}.type
-            val rawList: List<Map<String, Any>> = parseJsonStreaming(response, type)
-                ?: return@withContext Result.failure(Exception("Réponse vide ou invalide"))
-
-            val listToProcess = if (limit != null && limit > 0) rawList.take(limit) else rawList
-
-            val series = listToProcess.mapNotNull { item ->
-                val seriesId = item["series_id"]?.toString()?.substringBefore(".") ?: return@mapNotNull null
+            val series = parseJsonArrayStreaming(response, limit = limit) { item ->
+                val seriesId = item["series_id"]?.toString()?.substringBefore(".") ?: return@parseJsonArrayStreaming null
                 val name = item["name"]?.toString() ?: "Série $seriesId"
-                val cover = item["cover"]?.toString()
-                val plot = item["plot"]?.toString()
+                val cover = item["cover"]?.toString()?.takeIf { it.isNotBlank() }
+                // Allège la RAM sur la grille : le synopsis complet, le casting et les saisons sont chargés à la demande via getSeriesInfo
+                val plot = item["plot"]?.toString()?.takeIf { it.isNotBlank() }?.take(180)
                 val rating = (item["rating"]?.toString()?.toFloatOrNull()) ?: 0f
-                val year = item["releaseDate"]?.toString()?.toIntOrNull() ?: item["release_date"]?.toString()?.toIntOrNull()
-                val catId = item["category_id"]?.toString() ?: categoryId ?: "series_all"
-
-                val genreStr = item["genre"]?.toString()
-                val genres = genreStr?.split(",", "/", ";")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
-                val castStr = item["cast"]?.toString()
-                val cast = castStr?.split(",", ";")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
-                val backdrops = item["backdrop_path"] as? List<*>
-                val backdropUrl = backdrops?.firstOrNull()?.toString() ?: cover
+                val year = item["releaseDate"]?.toString()?.take(4)?.toIntOrNull()
+                    ?: item["release_date"]?.toString()?.take(4)?.toIntOrNull()
+                val catId = (item["category_id"]?.toString() ?: categoryId ?: "series_all").intern()
 
                 Series(
                     id = seriesId,
                     title = name,
                     posterUrl = cover,
-                    backdropUrl = backdropUrl,
+                    backdropUrl = cover,
                     rating = rating,
                     releaseYear = year,
                     plot = plot,
-                    genres = genres,
-                    cast = cast,
+                    genres = emptyList(),
+                    cast = emptyList(),
                     categoryId = catId,
                     seasons = emptyList()
                 )
-            }
+            } ?: return@withContext Result.failure(Exception("Réponse vide ou invalide"))
 
             Result.success(series)
         } catch (e: Exception) {

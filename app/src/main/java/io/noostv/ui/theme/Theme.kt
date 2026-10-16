@@ -37,56 +37,64 @@ fun MacOsDarkGlassBackground(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val isLowSpec = androidx.compose.runtime.remember {
+        io.noostv.core.device.DeviceDetector.isLowSpecDevice(context)
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(GlassMeshBackground)
     ) {
-        // macOS Ambient Sapphire Pool (Haut Gauche)
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            Color(0x243888FF),
-                            Color(0x0C1B3B6F),
-                            Color.Transparent
-                        ),
-                        center = Offset(0f, 0f),
-                        radius = 1100f
+        // Sur les TV d'entrée de gamme (GPU Mali-400/G31), on évite l'overdraw de 3 calques plein écran 1080p supplémentaires
+        if (!isLowSpec) {
+            // macOS Ambient Sapphire Pool (Haut Gauche)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color(0x243888FF),
+                                Color(0x0C1B3B6F),
+                                Color.Transparent
+                            ),
+                            center = Offset(0f, 0f),
+                            radius = 1100f
+                        )
                     )
-                )
-        )
-        // macOS Ambient Indigo/Violet Aura (Bas Droite)
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            Color(0x1C8B5CF6),
-                            Color(0x084F2B8D),
-                            Color.Transparent
-                        ),
-                        center = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY),
-                        radius = 1300f
+            )
+            // macOS Ambient Indigo/Violet Aura (Bas Droite)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color(0x1C8B5CF6),
+                                Color(0x084F2B8D),
+                                Color.Transparent
+                            ),
+                            center = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY),
+                            radius = 1300f
+                        )
                     )
-                )
-        )
-        // macOS Specular Top Gloss Sheen (Reflet glossy supérieur façon fenêtre Mac)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(180.dp)
-                .background(
-                    Brush.verticalGradient(
-                        0.0f to Color.White.copy(alpha = 0.045f),
-                        0.35f to Color.White.copy(alpha = 0.015f),
-                        1.0f to Color.Transparent
+            )
+            // macOS Specular Top Gloss Sheen (Reflet glossy supérieur façon fenêtre Mac)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            0.0f to Color.White.copy(alpha = 0.045f),
+                            0.35f to Color.White.copy(alpha = 0.015f),
+                            1.0f to Color.Transparent
+                        )
                     )
-                )
-        )
+            )
+        }
 
         content()
     }

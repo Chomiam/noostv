@@ -345,14 +345,47 @@ class IptvRepository(
     private val seriesDetailsCache = java.util.concurrent.ConcurrentHashMap<String, Series>()
 
     /**
+     * Libère les caches secondaires et les listes inactives lors d'une pression mémoire (onTrimMemory)
+     * ou lors du passage en lecture plein écran sur les TV d'entrée de gamme.
+     */
+    fun trimMemory(activeSection: String? = null) {
+        vodDetailsCache.clear()
+        seriesDetailsCache.clear()
+        if (_epgPrograms.value.size > 120) {
+            val now = System.currentTimeMillis()
+            _epgPrograms.value = _epgPrograms.value.filter { it.stopEpochMs > now }.take(100)
+        }
+        if (activeSection != null) {
+            when (activeSection) {
+                "LIVE" -> {
+                    _movies.value = emptyList()
+                    _series.value = emptyList()
+                }
+                "VOD" -> {
+                    _series.value = emptyList()
+                }
+                "SERIES" -> {
+                    _movies.value = emptyList()
+                }
+                "PLAYER" -> {
+                    _movies.value = emptyList()
+                    _series.value = emptyList()
+                }
+            }
+        }
+    }
+
+    /**
      * Récupère ou télécharge les métadonnées complètes d'un film VOD
      */
     suspend fun getOrFetchVodInfo(serverUrl: String, username: String, password: String, vodId: String): VodMovie? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         vodDetailsCache[vodId]?.let { return@withContext it }
         val res = xtreamClient.getVodInfo(serverUrl, username, password, vodId)
         res.getOrNull()?.also { enriched ->
+            if (vodDetailsCache.size >= 20) {
+                vodDetailsCache.keys.firstOrNull()?.let { vodDetailsCache.remove(it) }
+            }
             vodDetailsCache[vodId] = enriched
-            _movies.value = _movies.value.map { if (it.id == vodId) enriched else it }
         }
     }
 
@@ -363,8 +396,10 @@ class IptvRepository(
         seriesDetailsCache[seriesId]?.takeIf { it.seasons.isNotEmpty() && it.seasons.any { s -> s.episodes.isNotEmpty() } }?.let { return@withContext it }
         val res = xtreamClient.getSeriesInfo(serverUrl, username, password, seriesId)
         res.getOrNull()?.also { enriched ->
+            if (seriesDetailsCache.size >= 15) {
+                seriesDetailsCache.keys.firstOrNull()?.let { seriesDetailsCache.remove(it) }
+            }
             seriesDetailsCache[seriesId] = enriched
-            _series.value = _series.value.map { if (it.id == seriesId) enriched else it }
         }
     }
 
@@ -629,17 +664,21 @@ class IptvRepository(
      */
     suspend fun loadChannelEpg(serverUrl: String, username: String, password: String, streamId: String) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         if (serverUrl.isBlank()) return@withContext
+        val now = System.currentTimeMillis()
+        if (_epgPrograms.value.any { it.channelId == streamId && it.isLiveNow(now) }) return@withContext
+        if (!epgLoadingChannels.add(streamId)) return@withContext
         try {
             val result = xtreamClient.getShortEpg(serverUrl, username, password, streamId)
             result.onSuccess { progs ->
                 if (progs.isNotEmpty()) {
-                    val current = _epgPrograms.value.toMutableList()
-                    current.removeAll { it.channelId == streamId }
-                    current.addAll(progs)
-                    _epgPrograms.value = current
+                    val current = _epgPrograms.value.filterNot { it.channelId == streamId }.takeLast(200)
+                    _epgPrograms.value = current + progs.take(8)
                 }
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        } finally {
+            epgLoadingChannels.remove(streamId)
+        }
     }
 
     private val epgLoadingChannels = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
@@ -662,13 +701,13 @@ class IptvRepository(
                 (p.channelId == ch.id || p.channelId == ch.epgChannelId) && p.isLiveNow(now)
             }
             !hasValidEpg && epgLoadingChannels.add(ch.id)
-        }.take(24)
+        }.take(16)
 
         if (needed.isEmpty()) return@withContext
 
         try {
             val newProgs = mutableListOf<EpgProgram>()
-            val semaphore = Semaphore(6)
+            val semaphore = Semaphore(4)
             coroutineScope {
                 needed.forEach { ch ->
                     launch {
@@ -676,7 +715,7 @@ class IptvRepository(
                             val res = xtreamClient.getShortEpg(serverUrl, username, password, ch.id)
                             res.getOrNull()?.let { progs ->
                                 synchronized(newProgs) {
-                                    newProgs.addAll(progs)
+                                    newProgs.addAll(progs.take(6))
                                 }
                             }
                         }
@@ -684,11 +723,9 @@ class IptvRepository(
                 }
             }
             if (newProgs.isNotEmpty()) {
-                val updated = _epgPrograms.value.toMutableList()
                 val updatedIds = needed.map { it.id }.toSet()
-                updated.removeAll { it.channelId in updatedIds }
-                updated.addAll(newProgs)
-                _epgPrograms.value = updated
+                val kept = _epgPrograms.value.filterNot { it.channelId in updatedIds }.takeLast(180)
+                _epgPrograms.value = kept + newProgs
             }
         } finally {
             needed.forEach { epgLoadingChannels.remove(it.id) }

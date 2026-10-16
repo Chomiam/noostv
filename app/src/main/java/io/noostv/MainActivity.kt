@@ -579,6 +579,46 @@ class MainActivity : ComponentActivity() {
                                     if (tab != io.noostv.ui.tv.TvNavTab.TV) {
                                         playerEngine.stop()
                                     }
+                                    if (deviceDetector.isLowSpec) {
+                                        when (tab) {
+                                            io.noostv.ui.tv.TvNavTab.TV -> repository.trimMemory("LIVE")
+                                            io.noostv.ui.tv.TvNavTab.MOVIES -> {
+                                                repository.trimMemory("VOD")
+                                                if (movies.isEmpty() && vodCategories.isNotEmpty()) {
+                                                    val catId = if (savedTvVodCategory != "Toutes") {
+                                                        vodCategories.firstOrNull { it.name == savedTvVodCategory || it.id == savedTvVodCategory }?.id
+                                                    } else null
+                                                    val targetId = catId ?: vodCategories.first().id
+                                                    coroutineScope.launch {
+                                                        repository.loadVodByCategory(
+                                                            sessionManager.serverUrl,
+                                                            sessionManager.username,
+                                                            sessionManager.password,
+                                                            targetId
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            io.noostv.ui.tv.TvNavTab.SERIES -> {
+                                                repository.trimMemory("SERIES")
+                                                if (series.isEmpty() && seriesCategories.isNotEmpty()) {
+                                                    val catId = if (savedTvSeriesCategory != "Toutes") {
+                                                        seriesCategories.firstOrNull { it.name == savedTvSeriesCategory || it.id == savedTvSeriesCategory }?.id
+                                                    } else null
+                                                    val targetId = catId ?: seriesCategories.first().id
+                                                    coroutineScope.launch {
+                                                        repository.loadSeriesByCategory(
+                                                            sessionManager.serverUrl,
+                                                            sessionManager.username,
+                                                            sessionManager.password,
+                                                            targetId
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            else -> repository.trimMemory()
+                                        }
+                                    }
                                 },
                                 initialVodCategory = savedTvVodCategory,
                                 onVodCategorySelected = { savedTvVodCategory = it },
@@ -827,6 +867,21 @@ class MainActivity : ComponentActivity() {
             }
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        val inPip = Build.VERSION.SDK_INT >= 26 && isInPictureInPictureMode
+        if (!inPip) {
+            playerEngine.pause()
+        }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (this::repository.isInitialized && level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            repository.trimMemory()
+        }
     }
 
     override fun onDestroy() {
