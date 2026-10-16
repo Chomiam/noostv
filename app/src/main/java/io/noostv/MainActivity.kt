@@ -153,6 +153,8 @@ class MainActivity : ComponentActivity() {
 
                 var currentChannel by remember { mutableStateOf<Channel?>(null) }
                 var currentMovie by remember { mutableStateOf<VodMovie?>(null) }
+                var currentSeries by remember { mutableStateOf<Series?>(null) }
+                var currentEpisode by remember { mutableStateOf<io.noostv.data.model.Episode?>(null) }
                 var currentContentId by remember { mutableStateOf<String?>(null) }
                 var currentStartPositionMs by remember { mutableStateOf(0L) }
                 var isMiniPlayerActive by remember { mutableStateOf(false) }
@@ -205,6 +207,8 @@ class MainActivity : ComponentActivity() {
                     if (success) {
                         currentChannel = channel
                         currentMovie = null
+                        currentSeries = null
+                        currentEpisode = null
                         currentContentId = null
                         currentStartPositionMs = 0L
                         isMiniPlayerActive = false
@@ -234,6 +238,8 @@ class MainActivity : ComponentActivity() {
                     sessionManager.logout()
                     currentChannel = null
                     currentMovie = null
+                    currentSeries = null
+                    currentEpisode = null
                     customStreamTitle = null
                     customStreamSubtitle = null
                     isMiniPlayerActive = false
@@ -263,6 +269,8 @@ class MainActivity : ComponentActivity() {
                     if (success) {
                         currentMovie = movie
                         currentChannel = null
+                        currentSeries = null
+                        currentEpisode = null
                         currentContentId = "movie_${movie.id}"
                         currentStartPositionMs = startPositionMs
                         customStreamTitle = null
@@ -294,11 +302,26 @@ class MainActivity : ComponentActivity() {
                     if (success) {
                         currentMovie = null
                         currentChannel = null
+                        currentSeries = ser
+                        currentEpisode = ep
                         currentContentId = "ep_${ep.id}"
                         currentStartPositionMs = startPositionMs
                         customStreamTitle = ser.title
                         customStreamSubtitle = epSubtitle
                         isMiniPlayerActive = false
+                        if ((ser.seasons.isEmpty() || ser.seasons.all { it.episodes.size <= 1 }) && sessionManager.isLoggedIn && sessionManager.serverUrl.isNotBlank()) {
+                            coroutineScope.launch {
+                                val fetched = repository.getOrFetchSeriesInfo(
+                                    sessionManager.serverUrl,
+                                    sessionManager.username,
+                                    sessionManager.password,
+                                    ser.id
+                                )
+                                if (fetched != null && fetched.seasons.isNotEmpty() && currentSeries?.id == ser.id) {
+                                    currentSeries = fetched
+                                }
+                            }
+                        }
                         if (deviceDetector.isTv) {
                             savedTvNavTab = io.noostv.ui.tv.TvNavTab.SERIES
                             savedTvFocusedSeriesId = ser.id
@@ -761,6 +784,18 @@ class MainActivity : ComponentActivity() {
                         val resolution = currentChannel?.resolution ?: currentMovie?.resolution ?: "1080p"
                         val codec = currentChannel?.videoCodec ?: currentMovie?.videoCodec ?: "hevc"
 
+                        val nextSeriesEpisode = remember(currentSeries, currentEpisode) {
+                            val ser = currentSeries ?: return@remember null
+                            val curEp = currentEpisode ?: return@remember null
+                            val allEpisodes = ser.seasons
+                                .sortedBy { it.seasonNumber }
+                                .flatMap { season -> season.episodes.sortedBy { it.episodeNumber } }
+                            val idx = allEpisodes.indexOfFirst {
+                                it.id == curEp.id || (it.seasonNumber == curEp.seasonNumber && it.episodeNumber == curEp.episodeNumber)
+                            }
+                            if (idx >= 0 && idx < allEpisodes.size - 1) allEpisodes[idx + 1] else null
+                        }
+
                         NoosPlayerScreen(
                             playerEngine = playerEngine,
                             title = activeTitle,
@@ -804,6 +839,16 @@ class MainActivity : ComponentActivity() {
                                 }
                             } else null,
                             onSelectChannel = { startPlayChannel(it) },
+                            nextEpisodeLabel = nextSeriesEpisode?.let { "S${it.seasonNumber}E${it.episodeNumber}" },
+                            nextEpisodeTitle = nextSeriesEpisode?.title,
+                            onNextEpisode = if (currentSeries != null && nextSeriesEpisode != null) {
+                                {
+                                    val ser = currentSeries!!
+                                    val nextEp = nextSeriesEpisode
+                                    val epResume = sessionManager.getPlaybackResume("ep_${nextEp.id}")
+                                    startPlayEpisode(ser, nextEp, epResume?.positionMs ?: 0L)
+                                }
+                            } else null,
                             onEnterPip = if (!deviceDetector.isTv && Build.VERSION.SDK_INT >= 26) { { requestPip() } } else null,
                             isPipMode = false
                         )

@@ -1126,7 +1126,13 @@ fun TvHomeScreen(
                     onToggleFavoriteSeries?.invoke(selectedSeriesDetail!!, isFav)
                 },
                 onDismiss = { selectedSeriesDetail = null },
-                onFetchFullInfo = { id -> onFetchSeriesInfo?.invoke(id) }
+                onFetchFullInfo = { id ->
+                    val fetched = onFetchSeriesInfo?.invoke(id)
+                    if (fetched != null && fetched.seasons.isNotEmpty()) {
+                        selectedSeriesDetail = fetched
+                    }
+                    fetched
+                }
             )
         }
 

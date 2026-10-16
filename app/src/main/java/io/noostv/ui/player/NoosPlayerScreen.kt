@@ -101,6 +101,9 @@ fun NoosPlayerScreen(
     onNextChannel: (() -> Unit)? = null,
     onPreviousChannel: (() -> Unit)? = null,
     onSelectChannel: ((Channel) -> Unit)? = null,
+    nextEpisodeLabel: String? = null,
+    nextEpisodeTitle: String? = null,
+    onNextEpisode: (() -> Unit)? = null,
     onEnterPip: (() -> Unit)? = null,
     isPipMode: Boolean = false
 ) {
@@ -130,17 +133,57 @@ fun NoosPlayerScreen(
     val playerFocusRequester = remember { FocusRequester() }
     val playPauseFocusRequester = remember { FocusRequester() }
     val timelineFocusRequester = remember { FocusRequester() }
+    val upNextFocusRequester = remember { FocusRequester() }
     var isTimelineFocused by remember { mutableStateOf(false) }
 
     // Position et durée VOD
-    var currentPositionMs by remember { mutableLongStateOf(playerEngine.currentPosition) }
-    var durationMs by remember { mutableLongStateOf(playerEngine.duration) }
-    var isUserScrubbing by remember { mutableStateOf(false) }
-    var scrubbedPositionMs by remember { mutableFloatStateOf(0f) }
+    var currentPositionMs by remember(contentId) { mutableLongStateOf(playerEngine.currentPosition) }
+    var durationMs by remember(contentId) { mutableLongStateOf(playerEngine.duration) }
+    var isUserScrubbing by remember(contentId) { mutableStateOf(false) }
+    var scrubbedPositionMs by remember(contentId) { mutableFloatStateOf(0f) }
+    var showUpNextPrompt by remember(contentId) { mutableStateOf(false) }
+
+    fun triggerNextEpisode() {
+        val nextAction = onNextEpisode ?: return
+        if (!isLive && contentId != null && sessionManager != null) {
+            val cur = playerEngine.currentPosition
+            val dur = playerEngine.duration
+            if (dur > 0L) {
+                sessionManager.savePlaybackResume(
+                    contentId = contentId,
+                    title = title,
+                    positionMs = cur,
+                    durationMs = dur
+                )
+            }
+        }
+        showUpNextPrompt = false
+        isUserScrubbing = false
+        currentPositionMs = 0L
+        actionToastText = "Lecture : ${nextEpisodeLabel ?: "Épisode suivant"}"
+        nextAction()
+    }
+
+    // Détection légère de fin d'épisode (affiche le bouton flottant dans les 45 dernières secondes sans recomposer pendant l'épisode)
+    LaunchedEffect(isLive, onNextEpisode != null, contentId) {
+        if (!isLive && onNextEpisode != null) {
+            while (true) {
+                val dur = playerEngine.duration
+                val pos = playerEngine.currentPosition
+                val nearEnd = dur > 60_000L && (dur - pos) in 0L..45_000L
+                if (showUpNextPrompt != nearEnd) {
+                    showUpNextPrompt = nearEnd
+                }
+                delay(2000)
+            }
+        } else {
+            showUpNextPrompt = false
+        }
+    }
 
     // Notification visuelle de reprise de lecture
-    var showResumeToast by remember { mutableStateOf(initialPositionMs > 10_000L) }
-    LaunchedEffect(showResumeToast) {
+    var showResumeToast by remember(contentId) { mutableStateOf(initialPositionMs > 10_000L) }
+    LaunchedEffect(showResumeToast, contentId) {
         if (showResumeToast) {
             delay(5000)
             showResumeToast = false
@@ -557,8 +600,12 @@ fun NoosPlayerScreen(
                             true
                         }
                         Key.MediaNext -> {
-                            onNextChannel?.invoke()
-                            showZapHud = true
+                            if (!isLive && onNextEpisode != null) {
+                                triggerNextEpisode()
+                            } else {
+                                onNextChannel?.invoke()
+                                showZapHud = true
+                            }
                             true
                         }
                         Key.MediaPrevious -> {
@@ -979,6 +1026,67 @@ fun NoosPlayerScreen(
             }
         }
 
+        // ------------------ 5.8 BOUTON FLOTTANT "ÉPISODE SUIVANT" EN FIN D'ÉPISODE ------------------
+        val displayUpNextOverlay = !isLive && onNextEpisode != null && showUpNextPrompt && !isOsdVisible && !showSettingsDialog && !isPipMode
+        LaunchedEffect(displayUpNextOverlay) {
+            if (displayUpNextOverlay) {
+                delay(120)
+                runCatching { upNextFocusRequester.requestFocus() }
+            }
+        }
+        AnimatedVisibility(
+            visible = displayUpNextOverlay,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 32.dp, end = 32.dp)
+        ) {
+            var isUpNextCardFocused by remember { mutableStateOf(false) }
+            Button(
+                onClick = { triggerNextEpisode() },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isUpNextCardFocused) NoosCyan else Color(0xEE101726),
+                    contentColor = if (isUpNextCardFocused) Color.Black else Color.White
+                ),
+                shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
+                modifier = Modifier
+                    .focusRequester(upNextFocusRequester)
+                    .onFocusChanged { isUpNextCardFocused = it.isFocused }
+                    .border(
+                        width = if (isUpNextCardFocused) 2.5.dp else 1.5.dp,
+                        color = if (isUpNextCardFocused) Color.White else NoosCyan,
+                        shape = RoundedCornerShape(16.dp)
+                    )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SkipNext,
+                    contentDescription = "Épisode suivant",
+                    tint = if (isUpNextCardFocused) Color.Black else NoosCyan,
+                    modifier = Modifier.size(26.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(horizontalAlignment = Alignment.Start) {
+                    Text(
+                        text = if (!nextEpisodeLabel.isNullOrBlank()) "Épisode suivant • $nextEpisodeLabel" else "Épisode suivant",
+                        color = if (isUpNextCardFocused) Color.Black else Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    if (!nextEpisodeTitle.isNullOrBlank()) {
+                        Text(
+                            text = nextEpisodeTitle,
+                            color = if (isUpNextCardFocused) Color(0xFF1A1A1A) else TextSecondary,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
         // ------------------ 6. OVERLAY OSD COMPLET ------------------
         AnimatedVisibility(
             visible = isOsdVisible && !isPipMode,
@@ -1382,6 +1490,50 @@ fun NoosPlayerScreen(
                                     .onFocusChanged { isForwardFocused = it.isFocused }
                             ) {
                                 Icon(imageVector = Icons.Default.Forward30, contentDescription = "Avance 30s", tint = TextPrimary, modifier = Modifier.size(if (isPortraitMobile) 28.dp else 34.dp))
+                            }
+
+                            // Bouton "Épisode suivant" directement dans la barre de transport si disponible
+                            if (onNextEpisode != null) {
+                                var isNextEpFocused by remember { mutableStateOf(false) }
+                                Button(
+                                    onClick = { triggerNextEpisode() },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isNextEpFocused) NoosCyan else SurfaceDark.copy(alpha = 0.90f),
+                                        contentColor = if (isNextEpFocused) Color.Black else Color.White
+                                    ),
+                                    shape = RoundedCornerShape(14.dp),
+                                    contentPadding = PaddingValues(
+                                        horizontal = if (isPortraitMobile) 12.dp else 16.dp,
+                                        vertical = if (isPortraitMobile) 8.dp else 10.dp
+                                    ),
+                                    modifier = Modifier
+                                        .onPreviewKeyEvent { event ->
+                                            if (!isLive && event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
+                                                runCatching { timelineFocusRequester.requestFocus() }
+                                                true
+                                            } else false
+                                        }
+                                        .onFocusChanged { isNextEpFocused = it.isFocused }
+                                        .border(
+                                            width = if (isNextEpFocused) 2.dp else 1.5.dp,
+                                            color = if (isNextEpFocused) Color.White else NoosCyan.copy(alpha = 0.7f),
+                                            shape = RoundedCornerShape(14.dp)
+                                        )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SkipNext,
+                                        contentDescription = "Épisode suivant",
+                                        tint = if (isNextEpFocused) Color.Black else NoosCyan,
+                                        modifier = Modifier.size(if (isPortraitMobile) 18.dp else 22.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (!nextEpisodeLabel.isNullOrBlank()) "Épisode suivant ($nextEpisodeLabel)" else "Épisode suivant",
+                                        color = if (isNextEpFocused) Color.Black else Color.White,
+                                        fontSize = if (isPortraitMobile) 12.sp else 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
                     }
